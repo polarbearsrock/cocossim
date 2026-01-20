@@ -28,7 +28,7 @@ const int data_type_width = 2;
 const int seq_len = 2048;
 const int dram_enq_per_cycle = 9;
 
-const int buffer_size_bytes = 8 * 1024 * 1024;
+const int buffer_size_bytes = 64 * 1024 * 1024;
 
 const int embedding_dim= 768;
 const int n_heads = 6;
