@@ -20,6 +20,12 @@
 
 struct State;
 
+// Forward declare buffer hierarchy
+namespace buffers {
+    class BufferHierarchy;
+    struct BufferHierarchyConfig;
+}
+
 const int systolic_fpu_latency = 2;
 const int batch_size = 1;
 const int n_mxus = 4;
@@ -28,7 +34,12 @@ const int data_type_width = 2;
 const int seq_len = 2048;
 const int dram_enq_per_cycle = 9;
 
+// Legacy buffer size constant (for backward compatibility)
+// New code should use global_buffer_hierarchy instead
 const int buffer_size_bytes = 64 * 1024 * 1024;
+
+// Global buffer hierarchy configuration (initialized in global.cc)
+extern buffers::BufferHierarchy* global_buffer_hierarchy;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

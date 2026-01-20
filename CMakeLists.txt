@@ -15,6 +15,11 @@ add_executable(perf_model
         src/units/standard/SysArray.cc
         src/units/standard/VectorUnit.cc
 
+        src/buffers/BufferConfig.cc
+        src/buffers/BufferStats.cc
+        src/buffers/BufferHierarchy.cc
+        src/buffers/PowerModel.cc
+
         src/Job.cc
         src/global.cc
         src/perf_enums.cc

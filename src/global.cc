@@ -8,7 +8,12 @@
  */
 
 #include "global.h"
+#include "buffers/BufferHierarchy.h"
+#include "buffers/BufferConfig.h"
 #include <cmath>
+
+// Global buffer hierarchy (initialized to nullptr, set up in main)
+buffers::BufferHierarchy* global_buffer_hierarchy = nullptr;
 
 int total_jobs = 0;
 int jobs_finished = 0;
