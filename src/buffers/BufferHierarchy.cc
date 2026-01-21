@@ -326,12 +326,6 @@ void BufferHierarchy::print_hierarchy(std::ostream& os) const {
         os << "  Latency: R=" << cfg.read_latency_cycles
            << " W=" << cfg.write_latency_cycles << " cycles\n";
 
-        if (cfg.power.read_energy_pJ_per_byte > 0) {
-            os << "  Power: R=" << cfg.power.read_energy_pJ_per_byte
-               << " W=" << cfg.power.write_energy_pJ_per_byte << " pJ/byte, "
-               << "Static=" << cfg.power.static_power_mW << " mW\n";
-        }
-
         if (cfg.use_dramsim3) {
             os << "  DRAMSim3: " << cfg.dramsim3_config_path << "\n";
         }

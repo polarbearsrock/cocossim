@@ -17,20 +17,6 @@
 namespace buffers {
 
 /**
- * Power parameters for a buffer level
- */
-struct PowerConfig {
-    double read_energy_pJ_per_byte;   // Read energy in picojoules per byte
-    double write_energy_pJ_per_byte;  // Write energy in picojoules per byte
-    double static_power_mW;           // Static/leakage power in milliwatts
-
-    PowerConfig()
-        : read_energy_pJ_per_byte(0.0)
-        , write_energy_pJ_per_byte(0.0)
-        , static_power_mW(0.0) {}
-};
-
-/**
  * Configuration for a single level in the buffer hierarchy
  */
 struct BufferLevelConfig {
@@ -48,9 +34,6 @@ struct BufferLevelConfig {
     // Banking for parallel access
     int num_banks;                     // Number of independent banks
     uint64_t bank_size_bytes;          // Size of each bank
-
-    // Power modeling
-    PowerConfig power;
 
     // Special flags
     bool read_only;                    // True for read-only buffers (e.g., weight buffers)

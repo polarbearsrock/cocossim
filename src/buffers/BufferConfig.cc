@@ -88,11 +88,6 @@ BufferHierarchyConfig create_tpu_v3_style() {
     unified.write_through = false;
     unified.use_dramsim3 = false;
 
-    // Power parameters (approximations for 7nm)
-    unified.power.read_energy_pJ_per_byte = 2.5;
-    unified.power.write_energy_pJ_per_byte = 3.0;
-    unified.power.static_power_mW = 500.0;
-
     config.levels.push_back(unified);
 
     // DRAM (HBM2)
@@ -130,9 +125,6 @@ BufferHierarchyConfig create_eyeriss_style() {
     l1.write_latency_cycles = 1;
     l1.num_banks = 8;
     l1.bank_size_bytes = l1.size_bytes / l1.num_banks;
-    l1.power.read_energy_pJ_per_byte = 1.0;
-    l1.power.write_energy_pJ_per_byte = 1.5;
-    l1.power.static_power_mW = 50.0;
 
     config.levels.push_back(l1);
 
@@ -146,9 +138,6 @@ BufferHierarchyConfig create_eyeriss_style() {
     l2.write_latency_cycles = 5;
     l2.num_banks = 16;
     l2.bank_size_bytes = l2.size_bytes / l2.num_banks;
-    l2.power.read_energy_pJ_per_byte = 5.0;
-    l2.power.write_energy_pJ_per_byte = 6.0;
-    l2.power.static_power_mW = 200.0;
 
     config.levels.push_back(l2);
 
@@ -185,9 +174,6 @@ BufferHierarchyConfig create_simple_two_level(
     sram.write_latency_cycles = 2;
     sram.num_banks = 16;
     sram.bank_size_bytes = sram_size_bytes / sram.num_banks;
-    sram.power.read_energy_pJ_per_byte = 3.0;
-    sram.power.write_energy_pJ_per_byte = 3.5;
-    sram.power.static_power_mW = 300.0;
 
     config.levels.push_back(sram);
 

@@ -13,7 +13,6 @@
 
 // Forward declarations
 namespace buffers {
-  struct EnergyBreakdown;
   struct BufferAccessStats;
 }
 
@@ -21,13 +20,10 @@ struct RuntimeStats_t {
   uint64_t cycles;
   double *pct_active;
 
-  // Power/energy metrics (optional, only filled if power analysis enabled)
-  buffers::EnergyBreakdown* energy;
+  // Buffer access statistics (optional, only filled if buffer tracking enabled)
   buffers::BufferAccessStats* buffer_stats;
-  double avg_power_W;
 
-  RuntimeStats_t() : cycles(0), pct_active(nullptr), energy(nullptr),
-                     buffer_stats(nullptr), avg_power_W(0.0) {}
+  RuntimeStats_t() : cycles(0), pct_active(nullptr), buffer_stats(nullptr) {}
 };
 
 #endif//PROSE_COMPILER_RUNTIMESTATS_T_H

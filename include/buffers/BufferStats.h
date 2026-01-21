@@ -18,7 +18,7 @@
 namespace buffers {
 
 /**
- * Statistics for buffer accesses - tracks reads, writes, and energy
+ * Statistics for buffer accesses - tracks reads, writes, and occupancy
  */
 struct BufferAccessStats {
     // Access counts
@@ -77,31 +77,6 @@ struct BufferAccessStats {
 
     // Print summary
     void print_summary(std::ostream& os, const std::string& buffer_name) const;
-};
-
-/**
- * Energy breakdown calculated from buffer access stats
- */
-struct EnergyBreakdown {
-    double total_energy_mJ;            // Total energy in millijoules
-    double read_energy_mJ;             // Energy for reads
-    double write_energy_mJ;            // Energy for writes
-    double static_energy_mJ;           // Static/leakage energy
-
-    // Per-level breakdown (level name -> energy)
-    std::map<std::string, double> energy_per_level;
-
-    // Per-operation breakdown (operation type -> energy)
-    std::map<std::string, double> energy_per_op_type;
-
-    EnergyBreakdown()
-        : total_energy_mJ(0.0)
-        , read_energy_mJ(0.0)
-        , write_energy_mJ(0.0)
-        , static_energy_mJ(0.0) {}
-
-    // Print detailed energy report
-    void print_report(std::ostream& os, uint64_t total_cycles, double frequency_GHz) const;
 };
 
 } // namespace buffers

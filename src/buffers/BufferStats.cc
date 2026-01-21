@@ -132,46 +132,4 @@ void BufferAccessStats::print_summary(std::ostream& os, const std::string& buffe
     }
 }
 
-void EnergyBreakdown::print_report(
-    std::ostream& os,
-    uint64_t total_cycles,
-    double frequency_GHz
-) const {
-    double simulation_time_ms = static_cast<double>(total_cycles) / (frequency_GHz * 1e6);
-    double avg_power_W = total_energy_mJ / simulation_time_ms;
-
-    os << "\n=== Power Analysis Report ===\n\n";
-    os << "Simulation Time: " << total_cycles << " cycles @ "
-       << frequency_GHz << " GHz = " << std::fixed << std::setprecision(3)
-       << simulation_time_ms << " ms\n\n";
-
-    os << "Total Energy: " << std::setprecision(2) << total_energy_mJ << " mJ\n";
-    os << "Average Power: " << std::setprecision(3) << avg_power_W << " W\n\n";
-
-    os << "Energy Breakdown:\n";
-    os << "  Read Energy:   " << std::setprecision(2) << read_energy_mJ
-       << " mJ (" << (read_energy_mJ / total_energy_mJ * 100) << "%)\n";
-    os << "  Write Energy:  " << write_energy_mJ
-       << " mJ (" << (write_energy_mJ / total_energy_mJ * 100) << "%)\n";
-    os << "  Static Energy: " << static_energy_mJ
-       << " mJ (" << (static_energy_mJ / total_energy_mJ * 100) << "%)\n\n";
-
-    if (!energy_per_level.empty()) {
-        os << "Energy per Buffer Level:\n";
-        for (const auto& [level, energy] : energy_per_level) {
-            os << "  " << level << ": " << std::setprecision(2) << energy
-               << " mJ (" << (energy / total_energy_mJ * 100) << "%)\n";
-        }
-        os << "\n";
-    }
-
-    if (!energy_per_op_type.empty()) {
-        os << "Energy per Operation Type:\n";
-        for (const auto& [op, energy] : energy_per_op_type) {
-            os << "  " << op << ": " << std::setprecision(2) << energy
-               << " mJ (" << (energy / total_energy_mJ * 100) << "%)\n";
-        }
-    }
-}
-
 } // namespace buffers
