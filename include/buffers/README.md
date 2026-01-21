@@ -1,15 +1,17 @@
-# Buffer Hierarchy and Power Analysis
+# Buffer Hierarchy Infrastructure
 
-This directory contains the flexible buffer hierarchy and power modeling infrastructure for COCOSSim.
+This directory contains the flexible buffer hierarchy infrastructure for COCOSSim.
 
 ## Overview
 
 The buffer subsystem enables:
 - **Hierarchical buffer modeling** (L1, L2, unified buffer, DRAM)
-- **Per-level power analysis** with read/write energy tracking
+- **Access statistics tracking** for reads, writes, occupancy, and bank conflicts
 - **Multi-core partitioning** support
-- **Access statistics** for performance analysis
+- **Performance analysis** of buffer utilization
 - **Configurable architectures** via preset or custom configurations
+
+**Note:** Power modeling will be added later in a separate subsystem when power data is available for all simulator components (systolic arrays, vector units, buffers, etc.).
 
 ## Architecture
 
@@ -28,7 +30,6 @@ BufferHierarchy
 - **BufferConfig.h/cc**: Configuration structures and preset builders
 - **BufferStats.h/cc**: Access tracking and statistics
 - **BufferHierarchy.h/cc**: Main hierarchy manager
-- **PowerModel.h/cc**: Energy calculation utilities
 
 ## Usage
 
@@ -74,26 +75,21 @@ if (buffer->can_allocate(size_needed)) {
 }
 ```
 
-### Calculating Power
+### Viewing Statistics
 
 ```cpp
-#include "buffers/PowerModel.h"
+// Print buffer access statistics
+auto stats = hierarchy.get_total_stats();
+stats.print_summary(std::cout, "Total");
 
-// After simulation
-auto energy = buffers::PowerModel::calculate_energy(
-    hierarchy,
-    total_cycles,
-    frequency_GHz
-);
+// Per-level statistics
+for (int i = 0; i < hierarchy.get_num_levels(); ++i) {
+    auto level_stats = hierarchy.get_level_stats(i);
+    level_stats.print_summary(std::cout, hierarchy.get_level(i)->get_config().name);
+}
 
-// Print report
-buffers::PowerModel::print_power_report(
-    std::cout,
-    energy,
-    hierarchy,
-    total_cycles,
-    frequency_GHz
-);
+// Print utilization
+hierarchy.print_utilization(std::cout);
 ```
 
 ## Preset Configurations
@@ -105,7 +101,6 @@ auto config = buffers::configs::create_tpu_v3_style();
 - 64MB unified buffer
 - HBM2 DRAM
 - 32 banks
-- 7nm power parameters
 
 ### Eyeriss Style
 ```cpp
@@ -122,20 +117,6 @@ auto config = buffers::configs::create_simple_two_level(
     32 * 1024 * 1024,  // 32MB SRAM
     "../dramsim3/configs/HBM2_8Gb_x128.ini"
 );
-```
-
-## Power Parameters
-
-Energy values are in **picojoules per byte (pJ/byte)**:
-- **SRAM (on-chip)**: 1-5 pJ/byte
-- **DRAM (off-chip)**: 20-100 pJ/byte (handled by DRAMSim3)
-
-Static power is in **milliwatts (mW)**.
-
-### Technology Scaling
-
-```cpp
-buffers::PowerModel::apply_technology_scaling(config, 5);  // Scale to 5nm
 ```
 
 ## Statistics Collected
@@ -161,26 +142,25 @@ buffers::BufferLevel* core0_buffer = hierarchy.get_partition(0, 0);
 ## Example Output
 
 ```
-=== Power Analysis Report ===
-
-Simulation Time: 1247832 cycles @ 1.0 GHz = 1.248 ms
-
-Total Energy: 1166.7 mJ
-Average Power: 0.935 W
-
-Energy Breakdown:
-  Read Energy:   785.4 mJ (67.3%)
-  Write Energy:  219.1 mJ (18.8%)
-  Static Energy: 162.2 mJ (13.9%)
-
-Energy per Buffer Level:
-  UnifiedBuffer: 274.2 mJ (23.5%)
-  DRAM: 892.5 mJ (76.5%)
-
 === Buffer Access Stats: UnifiedBuffer ===
   Reads:        49800000 (119.5 MB)
   Writes:       29100000 (87.3 MB)
+  Total Bytes:  206800000
+  Bank Conflicts: 1284
   Peak Occupancy: 54.3 MB
+
+  Reads by Operation:
+    matmul: 38500000 reads (92.1 MB)
+    conv: 8300000 reads (19.9 MB)
+    softmax: 3000000 reads (7.2 MB)
+
+  Writes by Operation:
+    matmul: 22100000 writes (52.9 MB)
+    conv: 5200000 writes (12.4 MB)
+    softmax: 1800000 writes (4.3 MB)
+
+=== Buffer Utilization ===
+UnifiedBuffer: 84.8% (54.3 / 64.0 MB)
 ```
 
 ## Integration with COCOSSim
@@ -194,17 +174,16 @@ The buffer hierarchy is integrated into COCOSSim through:
 
 ## Future Enhancements
 
-- [ ] CACTI integration for automatic power parameter generation
+- [ ] Power modeling integration (separate subsystem)
 - [ ] Cache replacement policies (LRU, FIFO)
 - [ ] Multi-level data movement optimization
-- [ ] Thermal modeling
 - [ ] JSON configuration file loading
 - [ ] Visualization of buffer access patterns
-- [ ] Integration with DRAMSim3 power models
+- [ ] Command-line configuration options
 
 ## References
 
-- CACTI: Cache access time, cycle time, area, leakage, and dynamic power
-- DRAMSim3: Memory system simulator
+- DRAMSim3: Memory system simulator (integrated)
 - TPU v3: Google's third-generation Tensor Processing Unit
 - Eyeriss: Energy-efficient deep learning accelerator
+- ISPASS 2025: COCOSSim paper
