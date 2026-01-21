@@ -89,16 +89,13 @@ struct BufferHierarchyConfig {
 };
 
 /**
- * Create default configurations for common accelerator architectures
+ * Create default configurations for buffer hierarchies
  */
 namespace configs {
-    // TPU-style unified buffer (64MB)
-    BufferHierarchyConfig create_tpu_v3_style();
+    // TPU-style unified buffer (64MB) - default configuration
+    BufferHierarchyConfig create_tpu_style();
 
-    // Eyeriss-style hierarchical scratchpads
-    BufferHierarchyConfig create_eyeriss_style();
-
-    // Simple two-level: SRAM + DRAM
+    // Simple two-level: configurable SRAM + DRAM
     BufferHierarchyConfig create_simple_two_level(
         uint64_t sram_size_bytes,
         const std::string& dram_config_path

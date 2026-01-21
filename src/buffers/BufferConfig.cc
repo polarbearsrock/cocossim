@@ -67,19 +67,19 @@ bool BufferHierarchyConfig::validate() const {
 
 namespace configs {
 
-BufferHierarchyConfig create_tpu_v3_style() {
+BufferHierarchyConfig create_tpu_style() {
     BufferHierarchyConfig config;
     config.use_unified_buffer = true;
     config.partitioned_per_core = false;
     config.num_partitions = 1;
     config.default_level = 0;
 
-    // Unified Buffer (similar to TPU v3's 32MB, but we use 64MB)
+    // Unified Buffer (64MB on-chip SRAM)
     BufferLevelConfig unified;
     unified.name = "UnifiedBuffer";
     unified.level = 0;
     unified.size_bytes = 64ULL * 1024 * 1024;  // 64 MB
-    unified.bandwidth_bytes_per_cycle = 256;   // Approximate based on TPU specs
+    unified.bandwidth_bytes_per_cycle = 256;
     unified.read_latency_cycles = 2;
     unified.write_latency_cycles = 2;
     unified.num_banks = 32;
@@ -102,52 +102,6 @@ BufferHierarchyConfig create_tpu_v3_style() {
     dram.bank_size_bytes = dram.size_bytes;
     dram.use_dramsim3 = true;
     dram.dramsim3_config_path = "../dramsim3/configs/HBM2_8Gb_x128.ini";
-
-    config.levels.push_back(dram);
-
-    return config;
-}
-
-BufferHierarchyConfig create_eyeriss_style() {
-    BufferHierarchyConfig config;
-    config.use_unified_buffer = false;
-    config.partitioned_per_core = true;
-    config.num_partitions = 4;
-    config.default_level = 0;
-
-    // L1: Small per-PE scratchpad
-    BufferLevelConfig l1;
-    l1.name = "PE_Scratchpad";
-    l1.level = 0;
-    l1.size_bytes = 256 * 1024;  // 256 KB per PE
-    l1.bandwidth_bytes_per_cycle = 64;
-    l1.read_latency_cycles = 1;
-    l1.write_latency_cycles = 1;
-    l1.num_banks = 8;
-    l1.bank_size_bytes = l1.size_bytes / l1.num_banks;
-
-    config.levels.push_back(l1);
-
-    // L2: Larger shared buffer
-    BufferLevelConfig l2;
-    l2.name = "GlobalBuffer";
-    l2.level = 1;
-    l2.size_bytes = 16 * 1024 * 1024;  // 16 MB
-    l2.bandwidth_bytes_per_cycle = 128;
-    l2.read_latency_cycles = 5;
-    l2.write_latency_cycles = 5;
-    l2.num_banks = 16;
-    l2.bank_size_bytes = l2.size_bytes / l2.num_banks;
-
-    config.levels.push_back(l2);
-
-    // DRAM
-    BufferLevelConfig dram;
-    dram.name = "DRAM";
-    dram.level = 2;
-    dram.size_bytes = 4ULL * 1024 * 1024 * 1024;
-    dram.use_dramsim3 = true;
-    dram.dramsim3_config_path = "../dramsim3/configs/DDR4_4Gb_x16_2400.ini";
 
     config.levels.push_back(dram);
 

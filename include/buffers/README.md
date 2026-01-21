@@ -94,22 +94,13 @@ hierarchy.print_utilization(std::cout);
 
 ## Preset Configurations
 
-### TPU v3 Style
+### TPU Style (Default)
 ```cpp
-auto config = buffers::configs::create_tpu_v3_style();
+auto config = buffers::configs::create_tpu_style();
 ```
 - 64MB unified buffer
 - HBM2 DRAM
 - 32 banks
-
-### Eyeriss Style
-```cpp
-auto config = buffers::configs::create_eyeriss_style();
-```
-- 256KB per-PE scratchpad
-- 16MB global buffer
-- DDR4 DRAM
-- Per-core partitioned
 
 ### Simple Two-Level
 ```cpp
@@ -184,6 +175,4 @@ The buffer hierarchy is integrated into COCOSSim through:
 ## References
 
 - DRAMSim3: Memory system simulator (integrated)
-- TPU v3: Google's third-generation Tensor Processing Unit
-- Eyeriss: Energy-efficient deep learning accelerator
 - ISPASS 2025: COCOSSim paper
