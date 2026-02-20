@@ -12,6 +12,7 @@
 #include "global.h"
 #include "State.h"
 #include "perf_enums.h"
+#include "buffers/BufferHierarchy.h"
 
 using namespace VectorUnit;
 
@@ -54,6 +55,19 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
     case VectorUnit::VPUState::write:
       enqueue_writes();
       if (process_stage()) {
+        // Record buffer write for output data (buffer -> DRAM)
+        if (assigned_buffer) {
+          int output_bytes = sj->linearized_dimension * sj->parallel_dimension * data_type_width * batch_size;
+          assigned_buffer->record_write(j->addr, output_bytes, "vector_output");
+
+          // Mark output as buffered for consumer jobs
+          if (j->output_size_bytes > 0) {
+            uint64_t buffer_capacity = assigned_buffer->get_config().size_bytes;
+            if (j->output_size_bytes <= buffer_capacity) {
+              j->mark_output_buffered(buffer_capacity);
+            }
+          }
+        }
         state_transfer(VectorUnit::idle, 0, 0, 0);
         TO_IDLE_CLEANUP();
       }
@@ -75,23 +89,43 @@ void VecUnitState::init() {
   }
   LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, vcd_idx), j->job_idx);
 
+  // Set operation type for buffer tracking
+  current_op_type = "vector_op";
+
   VectorUnit::VPUState first_state;
   int first_phase_read;
   int first_phase_cycles;
   auto front = sj->phases.front();
-  if (sj->is_prebuffered) {
+
+  // Check if input is already in buffer (from producer job or explicitly prebuffered)
+  bool input_buffered = sj->is_prebuffered || j->input_from_buffer;
+
+  if (input_buffered) {
+    // Input is in buffer - no DRAM read needed
     first_phase_read = 0;
     if (front.first == VPUPhase::BROADCAST) {
       first_state = VectorUnit::VPUState::buffered_par;
     } else {
       first_state = VectorUnit::VPUState::buffered_lin;
     }
+
+    // Record buffer read for input data (reading from buffer, not DRAM)
+    if (assigned_buffer) {
+      int input_bytes = sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width;
+      assigned_buffer->record_read(j->addr, input_bytes, "vector_input_reuse");
+    }
   } else {
+    // Input needs to be loaded from DRAM
     first_phase_read = sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width;
     if (front.first == VPUPhase::BROADCAST) {
       first_state = VectorUnit::VPUState::unbuffered_par;
     } else {
       first_state = VectorUnit::VPUState::unbuffered_lin;
+    }
+
+    // Record buffer fill from DRAM for input data
+    if (assigned_buffer && first_phase_read > 0) {
+      assigned_buffer->record_write(j->addr, first_phase_read, "vector_input_fill");
     }
   }
   if (front.first == VPUPhase::BROADCAST) {
@@ -126,7 +160,10 @@ VecUnitJob::VecUnitJob(int linearizedDimension,
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
       is_prebuffered(is_prebuffered),
-      phases(phases) {}
+      phases(phases) {
+  // Set output size for buffer tracking
+  output_size_bytes = (uint64_t)linearizedDimension * parallelDimension * data_type_width * batch_size;
+}
 
 VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
@@ -139,6 +176,8 @@ VecUnitJob::VecUnitJob(int linearizedDimension,
   for (const auto &q: vphases) {
     phases.push(q);
   }
+  // Set output size for buffer tracking
+  output_size_bytes = (uint64_t)linearizedDimension * parallelDimension * data_type_width * batch_size;
 }
 
 int VecUnitJob::get_type() const {

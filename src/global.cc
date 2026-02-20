@@ -12,8 +12,8 @@
 #include "buffers/BufferConfig.h"
 #include <cmath>
 
-// Global buffer hierarchy (initialized to nullptr, set up in main)
 buffers::BufferHierarchy* global_buffer_hierarchy = nullptr;
+int64_t buffer_size_bytes = 64 * 1024 * 1024;
 
 int total_jobs = 0;
 int jobs_finished = 0;

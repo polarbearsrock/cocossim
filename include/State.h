@@ -14,8 +14,14 @@
 #include "perf_enums.h"
 #include <functional>
 #include <set>
+#include <string>
 
 #include "Arch.h"
+
+// Forward declarations
+namespace buffers {
+  class BufferLevel;
+}
 
 #ifdef VCD
 #define LOG_TO_WAVEFORM(stat_idx, to) \
@@ -81,6 +87,10 @@ struct State {
   int beats_per_wb;// Number of memory beats per write-back
 
   bool activation_in_buffer = false;// Enable DRAM-to-buffer flow simulation if false
+
+  // Buffer hierarchy tracking
+  buffers::BufferLevel* assigned_buffer = nullptr;  // Which buffer level this unit uses
+  std::string current_op_type;                      // Current operation type for stats ("matmul", "softmax", etc.)
 
   virtual ~State() = default;
   State() = delete;

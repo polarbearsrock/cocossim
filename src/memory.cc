@@ -15,8 +15,9 @@ using namespace mem;
 namespace mem {
   mem_ty *mem_sys;
   dramsim3::Config *dramsim3config;
-  std::unordered_map<uint64_t, State *> address_reads_bkwds_lookup;
-  std::unordered_map<uint64_t, State *> address_writes_bkwds_lookup;
+  // Use multimap to handle multiple outstanding requests to the same address
+  std::unordered_multimap<uint64_t, State *> address_reads_bkwds_lookup;
+  std::unordered_multimap<uint64_t, State *> address_writes_bkwds_lookup;
 }
 
 static int q = 0;
@@ -39,11 +40,11 @@ bool mem::try_enqueue_tx() {
         
         if (mem_sys->WillAcceptTransaction(addr, is_write)) {
             mem_sys->AddTransaction(addr, is_write);
-            // Register callback mapping for completion notification
+            // Register callback mapping for completion notification (multimap allows duplicates)
             if (is_write) {
-                address_writes_bkwds_lookup[addr] = state;
+                address_writes_bkwds_lookup.insert({addr, state});
             } else {
-                address_reads_bkwds_lookup[addr] = state;
+                address_reads_bkwds_lookup.insert({addr, state});
             }
             // Remove processed transaction from queue
             if (i != to_enqueue.size() - 1) {
@@ -56,26 +57,54 @@ bool mem::try_enqueue_tx() {
     return false;
 }
 
+static uint64_t read_callbacks = 0;
+static uint64_t write_callbacks = 0;
+static uint64_t read_not_found = 0;
+static uint64_t write_not_found = 0;
+static uint64_t last_reported_callbacks = 0;
+
+void mem::print_debug_stats() {
+    std::cerr << "MEM DEBUG: read_callbacks=" << read_callbacks
+              << " write_callbacks=" << write_callbacks
+              << " read_lookup_size=" << address_reads_bkwds_lookup.size()
+              << " write_lookup_size=" << address_writes_bkwds_lookup.size()
+              << " read_not_found=" << read_not_found
+              << " write_not_found=" << write_not_found << std::endl;
+}
+
 void mem::setup() {
-  dramsim3config = new dramsim3::Config("../dramsim3/configs/HBM2_8Gb_x128.ini", "./");
+  dramsim3config = new dramsim3::Config("../dramsim3/configs/HBM_custom.ini", "./");
   mem_sys = new mem_ty(*dramsim3config, "./", [](uint64_t addr) {
+        read_callbacks++;
         auto it = address_reads_bkwds_lookup.find(addr);
         if (it != address_reads_bkwds_lookup.end()) {
             State *q = it->second;
             address_reads_bkwds_lookup.erase(it);
             q->mem_read_left -= 1;
         } else {
-            std::cerr << "Error: Address " << std::hex << addr << " not found in address_reads_bkwds_lookup" << std::endl;
+            read_not_found++;
+            if (read_not_found <= 10) {
+                std::cerr << "Error: Read addr " << std::hex << addr << std::dec
+                          << " not found (lookup size=" << address_reads_bkwds_lookup.size()
+                          << ", callbacks=" << read_callbacks << ")" << std::endl;
+            }
         } }, [](uint64_t addr) {
+        write_callbacks++;
         auto it = address_writes_bkwds_lookup.find(addr);
         if (it != address_writes_bkwds_lookup.end()) {
             State *q = it->second;
             address_writes_bkwds_lookup.erase(it);
             q->mem_write_left -= 1;
         } else {
-            std::cerr << "Error: Address " << addr << " not found in address_writes_bkwds_lookup" << std::endl;
+            write_not_found++;
+            if (write_not_found <= 10) {
+                std::cerr << "Error: Write addr " << std::hex << addr << std::dec
+                          << " not found (lookup size=" << address_writes_bkwds_lookup.size()
+                          << ", callbacks=" << write_callbacks << ")" << std::endl;
+            }
         } });
   bytes_per_tx = dramsim3config->request_size_bytes;
   std::cout << "REQUEST SIZE BYTES " << bytes_per_tx << std::endl;
+  std::cout << "DEBUG: Memory tracking enabled" << std::endl;
 
 }

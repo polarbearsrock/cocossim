@@ -101,7 +101,7 @@ BufferHierarchyConfig create_tpu_style() {
     dram.num_banks = 1;
     dram.bank_size_bytes = dram.size_bytes;
     dram.use_dramsim3 = true;
-    dram.dramsim3_config_path = "../dramsim3/configs/HBM2_8Gb_x128.ini";
+    dram.dramsim3_config_path = "dramsim3/configs/HBM2_8Gb_x128.ini";
 
     config.levels.push_back(dram);
 

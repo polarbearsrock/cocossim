@@ -11,6 +11,8 @@
 #include "memory.h"
 #include "perf_enums.h"
 #include "State.h"
+#include "global.h"
+#include "buffers/BufferHierarchy.h"
 #include <set>
 #include <unordered_map>
 
@@ -23,6 +25,15 @@ State *Arch::have_idle_type(int ty) {
     }
   }
   return nullptr;
+}
+
+void Arch::assign_buffers() {
+  // Assign buffer levels to each state (use level 0 = unified buffer)
+  if (global_buffer_hierarchy != nullptr) {
+    for (auto* state : states) {
+      state->assigned_buffer = global_buffer_hierarchy->get_level(0);
+    }
+  }
 }
 
 void Arch::init_waveforms() {
@@ -148,6 +159,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   const double differential_mem = mem::dramsim3config->tCK / freq_sa / mem_slow_factor;
   const double cycle_adjust = 1. / freq_sa;
 
+
   while (!(total_idle == states.size() && total_frontier == 0)) {
     if (gcycles >= next_phase) {
       phase_idx++;
@@ -220,11 +232,24 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     gcycles++;
     phase_cycles++;
 
+    // Update buffer hierarchy cycle tracking for occupancy statistics
+    if (global_buffer_hierarchy != nullptr) {
+      global_buffer_hierarchy->tick(gcycles);
+    }
+
 #if !defined(SILENCE) && !defined(DSE) || defined(DEBUG)
     if (logged_job_count != jobs_finished || gcycles % 100000 == 0) {
       logged_job_count = jobs_finished;
-      printf("\rPHASE: %d, Cycles: %llu, Jobs finished: %d/%d, DRAM CMDs: %d", phase_idx, gcycles, jobs_finished, total_jobs, dram_cmds);
-      mem::mem_sys->PrintStats();
+      printf("\rPHASE: %d, Cycles: %llu, Jobs finished: %d/%d, DRAM CMDs: %d, Queue: %zu", phase_idx, gcycles, jobs_finished, total_jobs, dram_cmds, to_enqueue.size());
+      // Debug: print mem_read_left for first state if stuck
+      if (gcycles > 1000000 && to_enqueue.size() == 0 && states.size() > 0 && states[0]->j != nullptr) {
+        printf(" [S0: rd=%d wr=%d]", states[0]->mem_read_left, states[0]->mem_write_left);
+      }
+      // Print memory stats every 1M cycles when queue is stuck
+      if (gcycles > 1000000 && gcycles % 1000000 == 0 && to_enqueue.size() > 0) {
+        printf("\n");
+        mem::print_debug_stats();
+      }
       fflush(stdout);
     }
 #endif

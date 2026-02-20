@@ -34,9 +34,9 @@ const int data_type_width = 2;
 const int seq_len = 2048;
 const int dram_enq_per_cycle = 9;
 
-// Legacy buffer size constant (for backward compatibility)
-// New code should use global_buffer_hierarchy instead
-const int buffer_size_bytes = 64 * 1024 * 1024;
+// Buffer size in bytes (runtime configurable via BUFFER_SIZE_MB env var)
+// Default: 64 MB, can be overridden in main.cc
+extern int64_t buffer_size_bytes;
 
 // Global buffer hierarchy configuration (initialized in global.cc)
 extern buffers::BufferHierarchy* global_buffer_hierarchy;
