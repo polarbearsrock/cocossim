@@ -18,9 +18,11 @@ namespace mem {
   using mem_ty = dramsim3::JedecDRAMSystem;
 
   extern dramsim3::Config *dramsim3config;
-  extern std::unordered_map<uint64_t, State *> address_reads_bkwds_lookup, address_writes_bkwds_lookup;
+  // Use multimap to handle multiple outstanding requests to the same address
+  extern std::unordered_multimap<uint64_t, State *> address_reads_bkwds_lookup, address_writes_bkwds_lookup;
   extern mem_ty *mem_sys;
 
   void setup();
+  void print_debug_stats();
 };// namespace mem
 #endif//PROSE_COMPILER_MEMORY_H

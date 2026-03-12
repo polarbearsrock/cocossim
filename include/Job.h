@@ -29,11 +29,29 @@ struct Job {
 
   int rem_deps;
   bool is_done = false;
+
+  // Buffer tracking for producer-consumer data reuse
+  uint64_t output_size_bytes = 0;    // Size of this job's output data
+  bool output_in_buffer = false;     // Whether output was written to buffer and is available
+  bool input_from_buffer = false;    // Whether input should come from buffer (set by parent)
+
   Job(uint64_t alloc_size);
 
   void add_child(Job *j) {
     children.push_back(j);
     j->rem_deps += 1;
+  }
+
+  // Called when this job completes with output in buffer
+  // Propagates buffer availability to children if output fits
+  void mark_output_buffered(uint64_t buffer_capacity) {
+    output_in_buffer = true;
+    for (auto *child : children) {
+      // Child can read from buffer if this output fits
+      if (output_size_bytes > 0 && output_size_bytes <= buffer_capacity) {
+        child->input_from_buffer = true;
+      }
+    }
   }
 
   void reset() {

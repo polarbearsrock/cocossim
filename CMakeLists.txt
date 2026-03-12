@@ -19,6 +19,7 @@ add_executable(perf_model
         src/buffers/BufferStats.cc
         src/buffers/BufferHierarchy.cc
 
+        src/EnergyModel.cc
         src/Job.cc
         src/global.cc
         src/perf_enums.cc

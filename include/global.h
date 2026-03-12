@@ -34,9 +34,9 @@ const int data_type_width = 2;
 const int seq_len = 2048;
 const int dram_enq_per_cycle = 9;
 
-// Legacy buffer size constant (for backward compatibility)
-// New code should use global_buffer_hierarchy instead
-const int buffer_size_bytes = 64 * 1024 * 1024;
+// Buffer size in bytes (runtime configurable via BUFFER_SIZE_MB env var)
+// Default: 64 MB, can be overridden in main.cc
+extern int64_t buffer_size_bytes;
 
 // Global buffer hierarchy configuration (initialized in global.cc)
 extern buffers::BufferHierarchy* global_buffer_hierarchy;
@@ -55,10 +55,14 @@ extern int bytes_per_tx;
 extern int jobs_finished;
 extern int total_jobs;
 extern uint64_t gcycles;
+extern uint64_t dram_read_cmds;
+extern uint64_t dram_write_cmds;
 extern int alloc_task_idx;
 extern int model_parallelism;
 extern bool do_par;
 extern float freq_sa;
+extern bool skip_dram_writeback;  // When true, outputs stay in on-chip buffer (no DRAM write)
+extern bool activations_in_buffer;  // When true, activations already in buffer (no DRAM fetch)
 
 
 int div_ru(int q, int r);

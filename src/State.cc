@@ -10,13 +10,18 @@
 #include "Arch.h"
 #include "State.h"
 #include "global.h"
+#include "buffers/BufferHierarchy.h"
 
 void State::enqueue_writes() {
   // Queue memory write transactions with bandwidth limits
+  // Note: Buffer operations are NOT automatically recorded here.
+  // Units (SysArray, VectorUnit, etc.) must explicitly call record_read/write
+  // based on whether data flows through buffer or directly to/from DRAM.
   if (mem_write_left_unqueued > 0) {
     int to_enq = std::min(dram_enq_per_cycle, mem_write_left_unqueued);
     mem_write_left_unqueued -= to_enq;
     mem_queued += to_enq;
+
     for (int i = 0; i < to_enq; ++i) {
       to_enqueue.emplace_back(j->addr, true, core_memory_priority, this);
       j->addr += bytes_per_tx;
@@ -26,10 +31,14 @@ void State::enqueue_writes() {
 
 void State::enqueue_reads() {
   // Queue memory read transactions with bandwidth limits
+  // Note: Buffer operations are NOT automatically recorded here.
+  // Units (SysArray, VectorUnit, etc.) must explicitly call record_read/write
+  // based on whether data flows through buffer or directly to/from DRAM.
   if (mem_read_left_unqueued > 0) {
     int to_enq = std::min(dram_enq_per_cycle, mem_read_left_unqueued);
     mem_read_left_unqueued -= to_enq;
     mem_queued += to_enq;
+
     for (int i = 0; i < to_enq; ++i) {
       to_enqueue.emplace_back(j->addr, false, core_memory_priority, this);
       j->addr += bytes_per_tx;

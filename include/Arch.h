@@ -32,6 +32,7 @@ struct Arch {
   Arch() = default;
 
   void init_waveforms();
+  void assign_buffers();
 
   RuntimeStats_t *get_cycles(TimeBasedEnqueue &time_enqueues);
 

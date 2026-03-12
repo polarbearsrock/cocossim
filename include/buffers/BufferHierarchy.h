@@ -12,6 +12,7 @@
 
 #include "BufferConfig.h"
 #include "BufferStats.h"
+#include "EnergyModel.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -23,7 +24,7 @@ namespace buffers {
  */
 class BufferLevel {
 public:
-    explicit BufferLevel(const BufferLevelConfig& config);
+    explicit BufferLevel(const BufferLevelConfig& config, EnergyModel* energy_model = nullptr);
 
     // Configuration
     const BufferLevelConfig& get_config() const { return config_; }
@@ -52,8 +53,17 @@ public:
     bool is_bank_available(int bank_idx, uint64_t cycle) const;
     void mark_bank_busy(int bank_idx, uint64_t cycle, int duration);
 
-    // Per-cycle update (for occupancy tracking)
+    // Per-cycle update (for occupancy tracking + leakage energy)
     void tick(uint64_t cycle);
+
+    // Energy tracking
+    double get_total_read_energy_mj() const { return total_read_energy_mj_; }
+    double get_total_write_energy_mj() const { return total_write_energy_mj_; }
+    double get_total_leakage_energy_mj() const { return total_leakage_energy_mj_; }
+    double get_total_energy_mj() const {
+        return total_read_energy_mj_ + total_write_energy_mj_ + total_leakage_energy_mj_;
+    }
+    void reset_energy_stats();
 
 private:
     BufferLevelConfig config_;
@@ -67,6 +77,12 @@ private:
     std::vector<uint64_t> bank_available_at_;
 
     uint64_t current_cycle_;
+
+    // Energy model
+    EnergyModel* energy_model_;
+    double total_read_energy_mj_;
+    double total_write_energy_mj_;
+    double total_leakage_energy_mj_;
 };
 
 /**
@@ -74,7 +90,7 @@ private:
  */
 class BufferHierarchy {
 public:
-    explicit BufferHierarchy(const BufferHierarchyConfig& config);
+    explicit BufferHierarchy(const BufferHierarchyConfig& config, EnergyModel* energy_model = nullptr);
 
     // Configuration
     const BufferHierarchyConfig& get_config() const { return config_; }
@@ -101,6 +117,13 @@ public:
     // Per-cycle update
     void tick(uint64_t cycle);
 
+    // Energy aggregation
+    double get_total_read_energy_mj() const;
+    double get_total_write_energy_mj() const;
+    double get_total_leakage_energy_mj() const;
+    double get_total_memory_energy_mj() const;
+    void print_energy_breakdown(std::ostream& os) const;
+
     // Debug / reporting
     void print_hierarchy(std::ostream& os) const;
     void print_utilization(std::ostream& os) const;
@@ -111,6 +134,9 @@ private:
 
     // For multi-core partitioning: core_id -> level_idx -> BufferLevel
     std::map<int, std::vector<std::unique_ptr<BufferLevel>>> core_partitions_;
+
+    // Energy model
+    EnergyModel* energy_model_;
 
     void initialize_levels();
     void initialize_partitions();

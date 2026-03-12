@@ -18,7 +18,9 @@ namespace frontend::standard {
     int sa_sz_allo = -1;
     int vu_sz_allo = -1;
     bool ws = false;
-    ArchConfig(int n_cores, int sa_sz_allo, int vu_sz_allo, bool ws): n_cores(n_cores), sa_sz_allo(sa_sz_allo), vu_sz_allo(vu_sz_allo), ws(ws) {}
+    bool shared_weights = false;  // Enable shared weight streaming across cores
+    ArchConfig(int n_cores, int sa_sz_allo, int vu_sz_allo, bool ws, bool shared_weights = false)
+        : n_cores(n_cores), sa_sz_allo(sa_sz_allo), vu_sz_allo(vu_sz_allo), ws(ws), shared_weights(shared_weights) {}
     ArchConfig() = default;
   };
 

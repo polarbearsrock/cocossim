@@ -28,11 +28,17 @@ struct ArchParser {
         ofile = argv[++i];
       } else if (strcmp(argv[i], "-f") == 0) {
         freq_sa = std::stof(argv[++i]);
+      } else if (strcmp(argv[i], "-no_wb") == 0) {
+        skip_dram_writeback = true;
+      } else if (strcmp(argv[i], "-act_in_buf") == 0) {
+        activations_in_buffer = true;
       } else if (strcmp(argv[i], "-h") == 0) {
         std::cerr << "Global Options:\n"
                      "-i <file>     layer input file\n"
                      "-o <file>     output statistic file\n"
-                     "-f <float>    frequency (GHz)\n";
+                     "-f <float>    frequency (GHz)\n"
+                     "-no_wb        skip DRAM writeback (output stays in on-chip buffer)\n"
+                     "-act_in_buf   activations already in buffer (skip DRAM fetch)\n";
         if (help_str != "") {
           std::cerr << "Arch Specific Options:\n"
                     << help_str << std::endl;
