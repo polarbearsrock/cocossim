@@ -90,24 +90,31 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           if (col_i == loop_cols_tiles) {
             // Finished all N-tiles for this K-tile
             if (row_i == loop_row_tiles) {
-              // All tiles complete - write final output to HBM
-              amt_to_write = sj->M * sj->N * data_type_width * batch_size;
+              // All tiles complete - output goes to buffer, then optionally to DRAM
+              int output_bytes = sj->M * sj->N * data_type_width * batch_size;
 
-              // Record buffer write for output (buffer -> DRAM)
+              // Always record buffer write for output (compute -> buffer)
               if (assigned_buffer) {
-                assigned_buffer->record_write(j->addr, amt_to_write, "output");
+                assigned_buffer->record_write(j->addr, output_bytes, "output");
+              }
+
+              // Only write to DRAM if not skipping writeback
+              if (!skip_dram_writeback) {
+                amt_to_write = output_bytes;
               }
             } else {
               // Moving to next K-tile - need NEW activations from HBM
-              // Old activations will be evicted, new ones loaded
-              activation_in_buffer = false;
-              int act_bytes = std::min(sz, sj->K) * sj->M * data_type_width;
-              dram_read_bytes = act_bytes;
+              // (unless activations_in_buffer flag is set)
+              activation_in_buffer = activations_in_buffer;
+              if (!activations_in_buffer) {
+                int act_bytes = std::min(sz, sj->K) * sj->M * data_type_width;
+                dram_read_bytes = act_bytes;
 
-              // Record: HBM → Buffer for new activations only
-              // (weights will be loaded in write->read transition, not buffered)
-              if (assigned_buffer) {
-                assigned_buffer->record_write(j->addr, act_bytes, "activation_fill");
+                // Record: HBM → Buffer for new activations only
+                // (weights will be loaded in write->read transition, not buffered)
+                if (assigned_buffer) {
+                  assigned_buffer->record_write(j->addr, act_bytes, "activation_fill");
+                }
               }
             }
           }
@@ -208,7 +215,13 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           active_mac_cycles_ += (uint64_t)active_macs_per_cycle * compute_cycles;
           total_mac_capacity_cycles_ += (uint64_t)(sz * sz) * compute_cycles;
 
-          state_transfer(write, 0, beats_per_wb, 0);
+          // Output tile goes to buffer (always), then optionally to DRAM
+          int output_tile_bytes = tile_m * tile_n * data_type_width * batch_size;
+          if (assigned_buffer) {
+            assigned_buffer->record_write(j->addr, output_tile_bytes, "output");
+          }
+
+          state_transfer(write, 0, skip_dram_writeback ? 0 : beats_per_wb, 0);
         } break;
 
         case write:
@@ -275,7 +288,8 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     int activation_bytes = 0;
     int weight_bytes = std::min(sz, sj->M) * sj->K * data_type_width;
 
-    if (new_row) {
+    // Only load new activations if new_row AND not already in buffer
+    if (new_row && !activations_in_buffer) {
       activation_bytes = std::min(sz, sj->M) * sj->K * batch_size * data_type_width;
     }
 
@@ -286,17 +300,21 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     bool skip_weight_fetch = arch_config.shared_weights && j->core_id > 0;
 
     if (skip_weight_fetch) {
-      current_op_type = "activation";
+      current_op_type = activations_in_buffer ? "none" : "activation";
       n_read_bytes = activation_bytes;
     } else {
       weight_bytes_read_ += weight_bytes;
-      current_op_type = new_row ? "activation+weight" : "weight";
+      if (activations_in_buffer) {
+        current_op_type = "weight";
+      } else {
+        current_op_type = new_row ? "activation+weight" : "weight";
+      }
       n_read_bytes = activation_bytes + weight_bytes;
     }
 
     // Record buffer fill for ACTIVATIONS ONLY - weights go directly to array
     // Activations are buffered and reused across all N-tiles in this M-tile row
-    if (assigned_buffer && new_row && activation_bytes > 0) {
+    if (assigned_buffer && activation_bytes > 0) {
       assigned_buffer->record_write(j->addr, activation_bytes, "activation_fill");
     }
 
@@ -314,8 +332,8 @@ void SystolicArray::SysArrayState::init() {
   // Check if we should skip weight fetch
   bool skip_weight_fetch = arch_config.shared_weights && j->core_id > 0;
 
-  // Reset buffer state
-  activation_in_buffer = false;
+  // Reset buffer state - if activations_in_buffer flag is set, they're already there
+  activation_in_buffer = activations_in_buffer;
 
   if (ws) {
     // Weight Stationary mode
@@ -327,23 +345,26 @@ void SystolicArray::SysArrayState::init() {
     int weight_bytes = std::min(sz, sj->N) * std::min(sz, sj->K) * data_type_width;
     int activation_bytes = std::min(sz, sj->K) * sj->M * data_type_width;
 
-    // Track bytes
-    activation_bytes_read_ += activation_bytes;
+    // Skip activation DRAM fetch if already in buffer
+    int dram_activation_bytes = activations_in_buffer ? 0 : activation_bytes;
+
+    // Track bytes (still count for stats even if not fetched from DRAM)
+    activation_bytes_read_ += dram_activation_bytes;
 
     int total_read_bytes;
     if (skip_weight_fetch) {
-      current_op_type = "activation";
-      total_read_bytes = activation_bytes;
+      current_op_type = activations_in_buffer ? "none" : "activation";
+      total_read_bytes = dram_activation_bytes;
     } else {
       weight_bytes_read_ += weight_bytes;
-      current_op_type = "activation+weight";
-      total_read_bytes = activation_bytes + weight_bytes;
+      current_op_type = activations_in_buffer ? "weight" : "activation+weight";
+      total_read_bytes = dram_activation_bytes + weight_bytes;
     }
 
     // Record buffer fill for ACTIVATIONS ONLY - weights go directly to array
-    // Activations will be reused across all N-tiles in this K-tile row
-    if (assigned_buffer && activation_bytes > 0) {
-      assigned_buffer->record_write(j->addr, activation_bytes, "activation_fill");
+    // Skip if activations already in buffer
+    if (assigned_buffer && dram_activation_bytes > 0) {
+      assigned_buffer->record_write(j->addr, dram_activation_bytes, "activation_fill");
     }
 
     // After initial load, activations will be in buffer
@@ -360,22 +381,25 @@ void SystolicArray::SysArrayState::init() {
     int activation_bytes = std::min(sz, sj->M) * sj->K * batch_size * data_type_width;
     int weight_bytes = std::min(sz, sj->M) * sj->K * data_type_width;
 
-    activation_bytes_read_ += activation_bytes;
+    // Skip activation DRAM fetch if already in buffer
+    int dram_activation_bytes = activations_in_buffer ? 0 : activation_bytes;
+
+    activation_bytes_read_ += dram_activation_bytes;
 
     int n_read_bytes;
     if (skip_weight_fetch) {
-      current_op_type = "activation";
-      n_read_bytes = activation_bytes;
+      current_op_type = activations_in_buffer ? "none" : "activation";
+      n_read_bytes = dram_activation_bytes;
     } else {
       weight_bytes_read_ += weight_bytes;
-      current_op_type = "activation+weight";
-      n_read_bytes = activation_bytes + weight_bytes;
+      current_op_type = activations_in_buffer ? "weight" : "activation+weight";
+      n_read_bytes = dram_activation_bytes + weight_bytes;
     }
 
     // Record buffer fill for ACTIVATIONS ONLY - weights go directly to array
-    // Activations are buffered and reused across all N-tiles in this M-tile row
-    if (assigned_buffer && activation_bytes > 0) {
-      assigned_buffer->record_write(j->addr, activation_bytes, "activation_fill");
+    // Skip if activations already in buffer
+    if (assigned_buffer && dram_activation_bytes > 0) {
+      assigned_buffer->record_write(j->addr, dram_activation_bytes, "activation_fill");
     }
 
     // After initial load, activations will be in buffer

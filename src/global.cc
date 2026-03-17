@@ -21,12 +21,16 @@ int bytes_per_tx;
 std::vector<std::tuple<uint64_t, bool, int, State *>> to_enqueue;
 FILE *vcd = nullptr;
 uint64_t gcycles = 0;
+uint64_t dram_read_cmds = 0;
+uint64_t dram_write_cmds = 0;
 int alloc_task_idx = 0;
 int model_parallelism = 1;
 float freq_sa = 1;
 float freq_vu = 1;
 
 bool do_par = false;
+bool skip_dram_writeback = false;
+bool activations_in_buffer = false;
 char const *rand_chars[] = {"a", "b", "c", "d", "e", "f",
                             "g", "h", "i", "j", "k", "l",
                             "m", "n", "o", "p", "q", "r",

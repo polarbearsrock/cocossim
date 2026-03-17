@@ -134,6 +134,8 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   }
 
   int dram_cmds = 0;
+  dram_read_cmds = 0;
+  dram_write_cmds = 0;
 
   for (auto state: states) {
     n_idle_units[state->get_ty_idx()] += 1;
@@ -240,7 +242,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 #if !defined(SILENCE) && !defined(DSE) || defined(DEBUG)
     if (logged_job_count != jobs_finished || gcycles % 100000 == 0) {
       logged_job_count = jobs_finished;
-      printf("\rPHASE: %d, Cycles: %llu, Jobs finished: %d/%d, DRAM CMDs: %d, Queue: %zu", phase_idx, gcycles, jobs_finished, total_jobs, dram_cmds, to_enqueue.size());
+      printf("\rPHASE: %d, Cycles: %llu, Jobs finished: %d/%d, DRAM CMDs: %d (R: %llu, W: %llu), Queue: %zu", phase_idx, gcycles, jobs_finished, total_jobs, dram_cmds, dram_read_cmds, dram_write_cmds, to_enqueue.size());
       // Debug: print mem_read_left for first state if stuck
       if (gcycles > 1000000 && to_enqueue.size() == 0 && states.size() > 0 && states[0]->j != nullptr) {
         printf(" [S0: rd=%d wr=%d]", states[0]->mem_read_left, states[0]->mem_write_left);
@@ -299,7 +301,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   state_updates.clear();
 #endif
 
-  printf("\rPHASE: %d, Cycles: %llu, Time: %fµs Jobs finished: %d/%d, DRAM CMDs: %d", phase_idx, gcycles, double(gcycles) * cycle_adjust / 1000, jobs_finished, total_jobs, dram_cmds);
+  printf("\rPHASE: %d, Cycles: %llu, Time: %fµs Jobs finished: %d/%d, DRAM CMDs: %d (R: %llu, W: %llu)", phase_idx, gcycles, double(gcycles) * cycle_adjust / 1000, jobs_finished, total_jobs, dram_cmds, dram_read_cmds, dram_write_cmds);
   mem::mem_sys->PrintStats();
   fflush(stdout);
   write_stats(phase_idx);

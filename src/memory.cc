@@ -43,8 +43,10 @@ bool mem::try_enqueue_tx() {
             // Register callback mapping for completion notification (multimap allows duplicates)
             if (is_write) {
                 address_writes_bkwds_lookup.insert({addr, state});
+                dram_write_cmds++;
             } else {
                 address_reads_bkwds_lookup.insert({addr, state});
+                dram_read_cmds++;
             }
             // Remove processed transaction from queue
             if (i != to_enqueue.size() - 1) {

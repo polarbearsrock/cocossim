@@ -55,10 +55,14 @@ extern int bytes_per_tx;
 extern int jobs_finished;
 extern int total_jobs;
 extern uint64_t gcycles;
+extern uint64_t dram_read_cmds;
+extern uint64_t dram_write_cmds;
 extern int alloc_task_idx;
 extern int model_parallelism;
 extern bool do_par;
 extern float freq_sa;
+extern bool skip_dram_writeback;  // When true, outputs stay in on-chip buffer (no DRAM write)
+extern bool activations_in_buffer;  // When true, activations already in buffer (no DRAM fetch)
 
 
 int div_ru(int q, int r);
