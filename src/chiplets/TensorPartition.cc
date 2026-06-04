@@ -652,9 +652,56 @@ bool PartitionValidator::validate_communication_feasibility() const {
 
 bool PartitionValidator::check_memory_constraints(
     uint64_t per_chiplet_memory_bytes) const {
-    // Simplified: assume model size is evenly distributed
-    // In reality, would check per-chiplet requirements
-    return true;  // TODO: Implement detailed memory checking
+    if (per_chiplet_memory_bytes == 0) return false;
+
+    // Pass 1: accumulate per-chiplet weight memory from explicit partition sizes.
+    int n = topology_.get_num_chiplets();
+    std::vector<uint64_t> chiplet_mem(n, 0);
+    bool has_explicit_sizes = false;
+
+    for (const auto& strategy : plan_.get_layer_strategies()) {
+        auto account = [&](const std::vector<TensorPartitionDescriptor>& descs) {
+            for (const auto& td : descs) {
+                if (td.partition_size_bytes == 0) continue;
+                has_explicit_sizes = true;
+                for (int cid : td.chiplet_ids) {
+                    if (cid >= 0 && cid < n)
+                        chiplet_mem[cid] += td.partition_size_bytes;
+                }
+            }
+        };
+        account(strategy.weight_partitions);
+        account(strategy.output_partitions);
+    }
+
+    if (has_explicit_sizes) {
+        for (int i = 0; i < n; i++) {
+            if (chiplet_mem[i] > per_chiplet_memory_bytes) return false;
+        }
+        return true;
+    }
+
+    // Pass 2 (fallback): builders don't always populate partition_size_bytes.
+    // Estimate from total_communication_bytes and primary parallelism type.
+    //
+    // Data Parallel:  AllReduce size ≈ model size; each chiplet holds full model.
+    // Tensor Parallel: weight shards ≪ AllReduce activations — can't estimate reliably.
+    // Pipeline Parallel: P2P activations ≪ model size — can't estimate reliably.
+    //
+    // For TP and PP we conservatively return true (no info to reject).
+    uint64_t total_comm = plan_.get_total_communication_bytes();
+
+    switch (plan_.get_primary_parallelism()) {
+        case ParallelismType::DATA_PARALLEL:
+            // Each layer's AllReduce size ≈ that layer's gradient = its weight size.
+            // Summed over all layers → total_comm ≈ total model size.
+            // Each DP chiplet holds the full model.
+            return total_comm <= per_chiplet_memory_bytes;
+
+        default:
+            // Cannot reliably estimate per-chiplet footprint without explicit sizes.
+            return true;
+    }
 }
 
 PartitionValidator::PerformanceEstimate PartitionValidator::estimate_performance(

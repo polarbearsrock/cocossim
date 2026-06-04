@@ -1,0 +1,20 @@
+# COCOSSim graph v2
+# model=llama7b_block  seq=1  batch=1
+# nodes=13
+#
+# format: <id> <type>[:<parallel>] <dim1> [<dim2> ...] [-> <dep_id1> ...]
+# parallel tag (Matmul only): col=column-parallel linear, head=head-parallel attn
+
+0 LayerNorm 1 4096
+1 Matmul:col 1 4096 4096 -> 0
+2 Matmul:col 1 4096 4096 -> 0
+3 Matmul:col 1 4096 4096 -> 0
+4 Matmul:head 32 128 1 -> 0 1 2
+5 Softmax 32 1 -> 4
+6 Matmul:head 32 1 128 -> 0 3 5
+7 Matmul:col 1 4096 4096 -> 0 6
+8 LayerNorm 1 4096 -> 7
+9 Matmul:col 1 4096 11008 -> 8
+10 Activation 11008 -> 9
+11 Matmul:col 1 4096 11008 -> 8
+12 Matmul:col 1 11008 4096 -> 10 11

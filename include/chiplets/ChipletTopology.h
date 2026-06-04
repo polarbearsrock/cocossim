@@ -184,6 +184,12 @@ public:
     void print_topology(std::ostream& os) const;
     std::string to_string() const;
 
+    /**
+     * Print runtime link statistics (utilization, bytes, energy per link).
+     * @param current_cycle  Current simulation cycle; used to compute utilization.
+     */
+    void print_status(std::ostream& os, uint64_t current_cycle = 0) const;
+
 private:
     TopologyType type_;
     int num_chiplets_;

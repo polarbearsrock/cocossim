@@ -62,9 +62,27 @@ if (${USE_VCD})
 endif()
 
 # Chiplet perf model
+# Links the core globals, buffer system, SA/VPU compute units (cycle-accurate),
+# and chiplet infrastructure.  StandardParser.cc is NOT included — the chiplet
+# main has its own argument parser.
 add_executable(perf_model_chiplet
     src/main_chiplet.cc
-    src/EnergyModel.cc
+    ${CORE_SOURCES}
+    ${BUFFER_SOURCES}
+    src/frontends/standard/StandardArch.cc
+    src/frontends/standard/StandardLayers.cc
+    src/units/standard/SysArray.cc
+    src/units/standard/VectorUnit.cc
     ${CHIPLET_SOURCES}
 )
-target_include_directories(perf_model_chiplet PRIVATE include)
+target_include_directories(perf_model_chiplet PRIVATE include dramsim3/ext/headers)
+target_link_libraries(perf_model_chiplet PRIVATE dramsim3)
+
+# E1: UCIe link micro-validation (standalone, no DRAMSim3)
+add_executable(test_ucie_validation
+    tests/test_ucie_validation.cc
+    src/chiplets/UCIeConfig.cc
+    src/chiplets/UCIePacket.cc
+    src/chiplets/UCIeLink.cc
+)
+target_include_directories(test_ucie_validation PRIVATE include)

@@ -468,9 +468,44 @@ std::vector<int> ChipletTopology::route_xy(int src, int dst) const {
 }
 
 std::vector<int> ChipletTopology::route_yx(int src, int dst) const {
-    // Similar to XY but Y first
-    // Implementation similar to route_xy, swapping X and Y
-    return route_xy(src, dst);  // Simplified for now
+    if (type_ != TopologyType::MESH_2D && type_ != TopologyType::TORUS_2D) {
+        return route_shortest_path(src, dst);
+    }
+
+    auto src_pos = chiplet_positions_.at(src);
+    auto dst_pos = chiplet_positions_.at(dst);
+
+    std::vector<int> route;
+    route.push_back(src);
+
+    int current = src;
+    auto current_pos = src_pos;
+
+    // Route Y direction first
+    while (current_pos.y != dst_pos.y) {
+        if (current_pos.y < dst_pos.y) {
+            current += mesh_width_;
+            current_pos.y++;
+        } else {
+            current -= mesh_width_;
+            current_pos.y--;
+        }
+        route.push_back(current);
+    }
+
+    // Then route X direction
+    while (current_pos.x != dst_pos.x) {
+        if (current_pos.x < dst_pos.x) {
+            current++;
+            current_pos.x++;
+        } else {
+            current--;
+            current_pos.x--;
+        }
+        route.push_back(current);
+    }
+
+    return route;
 }
 
 std::vector<int> ChipletTopology::route_shortest_path(int src, int dst) const {
@@ -605,6 +640,66 @@ void ChipletTopology::print_topology(std::ostream& os) const {
             }
         }
         os << "\n";
+    }
+}
+
+void ChipletTopology::print_status(std::ostream& os, uint64_t current_cycle) const {
+    os << "\n=== Chiplet Topology Link Status ===\n";
+
+    const std::string type_names[] = {
+        "LINEAR", "RING", "MESH_2D", "TORUS_2D", "STAR", "TREE", "FULLY_CONNECTED", "CUSTOM"
+    };
+    os << "  Topology: " << type_names[static_cast<int>(type_)] << "\n";
+    os << "  Chiplets: " << num_chiplets_
+       << " | Bidirectional links: " << (links_.size() / 2) << "\n\n";
+
+    // Per-link stats (forward direction only — skip reverse links, which are odd indices).
+    // Forward links are even-indexed: link 0 (0→1 fwd), link 1 (1→0 rev), link 2 (2→3 fwd), …
+    double total_util = 0.0;
+    double total_energy = 0.0;
+    uint64_t total_bytes = 0;
+    uint64_t total_pkts = 0;
+    int link_count = 0;
+
+    os << "  " << std::left
+       << std::setw(12) << "Link"
+       << std::setw(10) << "Util%"
+       << std::setw(14) << "Bytes TX"
+       << std::setw(10) << "Pkts TX"
+       << std::setw(12) << "Energy(mJ)"
+       << std::setw(10) << "Stalls\n";
+    os << "  " << std::string(66, '-') << "\n";
+
+    for (size_t i = 0; i < links_.size(); i += 2) {
+        const UCIeLink& fwd = *links_[i];
+        UCIeLinkStats ls = fwd.get_stats();
+        ls.calculate_derived_stats(current_cycle);
+
+        os << "  " << std::left
+           << std::setw(12) << (std::to_string(fwd.get_src_chiplet()) + "->" +
+                                std::to_string(fwd.get_dst_chiplet()))
+           << std::setw(10) << std::fixed << std::setprecision(1)
+                            << (ls.utilization * 100.0)
+           << std::setw(14) << ls.bytes_transmitted
+           << std::setw(10) << ls.packets_transmitted
+           << std::setw(12) << std::setprecision(4) << ls.total_energy_mJ
+           << std::setw(10) << (ls.credit_stalls + ls.buffer_full_stalls)
+           << "\n";
+
+        total_util   += ls.utilization;
+        total_energy += ls.total_energy_mJ;
+        total_bytes  += ls.bytes_transmitted;
+        total_pkts   += ls.packets_transmitted;
+        link_count++;
+    }
+
+    if (link_count > 0) {
+        os << "\n  Totals:";
+        os << "  avg util=" << std::fixed << std::setprecision(1)
+           << (total_util / link_count * 100.0) << "%"
+           << "  bytes=" << (total_bytes / 1024.0 / 1024.0) << " MB"
+           << "  pkts=" << total_pkts
+           << "  energy=" << std::setprecision(3) << total_energy << " mJ\n";
     }
 }
 

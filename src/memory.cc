@@ -75,7 +75,7 @@ void mem::print_debug_stats() {
 }
 
 void mem::setup() {
-  dramsim3config = new dramsim3::Config("../dramsim3/configs/HBM_custom.ini", "./");
+  dramsim3config = new dramsim3::Config("../dramsim3/configs/HBM2_8Gb_x128.ini", "./");
   mem_sys = new mem_ty(*dramsim3config, "./", [](uint64_t addr) {
         read_callbacks++;
         auto it = address_reads_bkwds_lookup.find(addr);

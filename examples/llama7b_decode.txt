@@ -1,0 +1,22 @@
+# LLaMA-7B Decode (autoregressive, batch=1, seq=1)
+# One full transformer block — multiply cycles by 32 for full model
+# Format: Matmul M K N  (MACs = M*K*N)
+# H=4096, FFN=11008, QKV_out=3*H=12288
+#
+# Memory-bound regime: weights dominate, each chiplet loads its shard from HBM
+# TP splits N (column-parallel for proj, row-parallel for output/down)
+
+# QKV projection  (H → 3H, split column-parallel across chiplets)
+Matmul 1 4096 12288
+
+# Attention output projection  (H → H, row-parallel)
+Matmul 1 4096 4096
+
+# FFN gate projection  (H → FFN, column-parallel, SwiGLU)
+Matmul 1 4096 11008
+
+# FFN up projection   (H → FFN, column-parallel, SwiGLU)
+Matmul 1 4096 11008
+
+# FFN down projection  (FFN → H, row-parallel)
+Matmul 1 11008 4096

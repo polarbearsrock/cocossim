@@ -26,7 +26,7 @@ namespace buffers {
     struct BufferHierarchyConfig;
 }
 
-const int systolic_fpu_latency = 2;
+const int systolic_fpu_latency = 1;
 const int batch_size = 1;
 const int n_mxus = 4;
 const int n_vpus = 4;

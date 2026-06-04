@@ -33,10 +33,21 @@
 #include "chiplets/TensorPartition.h"
 #include "chiplets/UCIeLink.h"
 #include "chiplets/UCIePacket.h"
+#include "units/standard/SysArray.h"
+#include "units/standard/VectorUnit.h"
+#include "Job.h"
 #include <memory>
 #include <vector>
 #include <queue>
+#include <string>
 #include <unordered_map>
+
+// Forward-declare MemorySystem so the header doesn't pull in dramsim3 internals.
+// The full definition is only needed in ChipletArch.cc.
+namespace dramsim3 { class MemorySystem; }
+
+// Forward-declare State (used in drain_compute_dram_queue signature).
+struct State;
 
 namespace chiplets {
 
@@ -65,6 +76,7 @@ struct Chiplet {
     uint64_t packets_received;
     uint64_t bytes_sent;
     uint64_t bytes_received;
+    uint64_t dram_stall_cycles;  // cycles compute waited for DRAM
 
     Chiplet()
         : chiplet_id(-1)
@@ -78,7 +90,8 @@ struct Chiplet {
         , packets_sent(0)
         , packets_received(0)
         , bytes_sent(0)
-        , bytes_received(0) {}
+        , bytes_received(0)
+        , dram_stall_cycles(0) {}
 };
 
 /**
@@ -98,12 +111,23 @@ struct ChipletJob {
     std::vector<CollectiveOperation> collective_ops;
     std::vector<UCIePacket*> pending_packets;
 
+    // Input data size (bytes, per job — each chiplet fetches its shard from HBM)
+    uint64_t data_size_bytes;
+
+    // Cycle-accurate compute job (SA or VPU). When non-null, the FSM is ticked
+    // each cycle instead of using the countdown timer below.
+    Job* compute_job_ptr = nullptr;
+
     // Timing
     uint64_t creation_cycle;
     uint64_t start_cycle;
+    uint64_t compute_start_cycle;  // cycle when COMPUTING phase actually began
     uint64_t completion_cycle;
-    uint64_t compute_cycles;
+    uint64_t compute_cycles;       // used only when compute_job_ptr == nullptr
     uint64_t communication_cycles;
+
+    // DRAM tracking
+    bool dram_issued;              // have DRAM reads been enqueued for this job?
 
     // Status
     enum class Status {
@@ -119,11 +143,14 @@ struct ChipletJob {
     ChipletJob()
         : job_id(-1)
         , parallelism(ParallelismType::DATA_PARALLEL)
+        , data_size_bytes(0)
         , creation_cycle(0)
         , start_cycle(0)
+        , compute_start_cycle(0)
         , completion_cycle(0)
         , compute_cycles(0)
         , communication_cycles(0)
+        , dram_issued(false)
         , status(Status::CREATED) {}
 };
 
@@ -167,12 +194,21 @@ public:
      */
     ChipletTopology* get_topology() { return topology_.get(); }
 
+    /**
+     * Initialize per-chiplet DRAMSim3 instances.
+     * Must be called before run_until_idle().
+     *
+     * @param dram_config_path  Path to DRAMSim3 .ini config (e.g. "../dramsim3/configs/HBM2_8Gb_x128.ini")
+     * @param sa_freq_ghz       Systolic array clock frequency in GHz (default 1.0)
+     */
+    void init_dram(const std::string& dram_config_path, double sa_freq_ghz = 1.0);
+
     // ========================================================================
     // Job Submission
     // ========================================================================
 
     /**
-     * Submit a compute job
+     * Submit a compute job (countdown timer — backward compat)
      *
      * @param operation_type Type of operation (e.g., "matmul", "conv")
      * @param layer_id Layer ID for partitioning strategy lookup
@@ -184,6 +220,37 @@ public:
                    int layer_id,
                    uint64_t data_size_bytes,
                    uint64_t compute_cycles);
+
+    /**
+     * Submit a compute job (cycle-accurate SA/VPU simulation)
+     *
+     * @param operation_type Type of operation (e.g., "Matmul")
+     * @param layer_id Layer ID for partitioning strategy lookup
+     * @param data_size_bytes Size of input data (for DRAMSim3)
+     * @param compute_job Heap-allocated SA or VPU job (ownership transferred)
+     * @return job_id
+     */
+    int submit_job(const std::string& operation_type,
+                   int layer_id,
+                   uint64_t data_size_bytes,
+                   Job* compute_job);
+
+    /**
+     * Submit a compute job pinned to a specific chiplet subset.
+     * Used for data-parallel replicas where each replica owns a disjoint
+     * set of chiplets. Bypasses partition_plan_.
+     */
+    int submit_job(const std::string& operation_type,
+                   int layer_id,
+                   uint64_t data_size_bytes,
+                   Job* compute_job,
+                   const std::vector<int>& chiplet_subset);
+
+    /**
+     * Set the systolic array size (must match the SysArrayState used).
+     * Called once before simulation begins.
+     */
+    void set_sa_sz(int sa_sz);
 
     /**
      * Submit a collective communication operation
@@ -205,7 +272,7 @@ public:
     /**
      * Run until all jobs complete or timeout
      */
-    void run_until_idle(uint64_t max_cycles = 1000000);
+    void run_until_idle(uint64_t max_cycles = 100000000ULL);
 
     // ========================================================================
     // Query
@@ -241,6 +308,7 @@ public:
         uint64_t total_compute_cycles;
         uint64_t total_communication_cycles;
         uint64_t total_idle_cycles;
+        uint64_t total_dram_stall_cycles;  // cycles compute FSM was done but DRAM outstanding
 
         // Jobs
         int jobs_submitted;
@@ -290,6 +358,14 @@ private:
     std::unique_ptr<ModelPartitionPlan> partition_plan_;
     std::vector<Chiplet> chiplets_;
 
+    // ── Cycle-accurate compute units ────────────────────────────────────────
+    // One representative SA and VPU state shared across all chiplets.
+    // All chiplets execute the same-shaped workload shard, so a single
+    // state machine correctly models when compute finishes.
+    int sa_sz_ = 64;
+    SystolicArray::SysArrayState* sa_state_ = nullptr;
+    VectorUnit::VecUnitState*     vpu_state_ = nullptr;
+
     // Job management
     std::vector<ChipletJob> jobs_;
     std::queue<int> pending_job_queue_;
@@ -298,6 +374,27 @@ private:
 
     // Statistics
     ArchStats stats_;
+
+    // ========================================================================
+    // Per-Chiplet DRAMSim3 State
+    // ========================================================================
+
+    struct ChipletDRAMState {
+        dramsim3::MemorySystem* mem_sys = nullptr;
+        double tck_ns       = 1.0;   // DRAM cycle time in ns
+        double clock_accum  = 0.0;   // fractional DRAM ticks accumulated
+        uint64_t bytes_per_tx = 64;  // bytes per DRAM transaction
+        uint64_t outstanding_reads = 0;  // decremented by read callback
+        uint64_t next_addr_offset = 0;   // next free address offset (within this chiplet's space)
+        uint64_t dram_reqs_remaining = 0; // reads not yet issued to DRAMSim3 for current job
+    };
+
+    // Stride between chiplet address spaces: 1 TB per chiplet, avoids collisions
+    static constexpr uint64_t CHIPLET_ADDR_STRIDE = 1ULL << 40;
+
+    std::vector<ChipletDRAMState> dram_states_;
+    double sa_freq_ghz_ = 1.0;
+    bool dram_enabled_ = false;
 
     // ========================================================================
     // Internal Methods
@@ -346,6 +443,14 @@ private:
      * Get chiplet mutable reference
      */
     Chiplet& get_chiplet_mut(int chiplet_id);
+
+    /**
+     * Drain the global to_enqueue list for a specific state machine, instantly
+     * completing all pending DRAM transactions it issued.
+     * This decouples the SA/VPU arithmetic timing from the DRAM model:
+     * the FSM sees "instant DRAM" while DRAMSim3 independently models real timing.
+     */
+    void drain_compute_dram_queue(State* state);
 };
 
 /**

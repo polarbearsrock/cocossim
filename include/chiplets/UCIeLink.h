@@ -210,7 +210,9 @@ private:
     int tx_credits_;                    // Available transmit credits
     int rx_credits_;                    // Credits from receiver (for tracking)
     int max_credits_;                   // Maximum credits (= buffer capacity)
-    std::deque<int> pending_credit_returns_;  // Credits to be returned with delay
+    // Each entry is {return_cycle, num_credits}; credits become available
+    // only once current_cycle_ >= return_cycle (enforces credit_return_latency).
+    std::deque<std::pair<uint64_t, int>> pending_credit_returns_;
 
     // Buffering
     // Reference: [1] Section 3.4.3 - Buffer Requirements
@@ -229,12 +231,28 @@ private:
     // Statistics
     UCIeLinkStats stats_;
 
+    // ── Power State FSM ────────────────────────────────────────────────────
+    // Reference: UCIe Spec 1.0 Section 5.1 - Link Power States
+    //
+    // L0 (active)   ──[L1_ENTRY_THRESHOLD idle cycles]──► L1 (standby, 10% power)
+    // L1 (standby)  ──[L2_ENTRY_THRESHOLD more idle]────► L2 (off,      0  power)
+    // L1/L2 → L0:  triggered by non-empty tx_buffer; transmission blocked
+    //              for L1_WAKEUP_CYCLES / L2_WAKEUP_CYCLES before resuming.
+    static constexpr uint64_t L1_ENTRY_THRESHOLD =  128;  // ~128 ns @ 1 GHz
+    static constexpr uint64_t L1_WAKEUP_CYCLES   =   20;  // UCIe spec §5.1.2
+    static constexpr uint64_t L2_ENTRY_THRESHOLD = 10000; // ~10 µs @ 1 GHz
+    static constexpr uint64_t L2_WAKEUP_CYCLES   =  200;  // UCIe spec §5.1.3
+
+    uint64_t consecutive_idle_cycles_;  // Cycles since last activity (for L1/L2 entry)
+    uint64_t wakeup_remaining_;         // Countdown until L1/L2→L0 completes
+
     // Helper Functions
     int calculate_flit_count(uint64_t packet_size_bytes) const;
     int calculate_transmission_cycles(const UCIePacket* packet) const;
     void process_in_flight_packets();
     void process_credit_returns();
     void update_power_stats();
+    void update_power_state();          // Advance the L0/L1/L2 FSM each cycle
 };
 
 } // namespace chiplets

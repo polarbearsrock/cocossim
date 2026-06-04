@@ -1,0 +1,21 @@
+# LLaMA-7B Prefill (batch=1, seq=512)
+# One full transformer block — multiply cycles by 32 for full model
+# Format: Matmul M K N  (MACs = M*K*N)
+# H=4096, FFN=11008, S=512
+#
+# Compute-bound regime at large batch/seq; DRAM loads weights once per step
+
+# QKV projection  (S × H → S × 3H)
+Matmul 512 4096 12288
+
+# Attention output projection  (S × H → S × H)
+Matmul 512 4096 4096
+
+# FFN gate projection  (S × H → S × FFN, SwiGLU)
+Matmul 512 4096 11008
+
+# FFN up projection   (S × H → S × FFN, SwiGLU)
+Matmul 512 4096 11008
+
+# FFN down projection  (S × FFN → S × H)
+Matmul 512 11008 4096

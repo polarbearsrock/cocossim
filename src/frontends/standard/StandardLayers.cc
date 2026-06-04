@@ -480,6 +480,7 @@ JobPair MultiHeadSelfAttention(const ArchConfig &a_config, const LayerConfig &l_
 }
 
 
+
 JobCreate_f getLayerLambda(const std::string &layer_type) {
   if (layer_type == "Matmul")
     return Matmul;

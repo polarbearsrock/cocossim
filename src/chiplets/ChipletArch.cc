@@ -9,9 +9,15 @@
 
 #include "chiplets/ChipletArch.h"
 #include "chiplets/UCIeConfig.h"
+#include "memory_system.h"  // dramsim3::MemorySystem (full def needed here only)
+#include "State.h"
+#include "global.h"
+#include "frontends/standard/StandardArch.h"
+#include "frontends/standard/StandardUnits.h"
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <cmath>
 
 namespace chiplets {
 
@@ -24,6 +30,7 @@ void ChipletArch::ArchStats::reset() {
     total_compute_cycles = 0;
     total_communication_cycles = 0;
     total_idle_cycles = 0;
+    total_dram_stall_cycles = 0;
     jobs_submitted = 0;
     jobs_completed = 0;
     jobs_failed = 0;
@@ -48,6 +55,8 @@ void ChipletArch::ArchStats::print_summary(std::ostream& os) const {
        << " (" << (total_communication_cycles * 100.0 / std::max(total_cycles, 1ULL)) << "%)\n";
     os << "    Idle Cycles: " << total_idle_cycles
        << " (" << (total_idle_cycles * 100.0 / std::max(total_cycles, 1ULL)) << "%)\n";
+    os << "    DRAM Stall Cycles: " << total_dram_stall_cycles
+       << " (" << (total_dram_stall_cycles * 100.0 / std::max(total_cycles, 1ULL)) << "%)\n";
 
     // Jobs
     os << "\n  Jobs:\n";
@@ -95,7 +104,74 @@ ChipletArch::ChipletArch(int num_chiplets,
         chiplets_[i].name = "Chiplet_" + std::to_string(i);
     }
 
+    // SA/VPU states are created in set_sa_sz() after sa_sz is known.
+    // Ensure the global DRAM transaction size is set to a sensible default;
+    // init_dram() will update it from the actual DRAMSim3 config.
+    if (bytes_per_tx == 0) bytes_per_tx = 64;
+
+    // Chiplet mode: outputs stay in the on-chip register file / L1;
+    // DRAMSim3 models actual weight/activation traffic separately.
+    skip_dram_writeback = true;
+
     stats_.reset();
+}
+
+// ============================================================================
+// Compute-unit initialisation
+// ============================================================================
+
+void ChipletArch::set_sa_sz(int sa_sz) {
+    sa_sz_ = sa_sz;
+
+    // (Re-)create representative compute-unit states.
+    delete sa_state_;
+    delete vpu_state_;
+    sa_state_ = new SystolicArray::SysArrayState(sa_sz, /*ws=*/false);
+    vpu_state_ = new VectorUnit::VecUnitState(sa_sz);
+
+    // Configure the global arch_config that SysArray.cc reads.
+    // n_cores=1 (one SA per chiplet), OS dataflow, no shared-weight skipping.
+    frontend::standard::arch_config =
+        frontend::standard::ArchConfig(1, sa_sz, sa_sz, /*ws=*/false, /*shared=*/false);
+}
+
+// ============================================================================
+// DRAMSim3 Integration
+// ============================================================================
+
+void ChipletArch::init_dram(const std::string& dram_config_path, double sa_freq_ghz) {
+    sa_freq_ghz_ = sa_freq_ghz;
+    dram_states_.resize(num_chiplets_);
+
+    for (int i = 0; i < num_chiplets_; i++) {
+        // Callback: decrement outstanding_reads for this chiplet.
+        // Each chiplet has at most one active compute job (enforced by schedule_jobs),
+        // so we can unconditionally decrement the chiplet's counter.
+        auto read_cb = [this, i](uint64_t /*addr*/) {
+            if (dram_states_[i].outstanding_reads > 0)
+                dram_states_[i].outstanding_reads--;
+        };
+        auto write_cb = [](uint64_t /*addr*/) {};  // writes fire-and-forget
+
+        dram_states_[i].mem_sys = new dramsim3::MemorySystem(
+            dram_config_path, "./", read_cb, write_cb);
+
+        dram_states_[i].tck_ns = dram_states_[i].mem_sys->GetTCK();
+
+        // bytes_per_tx = bus width in bytes * burst length
+        uint64_t bus_bytes = static_cast<uint64_t>(
+            dram_states_[i].mem_sys->GetBusBits()) / 8;
+        uint64_t burst = static_cast<uint64_t>(
+            dram_states_[i].mem_sys->GetBurstLength());
+        dram_states_[i].bytes_per_tx = bus_bytes * burst;
+        if (dram_states_[i].bytes_per_tx == 0)
+            dram_states_[i].bytes_per_tx = 64;  // safe fallback
+    }
+
+    dram_enabled_ = true;
+    std::cout << "ChipletArch: DRAMSim3 initialized for " << num_chiplets_
+              << " chiplets (tCK=" << dram_states_[0].tck_ns
+              << "ns, bytes_per_tx=" << dram_states_[0].bytes_per_tx << ")\n";
 }
 
 // ============================================================================
@@ -134,6 +210,7 @@ int ChipletArch::submit_job(const std::string& operation_type,
     job.operation_type = operation_type;
     job.creation_cycle = current_cycle_;
     job.compute_cycles = compute_cycles;
+    job.data_size_bytes = data_size_bytes;
     job.status = ChipletJob::Status::CREATED;
 
     // Get partitioning strategy from plan
@@ -155,6 +232,59 @@ int ChipletArch::submit_job(const std::string& operation_type,
 
     stats_.jobs_submitted++;
 
+    return job.job_id;
+}
+
+int ChipletArch::submit_job(const std::string& operation_type,
+                           int layer_id,
+                           uint64_t data_size_bytes,
+                           Job* compute_job) {
+    // Build the ChipletJob the same way as the countdown overload, but store
+    // the SA/VPU job pointer so execute_compute() can tick the FSM.
+    ChipletJob job;
+    job.job_id = next_job_id_++;
+    job.operation_type = operation_type;
+    job.creation_cycle = current_cycle_;
+    job.compute_cycles = 0;           // unused when compute_job_ptr is set
+    job.compute_job_ptr = compute_job;
+    job.data_size_bytes = data_size_bytes;
+    job.status = ChipletJob::Status::CREATED;
+
+    if (partition_plan_ && layer_id >= 0) {
+        const auto& strategy = partition_plan_->get_layer_strategy(layer_id);
+        job.parallelism = strategy.parallelism;
+        job.participating_chiplets = partition_plan_->get_chiplets_for_layer(layer_id);
+    } else {
+        job.parallelism = ParallelismType::DATA_PARALLEL;
+        for (int i = 0; i < num_chiplets_; i++)
+            job.participating_chiplets.push_back(i);
+    }
+
+    jobs_.push_back(job);
+    pending_job_queue_.push(job.job_id);
+    stats_.jobs_submitted++;
+    return job.job_id;
+}
+
+int ChipletArch::submit_job(const std::string& operation_type,
+                           int layer_id,
+                           uint64_t data_size_bytes,
+                           Job* compute_job,
+                           const std::vector<int>& chiplet_subset) {
+    ChipletJob job;
+    job.job_id = next_job_id_++;
+    job.operation_type = operation_type;
+    job.creation_cycle = current_cycle_;
+    job.compute_cycles = 0;
+    job.compute_job_ptr = compute_job;
+    job.data_size_bytes = data_size_bytes;
+    job.status = ChipletJob::Status::CREATED;
+    job.parallelism = ParallelismType::DATA_PARALLEL;
+    job.participating_chiplets = chiplet_subset;
+
+    jobs_.push_back(job);
+    pending_job_queue_.push(job.job_id);
+    stats_.jobs_submitted++;
     return job.job_id;
 }
 
@@ -190,19 +320,33 @@ void ChipletArch::tick(uint64_t current_cycle) {
     // 1. Schedule new jobs
     schedule_jobs();
 
-    // 2. Execute compute phase
+    // 2. Tick each chiplet's DRAMSim3 instance.
+    //    Uses the same differential-accumulator approach as Arch.cc so that
+    //    DRAM and SA clock domains stay correctly phased even if freq_sa != 1.0.
+    if (dram_enabled_) {
+        for (auto& ds : dram_states_) {
+            // differential = tCK_ns * sa_freq_ghz  (DRAM ticks per SA cycle)
+            ds.clock_accum += ds.tck_ns * sa_freq_ghz_;
+            while (ds.clock_accum >= 1.0) {
+                ds.mem_sys->ClockTick();
+                ds.clock_accum -= 1.0;
+            }
+        }
+    }
+
+    // 3. Execute compute phase (issues DRAM reads, stalls on completion)
     execute_compute();
 
-    // 3. Execute communication phase
+    // 4. Execute communication phase
     execute_communication();
 
-    // 4. Tick the topology (UCIe links)
+    // 5. Tick the topology (UCIe links)
     topology_->tick(current_cycle);
 
-    // 5. Check for completions
+    // 6. Check for completions
     check_completions();
 
-    // 6. Update statistics
+    // 7. Update statistics
     update_stats();
 }
 
@@ -273,12 +417,12 @@ void ChipletArch::print_status(std::ostream& os) const {
         os << "    " << chiplet.name << ": "
            << (chiplet.is_active ? "ACTIVE" : "IDLE")
            << " | Memory: " << (chiplet.memory_used_bytes / 1024.0 / 1024.0) << "/"
-           << (chiplet.memory_capacity_bytes / 1024.0 / 1024.0) << " MB\n";
+           << (chiplet.memory_capacity_bytes / 1024.0 / 1024.0) << " MB"
+           << " | DRAM stall cycles: " << chiplet.dram_stall_cycles << "\n";
     }
 
     // Print topology status
-    // TODO: Implement ChipletTopology::print_status()
-    // topology_->print_status(os);
+    topology_->print_status(os, current_cycle_);
 }
 
 const Chiplet& ChipletArch::get_chiplet(int chiplet_id) const {
@@ -298,6 +442,28 @@ Chiplet& ChipletArch::get_chiplet_mut(int chiplet_id) {
 // ============================================================================
 // Internal Methods
 // ============================================================================
+
+void ChipletArch::drain_compute_dram_queue(State* state) {
+    // Iterate the global to_enqueue list and instantly complete every read/write
+    // issued by this state machine so mem_read_left / mem_write_left reach zero
+    // without real DRAM latency. DRAMSim3 provides the actual timing independently.
+    auto it = to_enqueue.begin();
+    while (it != to_enqueue.end()) {
+        State* target = std::get<3>(*it);
+        if (target == state) {
+            bool is_write = std::get<1>(*it);
+            if (is_write) {
+                if (state->mem_write_left > 0) state->mem_write_left--;
+            } else {
+                if (state->mem_read_left  > 0) state->mem_read_left--;
+            }
+            if (state->mem_queued > 0) state->mem_queued--;
+            it = to_enqueue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 void ChipletArch::schedule_jobs() {
     // Simple FIFO scheduling
@@ -337,19 +503,112 @@ void ChipletArch::execute_compute() {
         ChipletJob& job = jobs_[job_id];
 
         if (job.status == ChipletJob::Status::SCHEDULED) {
-            // Start compute phase
             job.status = ChipletJob::Status::COMPUTING;
+            job.compute_start_cycle = current_cycle_;
+            job.dram_issued = false;
         }
 
         if (job.status == ChipletJob::Status::COMPUTING) {
-            // Check if compute phase is done
-            uint64_t cycles_elapsed = current_cycle_ - job.start_cycle;
-            if (cycles_elapsed >= job.compute_cycles) {
-                // Move to communication phase
+
+            // On the first cycle of COMPUTING, compute how many DRAM reads are
+            // needed per chiplet. Issuance is spread across cycles (streaming)
+            // to avoid overwhelming the DRAM queue in a single tick.
+            if (!job.dram_issued && dram_enabled_) {
+                job.dram_issued = true;
+
+                uint64_t n_chiplets = std::max<uint64_t>(
+                    1, job.participating_chiplets.size());
+                uint64_t bytes_per_chiplet = job.data_size_bytes / n_chiplets;
+
+                for (int cid : job.participating_chiplets) {
+                    auto& ds = dram_states_[cid];
+                    ds.dram_reqs_remaining = (bytes_per_chiplet + ds.bytes_per_tx - 1)
+                                             / ds.bytes_per_tx;
+                }
+            }
+
+            // Each COMPUTING cycle, stream up to MAX_DRAM_ISSUE_PER_CYCLE reads
+            // per chiplet into DRAMSim3 (bandwidth-limited streaming model).
+            static constexpr uint64_t MAX_DRAM_ISSUE_PER_CYCLE = 16;
+            if (dram_enabled_) {
+                for (int cid : job.participating_chiplets) {
+                    auto& ds = dram_states_[cid];
+                    uint64_t issued = 0;
+                    while (ds.dram_reqs_remaining > 0 && issued < MAX_DRAM_ISSUE_PER_CYCLE) {
+                        uint64_t addr = (static_cast<uint64_t>(cid) * CHIPLET_ADDR_STRIDE)
+                                        + ds.next_addr_offset;
+                        if (!ds.mem_sys->WillAcceptTransaction(addr, false))
+                            break;  // queue full — retry next cycle
+                        if (ds.mem_sys->AddTransaction(addr, false)) {
+                            ds.outstanding_reads++;
+                            ds.next_addr_offset += ds.bytes_per_tx;
+                            ds.dram_reqs_remaining--;
+                            issued++;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // ── Compute completion check ──────────────────────────────────
+            // If a cycle-accurate SA/VPU job was provided, tick its FSM and
+            // drain the to_enqueue list so the FSM sees "instant DRAM" (the
+            // actual DRAM timing is captured by DRAMSim3 above).
+            // Fall back to the countdown timer for backward compatibility.
+            bool compute_done;
+            if (job.compute_job_ptr != nullptr) {
+                Job* cj = job.compute_job_ptr;
+                if (!cj->is_done) {
+                    // Assign to the representative state machine on first tick.
+                    State* active_state = nullptr;
+                    if (sa_state_ != nullptr && cj->get_type() == SYSTOLIC_ARRAY_IDX) {
+                        active_state = sa_state_;
+                    } else if (vpu_state_ != nullptr && cj->get_type() == VECTOR_UNIT_IDX) {
+                        active_state = vpu_state_;
+                    }
+                    if (active_state != nullptr) {
+                        if (active_state->j == nullptr) {
+                            active_state->j = cj;
+                            active_state->init();
+                        }
+                        int dummy_idle = 0;
+                        int dummy_n[4] = {0};
+                        active_state->increment(
+                            [](Job*) {},   // no-op enqueue callback
+                            dummy_idle, dummy_n);
+                        // Drain the to_enqueue entries for this state: the FSM
+                        // sees instant DRAM so arithmetic cycles are the bottleneck.
+                        drain_compute_dram_queue(active_state);
+                    }
+                }
+                compute_done = cj->is_done;
+            } else {
+                uint64_t cycles_elapsed = current_cycle_ - job.compute_start_cycle;
+                compute_done = (cycles_elapsed >= job.compute_cycles);
+            }
+
+            bool dram_done = true;
+            if (dram_enabled_) {
+                for (int cid : job.participating_chiplets) {
+                    if (dram_states_[cid].dram_reqs_remaining > 0 ||
+                        dram_states_[cid].outstanding_reads > 0) {
+                        dram_done = false;
+                        break;
+                    }
+                }
+            }
+
+            // Count cycles where compute is finished but DRAM is still outstanding
+            if (compute_done && !dram_done) {
+                for (int cid : job.participating_chiplets)
+                    chiplets_[cid].dram_stall_cycles++;
+            }
+
+            if (compute_done && dram_done) {
                 if (!job.collective_ops.empty() || !job.pending_packets.empty()) {
                     job.status = ChipletJob::Status::COMMUNICATING;
                 } else {
-                    // No communication needed, complete
                     job.status = ChipletJob::Status::COMPLETED;
                     job.completion_cycle = current_cycle_;
                 }
@@ -363,14 +622,26 @@ void ChipletArch::execute_communication() {
         ChipletJob& job = jobs_[job_id];
 
         if (job.status == ChipletJob::Status::COMMUNICATING) {
-            // Try to send pending packets
+            // Forward packets that finished a hop but haven't reached their final
+            // destination yet (multi-hop routing: current_chiplet != dst_chiplet).
+            for (auto* packet : job.pending_packets) {
+                if (packet->status == PacketStatus::COMPLETED &&
+                    packet->current_chiplet != packet->dst_chiplet) {
+                    // Advance the logical source to the intermediate chiplet so
+                    // route_and_send_packet() computes the remaining sub-route.
+                    packet->src_chiplet = packet->current_chiplet;
+                    packet->status = PacketStatus::CREATED;
+                }
+            }
+
+            // Try to send CREATED packets (includes freshly forwarded ones above)
             for (auto* packet : job.pending_packets) {
                 if (packet->status == PacketStatus::CREATED) {
                     route_and_send_packet(packet);
                 }
             }
 
-            // Check if all packets completed
+            // Check if all packets have reached their final destination.
             bool all_done = true;
             for (const auto* packet : job.pending_packets) {
                 if (packet->status != PacketStatus::COMPLETED) {
@@ -418,33 +689,47 @@ void ChipletArch::check_completions() {
 void ChipletArch::update_stats() {
     stats_.total_cycles = current_cycle_;
 
+    // Track per-cycle compute/communication cycles
+    for (int job_id : active_jobs_) {
+        const ChipletJob& job = jobs_[job_id];
+        if (job.status == ChipletJob::Status::COMPUTING)
+            stats_.total_compute_cycles++;
+        else if (job.status == ChipletJob::Status::COMMUNICATING)
+            stats_.total_communication_cycles++;
+    }
+
+    // Snapshot DRAM stall cycles (max across chiplets — they stall in lockstep for TP)
+    uint64_t max_dram_stall = 0;
+    for (const auto& chiplet : chiplets_)
+        max_dram_stall = std::max(max_dram_stall, chiplet.dram_stall_cycles);
+    stats_.total_dram_stall_cycles = max_dram_stall;
+
     // Calculate chiplet utilization
     int active_chiplets = 0;
     for (const auto& chiplet : chiplets_) {
-        if (chiplet.is_active) {
-            active_chiplets++;
-        }
+        if (chiplet.is_active) active_chiplets++;
     }
     stats_.avg_chiplet_utilization = static_cast<double>(active_chiplets) / num_chiplets_;
 
-    // Get link statistics from topology
+    // Snapshot link statistics (not accumulated — links track their own running totals)
     double total_link_utilization = 0.0;
-    int num_links = 0;
-    for (int i = 0; i < topology_->get_num_links(); i++) {
-        const auto& link = topology_->get_link(i);
-        const auto& link_stats = link.get_stats();
-        total_link_utilization += link_stats.utilization;
-        stats_.total_energy_mJ += link_stats.total_energy_mJ;
-        num_links++;
+    double total_energy_mJ = 0.0;
+    int num_links = topology_->get_num_links();
+    for (int i = 0; i < num_links; i++) {
+        UCIeLink& link = topology_->get_link_mut(i);
+        auto ls = link.get_stats();
+        ls.calculate_derived_stats(current_cycle_);
+        total_link_utilization += ls.utilization;
+        total_energy_mJ += ls.total_energy_mJ;
     }
+    stats_.total_energy_mJ = total_energy_mJ;
     if (num_links > 0) {
         stats_.avg_link_utilization = total_link_utilization / num_links;
     }
 
-    // Calculate average power
-    if (current_cycle_ > 0) {
-        stats_.avg_power_W = (stats_.total_energy_mJ / current_cycle_) * 1e-3;  // mJ/cycle to W
-    }
+    // Average power: total_energy_mJ / time_ms (time_ms = cycles / freq_MHz / 1000)
+    // Here we don't know freq, so store energy only; power printed in main.
+    stats_.avg_power_W = 0.0;
 }
 
 void ChipletArch::create_collective_packets(ChipletJob& job,
@@ -475,6 +760,7 @@ void ChipletArch::create_collective_packets(ChipletJob& job,
                 packet->creation_cycle = current_cycle_;
                 packet->job_id = job.job_id;
                 packet->operation_type = "allreduce";
+                packet->current_chiplet = packet->src_chiplet;
 
                 job.pending_packets.push_back(packet);
             }
@@ -494,6 +780,7 @@ void ChipletArch::create_collective_packets(ChipletJob& job,
                 packet->creation_cycle = current_cycle_;
                 packet->job_id = job.job_id;
                 packet->operation_type = "broadcast";
+                packet->current_chiplet = packet->src_chiplet;
 
                 job.pending_packets.push_back(packet);
             }
@@ -511,6 +798,7 @@ void ChipletArch::create_collective_packets(ChipletJob& job,
                 packet->creation_cycle = current_cycle_;
                 packet->job_id = job.job_id;
                 packet->operation_type = "p2p";
+                packet->current_chiplet = packet->src_chiplet;
 
                 job.pending_packets.push_back(packet);
             }
@@ -525,11 +813,14 @@ void ChipletArch::create_collective_packets(ChipletJob& job,
 void ChipletArch::route_and_send_packet(UCIePacket* packet) {
     // Get route through topology
     auto route = topology_->get_route(packet->src_chiplet, packet->dst_chiplet);
+    // An empty route means the topology is disconnected — this is a bug, not a
+    // valid simulation outcome. Abort with a clear message rather than silently
+    // producing wrong results or spinning forever.
     if (route.empty()) {
-        std::cerr << "ERROR: No route from " << packet->src_chiplet
-                  << " to " << packet->dst_chiplet << "\n";
-        packet->status = PacketStatus::DROPPED;
-        return;
+        std::cerr << "FATAL: no route from chiplet " << packet->src_chiplet
+                  << " to chiplet " << packet->dst_chiplet
+                  << " — topology is disconnected (bug in topology construction)\n";
+        std::abort();
     }
 
     // Get first link on route and try to enqueue

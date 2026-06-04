@@ -67,9 +67,7 @@ enum class PacketType {
 enum class PacketStatus {
     CREATED,            // Packet created, not yet transmitted
     IN_TRANSIT,         // Currently being transmitted
-    BLOCKED,            // Blocked due to lack of credits or buffer full
     COMPLETED,          // Successfully received at destination
-    DROPPED             // Dropped due to error
 };
 
 /**
@@ -93,8 +91,10 @@ struct UCIePacket {
     PacketStatus status;            // Current status
 
     // Source and Destination
-    int src_chiplet;                // Source chiplet ID
-    int dst_chiplet;                // Destination chiplet ID
+    int src_chiplet;                // Source chiplet ID (original sender)
+    int dst_chiplet;                // Destination chiplet ID (final receiver)
+    int current_chiplet;            // Chiplet where the packet currently resides
+                                    // (updated per hop for multi-hop routing)
 
     // Address and Data
     uint64_t address;               // Physical address (48-bit typical)
@@ -135,6 +135,7 @@ struct UCIePacket {
         , status(PacketStatus::CREATED)
         , src_chiplet(-1)
         , dst_chiplet(-1)
+        , current_chiplet(-1)
         , address(0)
         , size_bytes(0)
         , data(nullptr)
