@@ -159,9 +159,8 @@ python3 scripts/compare_simulators.py
 
 | File | Purpose |
 |------|---------|
-| `RESEARCH.md` | Research narrative — the "why": decoupling tax argument, RQ structure, paper outline |
-| `STATUS.md` | This file — code and experiment status |
+| `docs/RESEARCH.md` | Research narrative — the "why": decoupling tax argument, RQ structure, paper outline |
+| `docs/STATUS.md` | This file — code and experiment status |
 | `docs/eval_plan_chiplets.md` | Full experiment specs: setup, metrics, expected findings, dependencies for E1–E5, CS1–CS2 |
 | `docs/comparison_with_chiplet_frameworks.md` | COCOSSim vs GEMINI, SuperMesh, SIAM, STONNE, SCALE-Sim v3 |
-| `docs/asplos_chiplets_review.md` | Reviewer-facing notes |
 | `docs/gpu_modeling_notes.md` | Notes on extending COCOSSim to GPU chiplets (best-case FSM design) |

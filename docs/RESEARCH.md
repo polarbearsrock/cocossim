@@ -1,7 +1,7 @@
 # COCOSSim: Research Narrative and Plan
 _Branch: `dev-chiplets` — Last updated: 2026-06-04_
 
-> For build/run status, see `STATUS.md`.  
+> For build/run status, see `docs/STATUS.md`.  
 > For experiment specs and RQ details, see `docs/eval_plan_chiplets.md`.  
 > This document is the "why and how" — start here on a new machine.
 
