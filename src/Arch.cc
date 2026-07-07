@@ -158,7 +158,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 
   double diff_accumulator_mem = 0;
   const double mem_slow_factor = 1;
-  const double differential_mem = mem::dramsim3config->tCK / freq_sa / mem_slow_factor;
+ const double differential_mem = 1.0 / (freq_sa * mem::dramsim3config->tCK) / mem_slow_factor;
   const double cycle_adjust = 1. / freq_sa;
 
 
@@ -258,9 +258,9 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     diff_accumulator_mem += differential_mem;
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "LoopDoesntUseConditionVariableInspection"
-    while (diff_accumulator_mem >= differential_mem) {
+   while (diff_accumulator_mem >= 1.0) {
       mem::mem_sys->ClockTick();
-      diff_accumulator_mem -= 1;
+     diff_accumulator_mem -= 1.0;
     }
 #pragma clang diagnostic pop
 
