@@ -145,7 +145,11 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 
   double diff_accumulator_mem = 0;
   const double mem_slow_factor = 1;
-  const double differential_mem = mem::dramsim3config->tCK / freq_sa / mem_slow_factor;
+  // DRAM ticks per simulator (compute) cycle = sim_cycle_period / dram_cycle_period
+  //   = (1/freq_sa) / tCK = 1 / (freq_sa * tCK). The prior form tCK/freq_sa is
+  // INVERTED for tCK != 1 (a faster DRAM clock, smaller tCK, must tick MORE per
+  // sim cycle). Identical at tCK=1 (all stock HBM2 configs + TPU-validated runs).
+  const double differential_mem = 1.0 / (freq_sa * mem::dramsim3config->tCK) / mem_slow_factor;
   const double cycle_adjust = 1. / freq_sa;
 
   while (!(total_idle == states.size() && total_frontier == 0)) {
@@ -231,9 +235,11 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     diff_accumulator_mem += differential_mem;
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "LoopDoesntUseConditionVariableInspection"
-    while (diff_accumulator_mem >= differential_mem) {
+    // Emit one DRAM ClockTick per whole DRAM cycle accumulated; keep the
+    // fractional remainder in [0,1). differential_mem is DRAM-ticks-per-sim-cycle.
+    while (diff_accumulator_mem >= 1.0) {
       mem::mem_sys->ClockTick();
-      diff_accumulator_mem -= 1;
+      diff_accumulator_mem -= 1.0;
     }
 #pragma clang diagnostic pop
 
