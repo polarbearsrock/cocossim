@@ -14,10 +14,10 @@
 void State::enqueue_writes() {
   // Queue memory write transactions with bandwidth limits
   if (mem_write_left_unqueued > 0) {
-    int to_enq = std::min(dram_enq_per_cycle, mem_write_left_unqueued);
+    const auto to_enq = std::min<uint64_t>(dram_enq_per_cycle, mem_write_left_unqueued);
     mem_write_left_unqueued -= to_enq;
     mem_queued += to_enq;
-    for (int i = 0; i < to_enq; ++i) {
+    for (uint64_t i = 0; i < to_enq; ++i) {
       to_enqueue.emplace_back(j->addr, true, core_memory_priority, this);
       j->addr += bytes_per_tx;
     }
@@ -27,10 +27,10 @@ void State::enqueue_writes() {
 void State::enqueue_reads() {
   // Queue memory read transactions with bandwidth limits
   if (mem_read_left_unqueued > 0) {
-    int to_enq = std::min(dram_enq_per_cycle, mem_read_left_unqueued);
+    const auto to_enq = std::min<uint64_t>(dram_enq_per_cycle, mem_read_left_unqueued);
     mem_read_left_unqueued -= to_enq;
     mem_queued += to_enq;
-    for (int i = 0; i < to_enq; ++i) {
+    for (uint64_t i = 0; i < to_enq; ++i) {
       to_enqueue.emplace_back(j->addr, false, core_memory_priority, this);
       j->addr += bytes_per_tx;
     }
@@ -57,14 +57,17 @@ bool State::process_stage() {
   return false;
 }
 
-void State::state_transfer(int st, int read_amt_bytes, int write_amt_bytes, int min_cycles) {
+void State::state_transfer(int st, uint64_t read_amt_bytes, uint64_t write_amt_bytes, uint64_t min_cycles) {
   IFVERB(printf("Time(%llu) - Transfer from %s to %s\n", gcycles, to_string(state), to_string(st)));
   UPDATE_STATE(st);
   min_stage_cycles = min_cycles;
-  int rmin = read_amt_bytes > 0 ? 1 : 0;
-  int wmin = write_amt_bytes > 0 ? 1 : 0;
-  SET_READS(std::max(rmin, read_amt_bytes / bytes_per_tx));
-  SET_WRITES(std::max(wmin, write_amt_bytes / bytes_per_tx));
+  if (compute_only) {
+    SET_READS(0);
+    SET_WRITES(0);
+  } else {
+    SET_READS(div_ru(read_amt_bytes, static_cast<uint64_t>(bytes_per_tx)));
+    SET_WRITES(div_ru(write_amt_bytes, static_cast<uint64_t>(bytes_per_tx)));
+  }
   if (is_idle_from_memory) {
     UPDATE_IDLEMEM(false);
   }

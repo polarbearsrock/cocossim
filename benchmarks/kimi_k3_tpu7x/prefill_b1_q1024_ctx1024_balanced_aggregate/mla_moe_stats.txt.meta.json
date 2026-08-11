@@ -1,0 +1,17 @@
+{
+  "cocossim_proxy": {
+    "buffer_mib_per_core": 64,
+    "compute_only": true,
+    "cores": 32,
+    "data_type_bits": 8,
+    "normalized_frequency_ghz": 1.0,
+    "systolic_array_size": 256,
+    "vector_unit_width": 1024,
+    "weight_stationary": true
+  },
+  "fingerprint_sha256": "9c6fd1f8490125601233cbf6e9e1d0c49f24d518878d0b551f393943c871d046",
+  "runtime_batch_size": 1,
+  "schema_version": 1,
+  "simulator_sha256": "b0896838349b9e58a32af335137a9638853896a8c8fb01132bd9f8d71ce9dc0f",
+  "trace_sha256": "056e877df3e14c4a57da72d61ffba53b0bcbd202136f2114c7e5dd1255f6a6de"
+}

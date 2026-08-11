@@ -57,7 +57,7 @@ bool mem::try_enqueue_tx() {
 }
 
 void mem::setup() {
-  dramsim3config = new dramsim3::Config("../dramsim3/configs/HBM2_8Gb_x128.ini", "./");
+  dramsim3config = new dramsim3::Config(COCOSSIM_DRAMSIM3_CONFIG, "./");
   mem_sys = new mem_ty(*dramsim3config, "./", [](uint64_t addr) {
         auto it = address_reads_bkwds_lookup.find(addr);
         if (it != address_reads_bkwds_lookup.end()) {

@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+dramsim3/
 *.o
 *.so
 *.dylib
@@ -32,3 +33,5 @@ results/
 # Temporary files
 *.tmp
 *.bak
+__pycache__/
+*.pyc

@@ -12,8 +12,20 @@
 #include "global.h"
 #include "State.h"
 #include "perf_enums.h"
+#include <stdexcept>
 
 using namespace VectorUnit;
+
+namespace {
+uint64_t vector_job_bytes(int linearized_dimension, int parallel_dimension) {
+  if (linearized_dimension <= 0 || parallel_dimension <= 0) {
+    throw std::invalid_argument("vector job dimensions must be positive");
+  }
+  return bytes_for_elements(checked_product({static_cast<uint64_t>(linearized_dimension),
+                                             static_cast<uint64_t>(parallel_dimension),
+                                             static_cast<uint64_t>(batch_size)}));
+}
+}
 
 bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int &total_idle, int *n_idle_units) {
   auto *sj = (VecUnitJob *) j;
@@ -34,19 +46,26 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
           // All phases completed, write results
           state_transfer(VectorUnit::VPUState::write,
                          0,
-                         lin * par * data_type_width * batch_size,
+                         bytes_for_elements(checked_product({static_cast<uint64_t>(lin),
+                                                             static_cast<uint64_t>(par),
+                                                             static_cast<uint64_t>(batch_size)})),
                          0);
         } else if (ph_ar.front().first == VPUPhase::REDUCE) {
           // Reduction phase: compute along linear dimension
           state_transfer(VectorUnit::VPUState::buffered_lin,
                          0, 0,
-                         ph_ar.front().second * lin * div_ru(par, sz));
+                         checked_product({static_cast<uint64_t>(ph_ar.front().second),
+                                          static_cast<uint64_t>(lin),
+                                          div_ru(static_cast<uint64_t>(par), static_cast<uint64_t>(sz))}));
           ph_ar.pop();
         } else if (ph_ar.front().first == VPUPhase::BROADCAST) {
           // Broadcast phase: distribute values across parallel dimension
           state_transfer(VectorUnit::VPUState::buffered_par,
                          0, 0,
-                         div_ru(lin * par * ph_ar.front().second, sz));
+                         div_ru(checked_product({static_cast<uint64_t>(lin),
+                                                static_cast<uint64_t>(par),
+                                                static_cast<uint64_t>(ph_ar.front().second)}),
+                                static_cast<uint64_t>(sz)));
           ph_ar.pop();
         }
       }
@@ -76,8 +95,8 @@ void VecUnitState::init() {
   LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, vcd_idx), j->job_idx);
 
   VectorUnit::VPUState first_state;
-  int first_phase_read;
-  int first_phase_cycles;
+  uint64_t first_phase_read;
+  uint64_t first_phase_cycles;
   auto front = sj->phases.front();
   if (sj->is_prebuffered) {
     first_phase_read = 0;
@@ -87,7 +106,10 @@ void VecUnitState::init() {
       first_state = VectorUnit::VPUState::buffered_lin;
     }
   } else {
-    first_phase_read = sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width;
+    first_phase_read = bytes_for_elements(
+        checked_product({static_cast<uint64_t>(sj->linearized_dimension),
+                         static_cast<uint64_t>(sj->parallel_dimension),
+                         static_cast<uint64_t>(batch_size)}));
     if (front.first == VPUPhase::BROADCAST) {
       first_state = VectorUnit::VPUState::unbuffered_par;
     } else {
@@ -95,9 +117,16 @@ void VecUnitState::init() {
     }
   }
   if (front.first == VPUPhase::BROADCAST) {
-    first_phase_cycles = div_ru(sj->linearized_dimension * sj->parallel_dimension * front.second, sz);
+    first_phase_cycles = div_ru(
+        checked_product({static_cast<uint64_t>(sj->linearized_dimension),
+                         static_cast<uint64_t>(sj->parallel_dimension),
+                         static_cast<uint64_t>(front.second)}),
+        static_cast<uint64_t>(sz));
   } else {
-    first_phase_cycles = sj->linearized_dimension * std::max(batch_size, front.second) * div_ru(sj->parallel_dimension, sz);
+    first_phase_cycles = checked_product(
+        {static_cast<uint64_t>(sj->linearized_dimension),
+         static_cast<uint64_t>(std::max(batch_size, front.second)),
+         div_ru(static_cast<uint64_t>(sj->parallel_dimension), static_cast<uint64_t>(sz))});
   }
   state_transfer(first_state,
                  first_phase_read,
@@ -111,7 +140,13 @@ void VecUnitState::init() {
 }
 
 VecUnitState::VecUnitState(int sz) : State(2), sz(sz) {
-  beats_per_wb = std::max((sz * batch_size) / bytes_per_tx, 1);
+  if (sz <= 0) {
+    throw std::invalid_argument("vector unit size must be positive");
+  }
+  beats_per_wb = div_ru(
+      bytes_for_elements(checked_product({static_cast<uint64_t>(sz),
+                                          static_cast<uint64_t>(batch_size)})),
+      static_cast<uint64_t>(bytes_per_tx));
 }
 
 
@@ -122,7 +157,7 @@ VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
                        bool is_prebuffered,
                        const std::queue<std::pair<VPUPhase, int>> &phases)
-    : Job(linearizedDimension * parallelDimension * data_type_width * batch_size),
+    : Job(vector_job_bytes(linearizedDimension, parallelDimension)),
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
       is_prebuffered(is_prebuffered),
@@ -132,7 +167,7 @@ VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
                        bool is_prebuffered,
                        const std::vector<std::pair<VPUPhase, int>> &vphases)
-    : Job(linearizedDimension * parallelDimension * data_type_width * batch_size),
+    : Job(vector_job_bytes(linearizedDimension, parallelDimension)),
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
       is_prebuffered(is_prebuffered) {

@@ -1,0 +1,1539 @@
+{
+  "calibration": {
+    "cycles": 946488,
+    "flops": 1924145348608,
+    "flops_per_cycle": 2032931.5835044924,
+    "gemm": [
+      8192,
+      7168,
+      16384
+    ],
+    "log_file": "calibration.log",
+    "stats_file": "calibration_stats.txt",
+    "unit_activity": {
+      "SYSTOLIC_ARRAY": {
+        "instances": 32,
+        "max_scheduled_active_pct": 99.999894,
+        "mean_scheduled_active_pct": 99.999894,
+        "min_scheduled_active_pct": 99.999894
+      },
+      "VECTOR_UNIT": {
+        "instances": 32,
+        "max_scheduled_active_pct": 0.0,
+        "mean_scheduled_active_pct": 0.0,
+        "min_scheduled_active_pct": 0.0
+      }
+    }
+  },
+  "config": {
+    "assumptions": [
+      "The 32 COCOSSim cores stand in for the 32 TensorCores in a 16-chip TPU7x slice and apply ideal output-dimension sharding; the simulator does not model the dual-chiplet hierarchy.",
+      "The vector width is an explicit proxy assumption because Google does not publish an equivalent COCOSSim vector-lane count.",
+      "The 1 GHz value normalizes raw COCOSSim cycles and is not asserted to be the physical TPU7x clock; absolute analytical time uses only published aggregate chip peaks and a dimensionless efficiency normalized against the same 32-core proxy.",
+      "Compute-only COCOSSim cycles are paired with a separate roofline calculation because the repository's DRAMSim3 configuration models legacy HBM2, not TPU7x HBM.",
+      "The global 8-bit simulator datatype affects storage and buffer chunking, not compute precision; mixed MXFP4/MXFP8 and unquantized tensors are accounted for only in the analytical report.",
+      "Generated traces already flatten batch times query tokens into matrix M, so the simulator runtime batch size must remain 1.",
+      "Tensor, expert, and context parallel communication are excluded from the COCOSSim cycle result and must be reported as unsupported overheads."
+    ],
+    "cocossim_proxy": {
+      "buffer_mib_per_core": 64,
+      "compute_only": true,
+      "cores": 32,
+      "data_type_bits": 8,
+      "normalized_frequency_ghz": 1.0,
+      "systolic_array_size": 256,
+      "vector_unit_width": 1024,
+      "weight_stationary": true
+    },
+    "description": "A transparent COCOSSim proxy plus an official-spec roofline target. This is not a cycle-accurate TPU7x hardware model.",
+    "model_capacity": {
+      "checkpoint_size_tb_decimal": 1.56
+    },
+    "name": "tpu7x-ironwood-16chip-kimi-k3-proxy",
+    "published_hardware": {
+      "bf16_tflops_per_chip": 2307,
+      "chips": 16,
+      "fp8_tflops_per_chip": 4614,
+      "hbm_bandwidth_gbps_per_chip": 7380,
+      "hbm_gib_per_chip": 192,
+      "ici_bidirectional_bandwidth_gbps_per_chip": 1200,
+      "mxu_columns": 256,
+      "mxu_rows": 256,
+      "tensor_cores_per_chip": 2,
+      "vmem_mib_per_tensor_core": 64
+    },
+    "roofline_precision": {
+      "activation_bits": 8,
+      "cache_and_state_bits": 16,
+      "compute_peak": "mixed: FP8 for routed experts and latent-MoE projections, BF16 otherwise",
+      "fp8_compute_categories": [
+        "routed_expert",
+        "moe_projection"
+      ],
+      "mxfp4_weight_classes": [
+        "routed_expert",
+        "moe_projection"
+      ],
+      "routed_expert_group_size": 32,
+      "routed_expert_scale_bits_per_group": 8,
+      "routed_expert_weight_bits": 4,
+      "unquantized_weight_bits": 16
+    },
+    "schema_version": 1,
+    "sources": {
+      "ironwood_performance": "https://docs.cloud.google.com/tpu/docs/ironwood-performance",
+      "kimi_k3": "https://github.com/MoonshotAI/Kimi-K3",
+      "kimi_k3_config": "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json",
+      "tpu7x": "https://docs.cloud.google.com/tpu/docs/tpu7x",
+      "tpu_architecture": "https://docs.cloud.google.com/tpu/docs/system-architecture-tpu-vm"
+    }
+  },
+  "estimate_level": "proxy",
+  "global_limitations": [
+    "No TPU7x hardware was used; latency and throughput are uncalibrated proxy bounds.",
+    "COCOSSim cycles are compute-only normalized cycles and are not converted with a guessed TPU clock.",
+    "Representative blocks are extrapolated with the exact 1/68/24 text-decoder layer mix.",
+    "Tensor-parallel collectives, topology contention, XLA fusion/layout, host overhead, and sampling are excluded.",
+    "The vision tower is outside the modeled scope."
+  ],
+  "scenarios": [
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 9759.247354995357,
+        "bottleneck": "HBM",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 14680064,
+          "bf16_kda_recurrent_state_bytes": 217055232,
+          "compressed_mla_cache_bytes": 3538944,
+          "expanded_reference_mla_cache_bytes": 188743680
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.18831595816769756,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 437649408,
+          "compulsory_proxy_bytes": 1548709593088.0,
+          "compulsory_proxy_seconds": 0.01311576552411924,
+          "expanded_reference_cache_state_traffic_bytes": 622854144,
+          "expanded_reference_proxy_bytes": 1548894797824.0,
+          "expanded_reference_proxy_seconds": 0.013117333992411924,
+          "learned_weight_traffic_bytes": 1548271943680.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 0.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 622854144.0,
+          "resident_learned_weight_capacity_bytes": 1548271943680.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 0.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 1565976981504.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 1266155520.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 6.59456e-05,
+          "routed_payload_one_way_injection_seconds": 0.0001318912
+        },
+        "ideal_roofline_seconds": 0.01311576552411924,
+        "mixed_precision": {
+          "bf16_flops": 12790722985984.0,
+          "fp8_eligible_flops": 13656922259456.0,
+          "ideal_seconds": 0.0005315123568409189,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.0028224498975684313,
+          "total_flops": 26447645245440.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.01311576552411924
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 13921104691200,
+        "full_trace_shape": {
+          "matmul_count": 1713,
+          "operation_count": 4234,
+          "padded_macs_after_n_sharding": 42824045166592,
+          "tile_fill_ratio": 0.3087943367161447,
+          "trace_sha256": "7a5d7bbb3b4d98510600fbc6ee81ffa44c047c5085c79c9f38aefc6b9b356c6b",
+          "useful_macs": 13223822622720
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": false,
+        "matmul_flops": 26447645245440,
+        "matmul_macs": 13223822622720,
+        "proxy_matmul_flops": 12526540554240,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 42824045166592,
+          "tile_fill_ratio": 0.3087943367161447,
+          "useful_macs": 13223822622720
+        }
+      },
+      "manifest_sha256": "741f8f67d21a032cd16c342af09d71506e0a6bace243e63ff6bb4dfa764c0408",
+      "request": {
+        "batch": 1,
+        "context_tokens_per_sequence": 128,
+        "flattened_query_token_rows": 128,
+        "include_lm_head": false,
+        "mode_label": "prefill",
+        "query_tokens_per_sequence": 128,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 256,
+          "base_expert_token_assignments_per_moe_layer": 2048,
+          "effective_expert_token_rows_per_moe_layer": 2048,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 2,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 896
+        }
+      },
+      "scenario_id": "prefill_b1_q128_ctx128_balanced_aggregate",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.18831595816769756,
+        "extrapolated_full_model_cycles": 69083944,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 77.89808739885726,
+          "VECTOR_UNIT": 0.6904932946022705
+        },
+        "flops_per_cycle": 382833.45903702313,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.18831595816769756,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 762368,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 81.727853,
+                "mean_scheduled_active_pct": 81.727853,
+                "min_scheduled_active_pct": 81.727853
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 18.267293,
+                "mean_scheduled_active_pct": 0.57085290625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 780616,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 77.820465,
+                "mean_scheduled_active_pct": 77.820465,
+                "min_scheduled_active_pct": 77.820465
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 22.173258,
+                "mean_scheduled_active_pct": 0.6929143125,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 634987,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 77.976872,
+                "mean_scheduled_active_pct": 77.976872,
+                "min_scheduled_active_pct": 77.976872
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 22.017459,
+                "mean_scheduled_active_pct": 0.68804559375,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.3087943367161447
+      }
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 71842.84875624435,
+        "bottleneck": "shape-adjusted compute",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 117440512,
+          "bf16_kda_recurrent_state_bytes": 217055232,
+          "compressed_mla_cache_bytes": 28311552,
+          "expanded_reference_mla_cache_bytes": 1509949440
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.30089463896008756,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 462422016,
+          "compulsory_proxy_bytes": 1548734365696.0,
+          "compulsory_proxy_seconds": 0.013115975319241193,
+          "expanded_reference_cache_state_traffic_bytes": 1944059904,
+          "expanded_reference_proxy_bytes": 1550216003584.0,
+          "expanded_reference_proxy_seconds": 0.013128523065582655,
+          "learned_weight_traffic_bytes": 1548271943680.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 0.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 1944059904.0,
+          "resident_learned_weight_capacity_bytes": 1548271943680.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 0.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 1703784906752.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 10129244160.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 0.0005275648,
+          "routed_payload_one_way_injection_seconds": 0.0010551296
+        },
+        "ideal_roofline_seconds": 0.013115975319241193,
+        "mixed_precision": {
+          "bf16_flops": 103678698586112.0,
+          "fp8_eligible_flops": 109255378075648.0,
+          "ideal_seconds": 0.004288751290201994,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.01425333234591421,
+          "total_flops": 212934076661760.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.01425333234591421
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 111368837529600,
+        "full_trace_shape": {
+          "matmul_count": 1713,
+          "operation_count": 4234,
+          "padded_macs_after_n_sharding": 268534240247808,
+          "tile_fill_ratio": 0.3964747223021928,
+          "trace_sha256": "c73f83811a9a3fea99797905637bb9527717a31fc80ceeff992d6267175ac273",
+          "useful_macs": 106467038330880
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": false,
+        "matmul_flops": 212934076661760,
+        "matmul_macs": 106467038330880,
+        "proxy_matmul_flops": 101565239132160,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 268534240247808,
+          "tile_fill_ratio": 0.3964747223021928,
+          "useful_macs": 106467038330880
+        }
+      },
+      "manifest_sha256": "d870d11149df9c53ebf22b0528068a7f9b97655f5d613b2452d1ee9638068745",
+      "request": {
+        "batch": 1,
+        "context_tokens_per_sequence": 1024,
+        "flattened_query_token_rows": 1024,
+        "include_lm_head": false,
+        "mode_label": "prefill",
+        "query_tokens_per_sequence": 1024,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 256,
+          "base_expert_token_assignments_per_moe_layer": 16384,
+          "effective_expert_token_rows_per_moe_layer": 16384,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 18,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 896
+        }
+      },
+      "scenario_id": "prefill_b1_q1024_ctx1024_balanced_aggregate",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.30089463896008756,
+        "extrapolated_full_model_cycles": 348103152,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 80.353517093433,
+          "VECTOR_UNIT": 0.6139145812554879
+        },
+        "flops_per_cycle": 611698.2148491433,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.30089463896008756,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 2909184,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 78.949802,
+                "mean_scheduled_active_pct": 78.949802,
+                "min_scheduled_active_pct": 78.949802
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 21.048926,
+                "mean_scheduled_active_pct": 0.6577789375,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 3716136,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 79.614497,
+                "mean_scheduled_active_pct": 79.614497,
+                "min_scheduled_active_pct": 79.614497
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 20.384184,
+                "mean_scheduled_active_pct": 0.63700575,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 3854030,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 82.416639,
+                "mean_scheduled_active_pct": 82.416639,
+                "min_scheduled_active_pct": 82.416639
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 17.582427,
+                "mean_scheduled_active_pct": 0.54945084375,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.3964747223021928
+      }
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 61421.873416748334,
+        "bottleneck": "shape-adjusted compute",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 939524096,
+          "bf16_kda_recurrent_state_bytes": 217055232,
+          "compressed_mla_cache_bytes": 226492416,
+          "expanded_reference_mla_cache_bytes": 12079595520
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.2748371375779445,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 660602880,
+          "compulsory_proxy_bytes": 1548932546560.0,
+          "compulsory_proxy_seconds": 0.013117653680216803,
+          "expanded_reference_cache_state_traffic_bytes": 12513705984,
+          "expanded_reference_proxy_bytes": 1560785649664.0,
+          "expanded_reference_proxy_seconds": 0.01321803565094851,
+          "learned_weight_traffic_bytes": 1548271943680.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 0.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 12513705984.0,
+          "resident_learned_weight_capacity_bytes": 1548271943680.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 0.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 3871668633600.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 81033953280.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 0.0042205184,
+          "routed_payload_one_way_injection_seconds": 0.0084410368
+        },
+        "ideal_roofline_seconds": 0.03665576619199307,
+        "mixed_precision": {
+          "bf16_flops": 916016129376256.0,
+          "fp8_eligible_flops": 874043024605184.0,
+          "ideal_seconds": 0.03665576619199307,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.13337268214561215,
+          "total_flops": 1790059153981440.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.13337268214561215
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 890950700236800,
+        "full_trace_shape": {
+          "matmul_count": 1713,
+          "operation_count": 4234,
+          "padded_macs_after_n_sharding": 3256581642780672,
+          "tile_fill_ratio": 0.2748371375779445,
+          "trace_sha256": "39f3f876d1c63e4c23e39f9bb9c211586ff399881cb25133a67b025754152080",
+          "useful_macs": 895029576990720
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": false,
+        "matmul_flops": 1790059153981440,
+        "matmul_macs": 895029576990720,
+        "proxy_matmul_flops": 899108453744640,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 3256581642780672,
+          "tile_fill_ratio": 0.2748371375779445,
+          "useful_macs": 895029576990720
+        }
+      },
+      "manifest_sha256": "ad08f42f6d6ce331aac34ebc89a2f7a6e3bed2c6887bb817c7d82546b5f84a02",
+      "request": {
+        "batch": 1,
+        "context_tokens_per_sequence": 8192,
+        "flattened_query_token_rows": 8192,
+        "include_lm_head": false,
+        "mode_label": "prefill",
+        "query_tokens_per_sequence": 8192,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 256,
+          "base_expert_token_assignments_per_moe_layer": 131072,
+          "effective_expert_token_rows_per_moe_layer": 131072,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 146,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 896
+        }
+      },
+      "scenario_id": "prefill_b1_q8192_ctx8192_balanced_aggregate",
+      "simulation": null
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 737.6651759785,
+        "bottleneck": "shape-adjusted compute",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 114688,
+          "bf16_kda_recurrent_state_bytes": 217055232,
+          "compressed_mla_cache_bytes": 28311552,
+          "expanded_reference_mla_cache_bytes": 1509949440
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.0031364537631472377,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 462422016,
+          "compulsory_proxy_bytes": 130456682496.0,
+          "compulsory_proxy_seconds": 0.0011048160780487805,
+          "expanded_reference_cache_state_traffic_bytes": 1944059904,
+          "expanded_reference_proxy_bytes": 131938320384.0,
+          "expanded_reference_proxy_seconds": 0.001117363824390244,
+          "learned_weight_traffic_bytes": 129994260480.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 25829572608.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 1944059904.0,
+          "resident_learned_weight_capacity_bytes": 129994260480.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 25829572608.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 132088461024.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 9891840.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 5.152e-07,
+          "routed_payload_one_way_injection_seconds": 1.0304e-06
+        },
+        "ideal_roofline_seconds": 0.0011048160780487805,
+        "mixed_precision": {
+          "bf16_flops": 103597539328.0,
+          "fp8_eligible_flops": 106694705152.0,
+          "ideal_seconds": 4.251866382314695e-06,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.0013556285867412914,
+          "total_flops": 210292244480.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.0013556285867412914
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 111107440640,
+        "full_trace_shape": {
+          "matmul_count": 1714,
+          "operation_count": 4235,
+          "padded_macs_after_n_sharding": 24640227377152,
+          "tile_fill_ratio": 0.004267254543985996,
+          "trace_sha256": "927094235d29f2e288b43648fb8d60d45d9aac8fe90d09b0d8a377a2d9fc0f30",
+          "useful_macs": 105146122240
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": true,
+        "matmul_flops": 210292244480,
+        "matmul_macs": 105146122240,
+        "proxy_matmul_flops": 99184803840,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 24339579666432,
+          "tile_fill_ratio": 0.004271713749576082,
+          "useful_macs": 103971717120
+        }
+      },
+      "manifest_sha256": "2306141cd628382f78ed4b28a9a3967088a0ea116e62c2cf83c7f1de228be0e0",
+      "request": {
+        "batch": 1,
+        "context_tokens_per_sequence": 1024,
+        "flattened_query_token_rows": 1,
+        "include_lm_head": true,
+        "mode_label": "decode",
+        "query_tokens_per_sequence": 1,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 0,
+          "base_expert_token_assignments_per_moe_layer": 16,
+          "effective_expert_token_rows_per_moe_layer": 16,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 1,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 16
+        }
+      },
+      "scenario_id": "decode_b1_q1_ctx1024_balanced_aggregate_lmhead",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.0031364537631472377,
+        "extrapolated_full_model_cycles": 32612460,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 73.18985168547837,
+          "VECTOR_UNIT": 0.837411516843313
+        },
+        "flops_per_cycle": 6376.195915303538,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.0031364537631472377,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 459816,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 83.909868,
+                "mean_scheduled_active_pct": 83.909868,
+                "min_scheduled_active_pct": 83.909868
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 16.082085,
+                "mean_scheduled_active_pct": 0.50256515625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 366273,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 74.870657,
+                "mean_scheduled_active_pct": 74.870657,
+                "min_scheduled_active_pct": 74.870657
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 25.115965,
+                "mean_scheduled_active_pct": 0.78487390625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 301920,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 66.732247,
+                "mean_scheduled_active_pct": 66.732247,
+                "min_scheduled_active_pct": 66.732247
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 33.255829,
+                "mean_scheduled_active_pct": 1.03924465625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.004271713749576082
+      }
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 714.7062370376325,
+        "bottleneck": "shape-adjusted compute",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 114688,
+          "bf16_kda_recurrent_state_bytes": 217055232,
+          "compressed_mla_cache_bytes": 226492416,
+          "expanded_reference_mla_cache_bytes": 12079595520
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.0032434895180874024,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 660602880,
+          "compulsory_proxy_bytes": 130654863360.0,
+          "compulsory_proxy_seconds": 0.0011064944390243902,
+          "expanded_reference_cache_state_traffic_bytes": 12513705984,
+          "expanded_reference_proxy_bytes": 142507966464.0,
+          "expanded_reference_proxy_seconds": 0.0012068764097560975,
+          "learned_weight_traffic_bytes": 129994260480.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 25829572608.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 12513705984.0,
+          "resident_learned_weight_capacity_bytes": 129994260480.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 25829572608.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 142790227680.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 9891840.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 5.152e-07,
+          "routed_payload_one_way_injection_seconds": 1.0304e-06
+        },
+        "ideal_roofline_seconds": 0.0011064944390243902,
+        "mixed_precision": {
+          "bf16_flops": 114167185408.0,
+          "fp8_eligible_flops": 106694705152.0,
+          "ideal_seconds": 4.538213534460338e-06,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.001399176260368,
+          "total_flops": 220861890560.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.001399176260368
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 111107440640,
+        "full_trace_shape": {
+          "matmul_count": 1714,
+          "operation_count": 4235,
+          "padded_macs_after_n_sharding": 25001004630016,
+          "tile_fill_ratio": 0.004417060310745174,
+          "trace_sha256": "b08b4466d4b6cbbcb76e5d5619cb2acf497ca8a32b724a9bb113b8521ff5f82c",
+          "useful_macs": 110430945280
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": true,
+        "matmul_flops": 220861890560,
+        "matmul_macs": 110430945280,
+        "proxy_matmul_flops": 109754449920,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 24700356919296,
+          "tile_fill_ratio": 0.0044232777897492016,
+          "useful_macs": 109256540160
+        }
+      },
+      "manifest_sha256": "a1dd9929a08e75cfdaf8c2c9494c9d3adbb247dc05376a1125aa6367b07f0613",
+      "request": {
+        "batch": 1,
+        "context_tokens_per_sequence": 8192,
+        "flattened_query_token_rows": 1,
+        "include_lm_head": true,
+        "mode_label": "decode",
+        "query_tokens_per_sequence": 1,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 0,
+          "base_expert_token_assignments_per_moe_layer": 16,
+          "effective_expert_token_rows_per_moe_layer": 16,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 1,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 16
+        }
+      },
+      "scenario_id": "decode_b1_q1_ctx8192_balanced_aggregate_lmhead",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.0032434895180874024,
+        "extrapolated_full_model_cycles": 33139212,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 73.47000016823392,
+          "VECTOR_UNIT": 0.8286633235951378
+        },
+        "flops_per_cycle": 6593.792282085646,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.0032434895180874024,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 459816,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 83.909868,
+                "mean_scheduled_active_pct": 83.909868,
+                "min_scheduled_active_pct": 83.909868
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 16.082085,
+                "mean_scheduled_active_pct": 0.50256515625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 366273,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 74.870657,
+                "mean_scheduled_active_pct": 74.870657,
+                "min_scheduled_active_pct": 74.870657
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 25.115965,
+                "mean_scheduled_active_pct": 0.78487390625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 323868,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 68.364272,
+                "mean_scheduled_active_pct": 68.364272,
+                "min_scheduled_active_pct": 68.364272
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 31.624612,
+                "mean_scheduled_active_pct": 0.988269125,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.0044232777897492016
+      }
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 491.5092220003573,
+        "bottleneck": "shape-adjusted compute",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 114688,
+          "bf16_kda_recurrent_state_bytes": 217055232,
+          "compressed_mla_cache_bytes": 3623878656,
+          "expanded_reference_mla_cache_bytes": 193273528320
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.004643298363133349,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 4057989120,
+          "compulsory_proxy_bytes": 134052249600.0,
+          "compulsory_proxy_seconds": 0.0011352663414634146,
+          "expanded_reference_cache_state_traffic_bytes": 193707638784,
+          "expanded_reference_proxy_bytes": 323701899264.0,
+          "expanded_reference_proxy_seconds": 0.0027413778731707316,
+          "learned_weight_traffic_bytes": 129994260480.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 25829572608.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 193707638784.0,
+          "resident_learned_weight_capacity_bytes": 129994260480.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 25829572608.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 326249084640.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 9891840.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 5.152e-07,
+          "routed_payload_one_way_injection_seconds": 1.0304e-06
+        },
+        "ideal_roofline_seconds": 0.0011352663414634146,
+        "mixed_precision": {
+          "bf16_flops": 295361118208.0,
+          "fp8_eligible_flops": 106694705152.0,
+          "ideal_seconds": 9.447021856957087e-06,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.002034549821731062,
+          "total_flops": 402055823360.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.002034549821731062
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 111107440640,
+        "full_trace_shape": {
+          "matmul_count": 1714,
+          "operation_count": 4235,
+          "padded_macs_after_n_sharding": 31379031064576,
+          "tile_fill_ratio": 0.006406441016814626,
+          "trace_sha256": "4a92c092c1130476833a1e4a7a2963cc11409f4eb25489b9df365531340dbf7b",
+          "useful_macs": 201027911680
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": true,
+        "matmul_flops": 402055823360,
+        "matmul_macs": 201027911680,
+        "proxy_matmul_flops": 290948382720,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 31078383353856,
+          "tile_fill_ratio": 0.006430627497076791,
+          "useful_macs": 199853506560
+        }
+      },
+      "manifest_sha256": "7d319fe9c1b7eafa4703bc04d06989b1e09e5ae9718e9524372a6239fa3416bc",
+      "request": {
+        "batch": 1,
+        "context_tokens_per_sequence": 131072,
+        "flattened_query_token_rows": 1,
+        "include_lm_head": true,
+        "mode_label": "decode",
+        "query_tokens_per_sequence": 1,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 0,
+          "base_expert_token_assignments_per_moe_layer": 16,
+          "effective_expert_token_rows_per_moe_layer": 16,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 1,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 16
+        }
+      },
+      "scenario_id": "decode_b1_q1_ctx131072_balanced_aggregate_lmhead",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.004643298363133349,
+        "extrapolated_full_model_cycles": 42344052,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 77.27833688883464,
+          "VECTOR_UNIT": 0.7097395762782663
+        },
+        "flops_per_cycle": 9439.507894048496,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.004643298363133349,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 459816,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 83.909868,
+                "mean_scheduled_active_pct": 83.909868,
+                "min_scheduled_active_pct": 83.909868
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 16.082085,
+                "mean_scheduled_active_pct": 0.50256515625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 366273,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 74.870657,
+                "mean_scheduled_active_pct": 74.870657,
+                "min_scheduled_active_pct": 74.870657
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 25.115965,
+                "mean_scheduled_active_pct": 0.78487390625,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 707403,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 80.630843,
+                "mean_scheduled_active_pct": 80.630843,
+                "min_scheduled_active_pct": 80.630843
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 19.364068,
+                "mean_scheduled_active_pct": 0.605127125,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.006430627497076791
+      }
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 3969.699842668208,
+        "bottleneck": "HBM",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 3670016,
+          "bf16_kda_recurrent_state_bytes": 6945767424,
+          "compressed_mla_cache_bytes": 7247757312,
+          "expanded_reference_mla_cache_bytes": 386547056640
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.07153458477327633,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 21139292160,
+          "compulsory_proxy_bytes": 951850303488.0,
+          "compulsory_proxy_seconds": 0.008061062868292683,
+          "expanded_reference_cache_state_traffic_bytes": 400438591488,
+          "expanded_reference_proxy_bytes": 1331149602816.0,
+          "expanded_reference_proxy_seconds": 0.011273285931707316,
+          "learned_weight_traffic_bytes": 930711011328.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 826546323456.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 400438591488.0,
+          "resident_learned_weight_capacity_bytes": 930711011328.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 826546323456.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 1340181961728.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 316538880.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 1.64864e-05,
+          "routed_payload_one_way_injection_seconds": 3.29728e-05
+        },
+        "ideal_roofline_seconds": 0.008061062868292683,
+        "mixed_precision": {
+          "bf16_flops": 3653349933056.0,
+          "fp8_eligible_flops": 3414230564864.0,
+          "ideal_seconds": 0.00014522283310273082,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.0020301066059585588,
+          "total_flops": 7067580497920.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.008061062868292683
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 3555438100480,
+        "full_trace_shape": {
+          "matmul_count": 1714,
+          "operation_count": 4235,
+          "padded_macs_after_n_sharding": 32468879015936,
+          "tile_fill_ratio": 0.10883622582798703,
+          "trace_sha256": "0819842a7345dabd20c67309338f6c22715f287eb82601af9f8ea842abceda22",
+          "useful_macs": 3533790248960
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": true,
+        "matmul_flops": 7067580497920,
+        "matmul_macs": 3533790248960,
+        "proxy_matmul_flops": 3512142397440,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 32168231305216,
+          "tile_fill_ratio": 0.10868515747563337,
+          "useful_macs": 3496209285120
+        }
+      },
+      "manifest_sha256": "8cca8f2b2968fa2ad53b7b0d1a3ea5e6e86074d4d6266868d730d0d1eb53eb25",
+      "request": {
+        "batch": 32,
+        "context_tokens_per_sequence": 8192,
+        "flattened_query_token_rows": 32,
+        "include_lm_head": true,
+        "mode_label": "decode",
+        "query_tokens_per_sequence": 1,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 0,
+          "base_expert_token_assignments_per_moe_layer": 512,
+          "effective_expert_token_rows_per_moe_layer": 512,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 1,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 512
+        }
+      },
+      "scenario_id": "decode_b32_q1_ctx8192_balanced_aggregate_lmhead",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.07153458477327633,
+        "extrapolated_full_model_cycles": 48082672,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 75.07897033577501,
+          "VECTOR_UNIT": 0.7785070631950632
+        },
+        "flops_per_cycle": 145424.916698473,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.07153458477327633,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 532352,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 83.354435,
+                "mean_scheduled_active_pct": 83.354435,
+                "min_scheduled_active_pct": 83.354435
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 16.638615,
+                "mean_scheduled_active_pct": 0.51995671875,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 466096,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 76.287932,
+                "mean_scheduled_active_pct": 76.287932,
+                "min_scheduled_active_pct": 76.287932
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 23.701555,
+                "mean_scheduled_active_pct": 0.74067359375,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 660658,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 72.384502,
+                "mean_scheduled_active_pct": 72.384502,
+                "min_scheduled_active_pct": 72.384502
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 27.610049,
+                "mean_scheduled_active_pct": 0.86281403125,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.10868515747563337
+      }
+    },
+    {
+      "analytical_proxy": {
+        "aggregate_tokens_per_second": 17577.40488909086,
+        "bottleneck": "HBM",
+        "cache_and_state_capacity": {
+          "bf16_attnres_transient_bytes": 29360128,
+          "bf16_kda_recurrent_state_bytes": 55566139392,
+          "compressed_mla_cache_bytes": 57982058496,
+          "expanded_reference_mla_cache_bytes": 3092376453120
+        },
+        "estimate_level": "COCOSSim-shape-adjusted analytical proxy; not hardware-calibrated",
+        "eta_ccs": 0.1753437380263189,
+        "hbm": {
+          "compressed_cache_state_traffic_bytes": 169114337280,
+          "compulsory_proxy_bytes": 1719735091200.0,
+          "compulsory_proxy_seconds": 0.014564152195121952,
+          "expanded_reference_cache_state_traffic_bytes": 3203508731904,
+          "expanded_reference_proxy_bytes": 4754129485824.0,
+          "expanded_reference_proxy_seconds": 0.04026193670243902,
+          "learned_weight_traffic_bytes": 1550620753920.0,
+          "learned_weight_traffic_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "manifest_naive_dynamic_rhs_bytes": 3203508731904.0,
+          "resident_learned_weight_capacity_bytes": 1550620753920.0,
+          "resident_learned_weight_capacity_bytes_by_class": {
+            "attention": 72359411712.0,
+            "dense": 1453326336.0,
+            "lm_head": 2348810240.0,
+            "moe_projection": 2511208448.0,
+            "routed_expert": 1446456066048.0,
+            "router": 1181745152.0,
+            "shared_expert": 24310185984.0
+          },
+          "unfused_traffic_sensitivity_bytes": 4826388357120.0
+        },
+        "ici": {
+          "excluded": "tensor-parallel collectives, topology hops, contention, and expert imbalance",
+          "remote_fraction_assumption": 0.9375,
+          "routed_payload_bytes": 2532311040.0,
+          "routed_payload_full_bidirectional_optimistic_seconds": 0.0001318912,
+          "routed_payload_one_way_injection_seconds": 0.0002637824
+        },
+        "ideal_roofline_seconds": 0.014564152195121952,
+        "mixed_precision": {
+          "bf16_flops": 29226799464448.0,
+          "fp8_eligible_flops": 27313844518912.0,
+          "ideal_seconds": 0.0011617826648218465,
+          "policy": "MXFP4-targeted routed-expert and latent-MoE projection GEMMs use FP8 peak; all remaining modeled GEMMs use BF16 peak",
+          "shape_adjusted_seconds": 0.006625743684370778,
+          "total_flops": 56540643983360.0
+        },
+        "shape_adjusted_no_contention_seconds": 0.014564152195121952
+      },
+      "full_model_accounting": {
+        "exact_matmul_flops": 28443504803840,
+        "full_trace_shape": {
+          "matmul_count": 1714,
+          "operation_count": 4235,
+          "padded_macs_after_n_sharding": 102068824047616,
+          "tile_fill_ratio": 0.2769731331331068,
+          "trace_sha256": "69333f227973d3e57b9ddf6d2609471dafc9161cac0f033ebfe98f0545632041",
+          "useful_macs": 28270321991680
+        },
+        "layer_mix": {
+          "dense_kda": 1,
+          "kda_moe": 68,
+          "mla_moe": 24
+        },
+        "lm_head_included": true,
+        "matmul_flops": 56540643983360,
+        "matmul_macs": 28270321991680,
+        "proxy_matmul_flops": 28097139179520,
+        "representative_extrapolated_shape": {
+          "padded_macs_after_n_sharding": 101768176336896,
+          "tile_fill_ratio": 0.2748371375779445,
+          "useful_macs": 27969674280960
+        }
+      },
+      "manifest_sha256": "be369bbb1a7758707e6f2a7c145f726bafc70fab0d111037695e83a3edce5c88",
+      "request": {
+        "batch": 256,
+        "context_tokens_per_sequence": 8192,
+        "flattened_query_token_rows": 256,
+        "include_lm_head": true,
+        "mode_label": "decode",
+        "query_tokens_per_sequence": 1,
+        "repeat": 1,
+        "routing": {
+          "active_experts_with_one_extra_processed_row": 512,
+          "base_expert_token_assignments_per_moe_layer": 4096,
+          "effective_expert_token_rows_per_moe_layer": 4096,
+          "expert_layout": "aggregate",
+          "expert_layout_interpretation": "One flattened expert GEMM with exact aggregate MACs but optimistic M geometry.",
+          "expert_token_multiplier": 1.0,
+          "expert_token_multiplier_decimal": "1",
+          "expert_token_multiplier_interpretation": "Scales processed expert-token rows to represent padding or imbalance overhead; it does not change top-k routes or the number of unique experts.",
+          "processed_rows_per_active_expert_floor": 4,
+          "scenario": "balanced",
+          "selected_experts_per_token": 16,
+          "total_routed_experts": 896,
+          "unique_routed_experts_assumption": "min(batch * query_tokens * selected_experts_per_token, total_routed_experts)",
+          "unique_routed_experts_per_moe_layer": 896
+        }
+      },
+      "scenario_id": "decode_b256_q1_ctx8192_balanced_aggregate_lmhead",
+      "simulation": {
+        "cycle_interpretation": "Normalized compute-only COCOSSim cycles; not TPU clock cycles. The full count is 1*dense-KDA + 68*KDA-MoE + 24*MLA-MoE.",
+        "eta_ccs": 0.1753437380263189,
+        "extrapolated_full_model_cycles": 156929424,
+        "extrapolated_mean_scheduled_active_pct": {
+          "SYSTOLIC_ARRAY": 77.11871738544511,
+          "VECTOR_UNIT": 0.7149557868239451
+        },
+        "flops_per_cycle": 356461.8230034413,
+        "layer_counts": {
+          "dense-kda": 1,
+          "kda-moe": 68,
+          "mla-moe": 24
+        },
+        "rate_ratio_to_calibration": 0.1753437380263189,
+        "representative_runs": {
+          "dense-kda": {
+            "cycles": 1069056,
+            "log_file": "dense_kda.log",
+            "stats_file": "dense_kda_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 80.64788,
+                "mean_scheduled_active_pct": 80.64788,
+                "min_scheduled_active_pct": 80.64788
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 19.348659,
+                "mean_scheduled_active_pct": 0.60464559375,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "kda-moe": {
+            "cycles": 1199976,
+            "log_file": "kda_moe.log",
+            "stats_file": "kda_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 78.614156,
+                "mean_scheduled_active_pct": 78.614156,
+                "min_scheduled_active_pct": 78.614156
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 21.381761,
+                "mean_scheduled_active_pct": 0.66818003125,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          },
+          "mla-moe": {
+            "cycles": 3094250,
+            "log_file": "mla_moe.log",
+            "stats_file": "mla_moe_stats.txt",
+            "unit_activity": {
+              "SYSTOLIC_ARRAY": {
+                "instances": 32,
+                "max_scheduled_active_pct": 75.424739,
+                "mean_scheduled_active_pct": 75.424739,
+                "min_scheduled_active_pct": 75.424739
+              },
+              "VECTOR_UNIT": {
+                "instances": 32,
+                "max_scheduled_active_pct": 24.574097,
+                "mean_scheduled_active_pct": 0.76794053125,
+                "min_scheduled_active_pct": 0.0
+              }
+            }
+          }
+        },
+        "tile_fill_ratio_after_n_sharding": 0.2748371375779445
+      }
+    }
+  ],
+  "schema_version": 1
+}

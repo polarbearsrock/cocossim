@@ -11,6 +11,31 @@ COCOSSim addresses critical limitations in existing simulators by providing:
 - **PyTorch frontend** for seamless model integration
 - **Flexible scheduling strategies** and microarchitectural modifications
 
+## Kimi K3 on TPU7x proxy workflow
+
+This branch includes a weight-free Kimi K3 text-decoder trace generator and a
+transparent Google TPU7x (Ironwood) proxy workflow. It simulates one
+representative dense-KDA, KDA-MoE, and MLA-MoE block, extrapolates the official
+`1 + 68 + 24` layer mix, and keeps raw COCOSSim cycles separate from analytical
+TPU7x compute/HBM/ICI bounds.
+
+```bash
+scripts/build.sh
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_kimi_k3_tpu7x_sweep.py \
+  --output-dir benchmarks/kimi_k3_tpu7x
+```
+
+The default sweep simulates prefill through 1,024 query tokens and several
+decode batch/context points; prefill-8,192 is analytical-only because a literal
+cycle-by-cycle proxy run is slow. See
+[`benchmarks/kimi_k3_tpu7x/REPORT.md`](benchmarks/kimi_k3_tpu7x/REPORT.md) for
+the current results and fidelity limits.
+
+These results are not TPU hardware measurements. COCOSSim uses a compute-only,
+32-core proxy normalized against a matching aligned GEMM. Absolute estimates
+use published TPU7x peaks and remain uncalibrated until exact KDA, MLA, and
+grouped-MoE kernels are measured on TPU7x.
+
 ## Key Features
 
 ### Architecture Support
@@ -91,6 +116,10 @@ cmake -DUSE_VCD=ON ..
 - `-i <file>`: Input layer configuration file (required)
 - `-o <file>`: Output statistics file (required)  
 - `-f <float>`: Operating frequency in GHz
+- `-batch_size <int>` / `--batch-size <int>`: Runtime batch multiplier
+- `-data_bits <int>` / `--data-bits <int>`: Packed scalar width in bits
+- `-buffer_bytes <int>` / `--buffer-bytes <int>`: Per-core buffer capacity
+- `-compute_only <0|1>` / `--compute-only <0|1>`: Suppress modeled memory waits
 - `-h`: Display help information
 
 #### Architecture-Specific Options

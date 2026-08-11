@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "name": "tpu7x-ironwood-16chip-kimi-k3-proxy",
+  "description": "A transparent COCOSSim proxy plus an official-spec roofline target. This is not a cycle-accurate TPU7x hardware model.",
+  "sources": {
+    "tpu7x": "https://docs.cloud.google.com/tpu/docs/tpu7x",
+    "tpu_architecture": "https://docs.cloud.google.com/tpu/docs/system-architecture-tpu-vm",
+    "ironwood_performance": "https://docs.cloud.google.com/tpu/docs/ironwood-performance",
+    "kimi_k3": "https://github.com/MoonshotAI/Kimi-K3",
+    "kimi_k3_config": "https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json"
+  },
+  "published_hardware": {
+    "chips": 16,
+    "tensor_cores_per_chip": 2,
+    "mxu_rows": 256,
+    "mxu_columns": 256,
+    "bf16_tflops_per_chip": 2307,
+    "fp8_tflops_per_chip": 4614,
+    "hbm_gib_per_chip": 192,
+    "hbm_bandwidth_gbps_per_chip": 7380,
+    "ici_bidirectional_bandwidth_gbps_per_chip": 1200,
+    "vmem_mib_per_tensor_core": 64
+  },
+  "model_capacity": {
+    "checkpoint_size_tb_decimal": 1.56
+  },
+  "cocossim_proxy": {
+    "cores": 32,
+    "systolic_array_size": 256,
+    "vector_unit_width": 1024,
+    "weight_stationary": true,
+    "normalized_frequency_ghz": 1.0,
+    "buffer_mib_per_core": 64,
+    "data_type_bits": 8,
+    "compute_only": true
+  },
+  "roofline_precision": {
+    "compute_peak": "mixed: FP8 for routed experts and latent-MoE projections, BF16 otherwise",
+    "activation_bits": 8,
+    "mxfp4_weight_classes": [
+      "routed_expert",
+      "moe_projection"
+    ],
+    "fp8_compute_categories": [
+      "routed_expert",
+      "moe_projection"
+    ],
+    "routed_expert_weight_bits": 4,
+    "routed_expert_group_size": 32,
+    "routed_expert_scale_bits_per_group": 8,
+    "unquantized_weight_bits": 16,
+    "cache_and_state_bits": 16
+  },
+  "assumptions": [
+    "The 32 COCOSSim cores stand in for the 32 TensorCores in a 16-chip TPU7x slice and apply ideal output-dimension sharding; the simulator does not model the dual-chiplet hierarchy.",
+    "The vector width is an explicit proxy assumption because Google does not publish an equivalent COCOSSim vector-lane count.",
+    "The 1 GHz value normalizes raw COCOSSim cycles and is not asserted to be the physical TPU7x clock; absolute analytical time uses only published aggregate chip peaks and a dimensionless efficiency normalized against the same 32-core proxy.",
+    "Compute-only COCOSSim cycles are paired with a separate roofline calculation because the repository's DRAMSim3 configuration models legacy HBM2, not TPU7x HBM.",
+    "The global 8-bit simulator datatype affects storage and buffer chunking, not compute precision; mixed MXFP4/MXFP8 and unquantized tensors are accounted for only in the analytical report.",
+    "Generated traces already flatten batch times query tokens into matrix M, so the simulator runtime batch size must remain 1.",
+    "Tensor, expert, and context parallel communication are excluded from the COCOSSim cycle result and must be reported as unsupported overheads."
+  ]
+}

@@ -58,7 +58,7 @@ public:
 
 private:
     uint8_t idx;
-    int beats_per_wb;
+    uint64_t beats_per_wb;
   };
 
 

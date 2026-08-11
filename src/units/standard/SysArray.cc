@@ -10,11 +10,55 @@
 #include "units/standard/SysArray.h"
 #include "State.h"
 #include "frontends/standard/StandardArch.h"
+#include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include "global.h"
 
 
 using namespace frontend::standard;
+
+namespace {
+int tile_extent(int total, int tile_size, int one_based_tile) {
+  if (total <= 0 || tile_size <= 0 || one_based_tile <= 0) {
+    throw std::invalid_argument("tile dimensions and indices must be positive");
+  }
+  const auto offset = checked_product({static_cast<uint64_t>(one_based_tile - 1),
+                                       static_cast<uint64_t>(tile_size)});
+  if (offset >= static_cast<uint64_t>(total)) {
+    throw std::out_of_range("tile index exceeds tensor dimension");
+  }
+  return static_cast<int>(std::min<uint64_t>(tile_size,
+                                             static_cast<uint64_t>(total) - offset));
+}
+
+uint64_t checked_add(uint64_t lhs, uint64_t rhs) {
+  if (lhs > std::numeric_limits<uint64_t>::max() - rhs) {
+    throw std::overflow_error("byte count exceeds 64-bit range");
+  }
+  return lhs + rhs;
+}
+
+uint64_t tensor_bytes(std::initializer_list<uint64_t> dimensions) {
+  return bytes_for_elements(checked_product(dimensions));
+}
+
+uint64_t sys_array_allocation_bytes(int m, int k, int n) {
+  if (m <= 0 || k <= 0 || n <= 0) {
+    throw std::invalid_argument("systolic-array job dimensions must be positive");
+  }
+  const auto activations = tensor_bytes({static_cast<uint64_t>(m),
+                                         static_cast<uint64_t>(k),
+                                         static_cast<uint64_t>(batch_size)});
+  const auto weights = tensor_bytes({static_cast<uint64_t>(k),
+                                     static_cast<uint64_t>(n)});
+  const auto outputs = tensor_bytes({static_cast<uint64_t>(m),
+                                     static_cast<uint64_t>(n),
+                                     static_cast<uint64_t>(batch_size)});
+  return checked_add(checked_add(activations, weights), outputs);
+}
+}
 
 bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &enqueue_job, int &total_idle, int *n_idle_units) {
   auto *sj = (SysArrayJob *) j;
@@ -27,35 +71,47 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           state_transfer(read,
                          0,
                          0,
-                         sj->M * std::max(systolic_fpu_latency, batch_size));
+                         checked_product({static_cast<uint64_t>(sj->M),
+                                          static_cast<uint64_t>(std::max(systolic_fpu_latency, batch_size))}));
           break;
-        case read:  // Read input activations
+        case read: {  // Read the current weight tile
+          const int k_tile = tile_extent(sj->K, sz, row_i);
+          const int n_tile = tile_extent(sj->N, sz, col_i);
+          const uint64_t weight_copies = j->batched_weights ? batch_size : 1;
           state_transfer(shift,
-                         std::min(sz, sj->K) * std::min(sz, sj->N) * data_type_width,
+                         tensor_bytes({static_cast<uint64_t>(k_tile),
+                                       static_cast<uint64_t>(n_tile),
+                                       weight_copies}),
                          0,
-                         sz * std::max(systolic_fpu_latency, batch_size));
-          break;
+                         checked_product({static_cast<uint64_t>(std::max(k_tile, n_tile)),
+                                          static_cast<uint64_t>(std::max(systolic_fpu_latency, batch_size))}));
+        } break;
           
         case shift: {  // Compute phase: shift data through systolic array
-          int amt_to_write = 0;
-          int amt_to_read = 0;
-          int n_cycles = 0;
-          int activation_preload = 0;
+          uint64_t amt_to_write = 0;
+          uint64_t amt_to_read = 0;
+          uint64_t activation_preload = 0;
           
           // Check if we're at the end of tile computation
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
-              amt_to_write = sj->M * sj->N * data_type_width * batch_size;
+              amt_to_write = tensor_bytes({static_cast<uint64_t>(sj->M),
+                                            static_cast<uint64_t>(sj->N),
+                                            static_cast<uint64_t>(batch_size)});
             } else {
-              activation_preload = std::min(sz, sj->K) * sj->M * batch_size * data_type_width;
+              const int next_k_tile = tile_extent(sj->K, sz, row_i + 1);
+              activation_preload = tensor_bytes({static_cast<uint64_t>(next_k_tile),
+                                                  static_cast<uint64_t>(sj->M),
+                                                  static_cast<uint64_t>(batch_size)});
             }
           }
           amt_to_read = activation_preload;
-          n_cycles = 0;
-          state_transfer(write, amt_to_read, amt_to_write, n_cycles);
+          state_transfer(write, amt_to_read, amt_to_write, 0);
         } break;
         case write: {  // Write output data to memory
-          int rd_cycles = sj->M * std::max(systolic_fpu_latency, batch_size);
+          const auto rd_cycles = checked_product(
+              {static_cast<uint64_t>(sj->M),
+               static_cast<uint64_t>(std::max(systolic_fpu_latency, batch_size))});
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
               // Job completed
@@ -79,11 +135,19 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
       }
     } else {  // Output Stationary mode
       switch (state) {
-        case read:  // Read weights and activations
-          state_transfer(shift, 0, 0, sz * std::min(systolic_fpu_latency, batch_size));
-          break;
+        case read: {  // Read weights and activations
+          const int row_extent = tile_extent(sj->M, sz, row_i);
+          const int col_extent = tile_extent(sj->N, sz, col_i);
+          state_transfer(shift, 0, 0,
+                         checked_product({static_cast<uint64_t>(std::max(row_extent, col_extent)),
+                                          static_cast<uint64_t>(std::min(systolic_fpu_latency, batch_size))}));
+        } break;
         case shift:  // Compute and accumulate outputs
-          state_transfer(write, 0, beats_per_wb, 0);
+          state_transfer(write, 0,
+                         tensor_bytes({static_cast<uint64_t>(tile_extent(sj->M, sz, row_i)),
+                                       static_cast<uint64_t>(tile_extent(sj->N, sz, col_i)),
+                                       static_cast<uint64_t>(batch_size)}),
+                         0);
           break;
         case write:  // Write partial sums back to memory
           if (col_i == loop_cols_tiles) {
@@ -92,23 +156,23 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
               state_transfer(SystolicArray::idle, 0, 0, 0);
               TO_IDLE_CLEANUP();
             } else {
-              // Move to next row tile
-              init_row_loop(true);
+              // Move to the first column of the next row tile.
+              row_i++;
+              col_i = 1;
               j->addr = j->addr_hold;
+              init_row_loop(true);
               UPDATE_STATE(SystolicArray::read);
               if (is_idle_from_memory) {
                 UPDATE_IDLEMEM(false);
               }
-              col_i = 1;
-              row_i++;
             }
           } else {
+            col_i++;
             init_row_loop(false);
             UPDATE_STATE(SystolicArray::read);
             if (is_idle_from_memory) {
               UPDATE_IDLEMEM(false);
             }
-            col_i++;
           }
           break;
         case idle:
@@ -125,20 +189,28 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
 void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
   auto sj = (SysArrayJob *) j;
 
-  int n_read_bytes = 0;
-  int n_read_beats = 0;
   if (ws) {
     throw std::exception();
   } else {
-    min_stage_cycles = sj->K * systolic_fpu_latency;
+    const int row_extent = tile_extent(sj->M, sz, row_i);
+    const int col_extent = tile_extent(sj->N, sz, col_i);
+    min_stage_cycles = checked_product({static_cast<uint64_t>(sj->K),
+                                        static_cast<uint64_t>(std::max(systolic_fpu_latency, batch_size))});
+    uint64_t n_read_bytes = tensor_bytes({static_cast<uint64_t>(sj->K),
+                                          static_cast<uint64_t>(col_extent),
+                                          static_cast<uint64_t>(j->batched_weights ? batch_size : 1)});
     if (new_row) {
-      n_read_bytes = std::min(sz, sj->M) * sj->K * (batch_size + (j->batched_weights ? batch_size : 1)) * data_type_width;
-    } else {
-      n_read_bytes = std::min(sz, sj->M) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
+      n_read_bytes = checked_add(
+          n_read_bytes,
+          tensor_bytes({static_cast<uint64_t>(row_extent),
+                        static_cast<uint64_t>(sj->K),
+                        static_cast<uint64_t>(batch_size)}));
     }
-    n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
+    const uint64_t n_read_beats = compute_only
+                                      ? 0
+                                      : div_ru(n_read_bytes, static_cast<uint64_t>(bytes_per_tx));
+    mem_read_left = mem_read_left_unqueued = n_read_beats;
   }
-  mem_read_left = mem_read_left_unqueued = n_read_beats;
 }
 
 void SystolicArray::SysArrayState::init() {
@@ -148,25 +220,25 @@ void SystolicArray::SysArrayState::init() {
   }
   if (ws) {
     UPDATE_STATE(SystolicArray::prefetch);
-    loop_cols_tiles = div_ru(sj->N, sz);
-    loop_row_tiles = div_ru(sj->K, sz);
-    int sys_array_preload = std::min(sz, sj->N) * std::min(sz, sj->K) * data_type_width;
-    int activation_preload = std::min(sz, sj->K) * sj->M * data_type_width;
-    state_transfer(SystolicArray::prefetch, activation_preload + sys_array_preload, 0, sz);
+    loop_cols_tiles = static_cast<int>(div_ru(static_cast<uint64_t>(sj->N), static_cast<uint64_t>(sz)));
+    loop_row_tiles = static_cast<int>(div_ru(static_cast<uint64_t>(sj->K), static_cast<uint64_t>(sz)));
     row_i = 1;
     col_i = 1;
+    const int k_tile = tile_extent(sj->K, sz, row_i);
+    const int n_tile = tile_extent(sj->N, sz, col_i);
+    const auto activation_preload = tensor_bytes(
+        {static_cast<uint64_t>(k_tile), static_cast<uint64_t>(sj->M),
+         static_cast<uint64_t>(batch_size)});
+    state_transfer(SystolicArray::prefetch,
+                   activation_preload, 0,
+                   static_cast<uint64_t>(std::max(k_tile, n_tile)));
   } else {
     UPDATE_STATE(SystolicArray::read);
-    min_stage_cycles = sj->K * std::max(systolic_fpu_latency, batch_size);
-    int n_read_bytes = std::min(sz, sj->M) * sj->K * (batch_size + (j->batched_weights ? batch_size : 1)) * data_type_width;
-    int n_read_beats = n_read_bytes / bytes_per_tx;
-    mem_read_left = mem_read_left_unqueued = n_read_beats;
-
-    loop_cols_tiles = std::max(sj->N / sz, 1);
-    loop_row_tiles = std::max(sj->M / sz, 1);
-
+    loop_cols_tiles = static_cast<int>(div_ru(static_cast<uint64_t>(sj->N), static_cast<uint64_t>(sz)));
+    loop_row_tiles = static_cast<int>(div_ru(static_cast<uint64_t>(sj->M), static_cast<uint64_t>(sz)));
     row_i = 1;
     col_i = 1;
+    init_row_loop(true);
   }
   if (loop_row_tiles == 0)
     throw std::runtime_error("loop_row_tiles == 0");
@@ -175,11 +247,14 @@ void SystolicArray::SysArrayState::init() {
 }
 
 SystolicArray::SysArrayState::SysArrayState(int sz, bool ws) : State(1), sz(sz), ws(ws), state(SystolicArray::idle) {
-  beats_per_wb = std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1);
+  if (sz <= 0) {
+    throw std::invalid_argument("systolic-array size must be positive");
+  }
+  beats_per_wb = 0;
 }
 
 SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n)
-    : Job(m * m * n * data_type_width * batch_size * 2 + n * m * data_type_width * batch_size), M(m), K(k), N(n) {}
+    : Job(sys_array_allocation_bytes(m, k, n)), M(m), K(k), N(n) {}
 
 
 std::string SystolicArray::SysArrayJob::get_job_dims_string() const {

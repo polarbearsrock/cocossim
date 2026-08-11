@@ -33,4 +33,6 @@ if (${USE_VCD})
     add_compile_definitions(VCD=1)
 endif ()
 target_link_libraries(perf_model PRIVATE dramsim3 args)
+target_compile_definitions(perf_model PRIVATE
+        COCOSSIM_DRAMSIM3_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/dramsim3/configs/HBM2_8Gb_x128.ini")
 message(STATUS "PERF_MODEL: ${PERF_MODEL}")
