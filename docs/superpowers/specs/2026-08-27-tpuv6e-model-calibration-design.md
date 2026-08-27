@@ -96,13 +96,22 @@ refined by the Phase C working-set probe (capacity cliffs in a size sweep).
 - Every shape/tiling decision in the expansion is parameterized by flags, not compile
   constants, so calibration loops don't require recompiles.
 
-### 3.5 Honest utilization stat
+### 3.5 Honest utilization stats
 
 `pct_active` counts a rounded-up-to-array-size job as fully busy (an M=1 decode GEMM on
-a 256-wide array reads as 100% active). Add per-unit **effective FLOP utilization**:
-true MACs ÷ (`sa_sz`² × busy cycles). This is the stat commensurable with XProf's FLOP
-utilization and the one Exp 2 figures use. `pct_active` is retained. Calibration itself
-never compares utilization — only time.
+a 256-wide array reads as 100% active). Two additions, both in the stats output:
+
+- **Effective FLOP utilization**, per unit: true MACs ÷ (`sa_sz`² × busy cycles). The
+  stat commensurable with XProf's FLOP utilization and the one Exp 2 figures use.
+- **Cycle accounting**, per unit: every simulated cycle attributed to exactly one of
+  {busy, busy-but-underfilled, stalled-on-memory, idle-no-ready-work}, reported as a
+  per-unit breakdown. The state machine already distinguishes memory stalls internally
+  (the VCD `IDLE_FROM_MEMORY` signal); this summarizes what today is only visible by
+  reading waveforms. The four causes have different architectural remedies, and
+  separating dependency starvation from bandwidth starvation is the load-bearing
+  distinction for the morphing argument.
+
+`pct_active` is retained. Calibration itself never compares utilization — only time.
 
 ### 3.6 Pinned config artifact
 
@@ -115,7 +124,9 @@ Extend `tests/regression.sh` in the existing T1–T5 style: Transformer expansio
 counts for a tiny config; every residual-add job has exactly two parents; dimensional
 consistency of the expansion; new-flag validation (bad values rejected cleanly);
 defaults produce byte-identical behavior on the existing examples; DRAMSim3 stream
-smoke test for the new ini.
+smoke test for the new ini; cycle-accounting invariant (the four categories sum to
+total cycles for every unit, and a memory-starved workload attributes idle cycles to
+stalled-on-memory, not idle-no-ready-work).
 
 ## 4. Measurement campaign (GCP, single `v6e-1`)
 
@@ -213,7 +224,7 @@ it, refit from scratch, log the iteration. The log becomes the methodology secti
   §3.2 (`-fuse_epilogue` lands with M2); author + validate the HBM2e ini.
 - **M1 (wks 1–2, parallel):** GCP harness written; Phases A/B/C executed in the first
   session → geometry verdict + all fitting data.
-- **M2 (wks 2–5):** frontend extension (§3.4) + utilization stat (§3.5), TDD'd,
+- **M2 (wks 2–5):** frontend extension (§3.4) + utilization stats (§3.5), TDD'd,
   regression suite extended (§3.7). Critical path.
 - **M3 (wks 4–6):** fit pipeline + calibration on A/B; sanity gates.
 - **M4 (wks 6–8):** Phase D campaign; holdout validation; iteration loop if the
