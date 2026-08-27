@@ -16,12 +16,18 @@
 - All scratch/temp files go under `$TMPDIR` (`/data2/s2chitni/.tmp`), never `/tmp` or the home directory.
 - Never read, access, or reference files under `/data/eda_tools/pdk/`.
 - Repo root: `/data2/s2chitni/cocossim`. Binary: `build/perf_model`. Run it from `build/` (the default DRAM ini path is relative: `../dramsim3/configs/...`).
-- With no new flags passed, behavior must stay identical to pre-plan behavior (spec §3.2). Exception, by design: Task 5 changes OS-mode job dims for layers whose M is not a multiple of `-sa_sz` (spec §3.5 requires true dims). No shipped example or existing test depends on such an M.
+- With no new flags passed, behavior must stay identical to pre-plan behavior (spec §3.2). Two documented exceptions, both confined to under-filled tiles (M or N below `-sa_sz`): Task 4 makes OS-mode job dims carry true M, and Task 4b adds the weight/KV-side read term the OS model has always lacked. Full-tile workloads are cycle-identical (old and new read formulas agree exactly when M, N >= sa_sz), so `examples/basic_transformer.txt` is unaffected; `examples/cnn_model.txt`'s final `Matmul 1 256 1000` layer changes dims/traffic/cycles under defaults (no test asserts its numbers — T5 checks exit status and layer-file consistency only).
 - Before EVERY commit: run BOTH `tests/regression.sh` (must stay 5/5) and `tests/tpuv6e.sh` (all tests so far green).
 - Every commit message ends with these two lines:
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01Mbj5eyJ5ocdWzCZ8m7SVsM`
 - Test-count arithmetic: several tests assert exact job counts, derived in comments. If an observed count differs at the GREEN step, re-derive by hand from the simulator's job dump BEFORE touching the assertion; the derivation comment must be updated to match.
+
+## Declared deviations from spec §3.7 (reviewed and accepted)
+
+- New tests live in `tests/tpuv6e.sh`, not `tests/regression.sh` — both run before every commit, so the gate is equivalent.
+- "Residual-add has exactly two parents" is verified by proxy: V11's silu-multiply fan-in check (in-degree 4 from two GEMM tails) proves DAG wiring, and V13's exact −2-jobs-per-layer delta pins the residual jobs themselves. Residual in-degree can't be checked directly because its dot label ("8 x 8") is not unique. Note "two parents" holds at tensor granularity; at job granularity res1's in-degree is 3 (two o_proj jobs + block input).
+- Spec §3.3(a)'s "DRAMSim3-only streaming test" is implemented as a full-simulator streaming test (V5) — independently validated during plan review by running a modified ini through the real binary (954 GB/s achieved even while issue-capped at the old dram_enq=9).
 
 ---
 
@@ -35,7 +41,7 @@ The working tree carries an already-reviewed, already-verified fix series (sched
 - [ ] **Step 1: Verify the tree is the reviewed state**
 
 Run: `cd /data2/s2chitni/cocossim && git status --short`
-Expected: exactly the 6 modified files above plus untracked `tests/` (and untracked `dramsim3/` which is the vendored submodule-like dir — check `git log --oneline -3` shows `8dfaf9d` spec amendment at HEAD).
+Expected: exactly the 6 modified files above plus untracked `tests/` and untracked `dramsim3/` (the vendored tree; verified not git-ignored). HEAD is the spec/plan commit series (`9f4a2a7` or later); the fix series itself is what's still uncommitted.
 
 Note: `dramsim3/` appears untracked. Run `git check-ignore dramsim3 && echo IGNORED`. If it is not ignored and not previously tracked, do NOT add it in this task — commit only the 6 files + `tests/`.
 
@@ -73,6 +79,7 @@ git commit -m "Fix scheduler distribution, WS reservation, Softmax conservation,
 # V1  -buf_mb reaches the layer generator (Softmax split count changes)
 # V2  -dram_enq throttles memory issue (cycles increase)
 # V3  -job_overhead adds fixed cycles per job
+# V3b invalid new-flag values are rejected cleanly
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$REPO/build/perf_model"
@@ -111,6 +118,18 @@ if [ -n "$cb" ] && [ -n "$co" ] && [ $((co - cb)) -ge 1000 ]; then
   ok "V3 -job_overhead 1000 adds $((co - cb)) cycles"
 else bad "V3 base=$cb overhead=$co"; fi
 
+# V3b: invalid values for each new flag must be rejected (exit 1 + message).
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 0 -i "$WORK/v3.txt" -o "$WORK/v3c.txt" > "$WORK/v3c.log" 2>&1; r1=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_enq 0 -i "$WORK/v3.txt" -o "$WORK/v3d.txt" > "$WORK/v3d.log" 2>&1; r2=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -job_overhead -1 -i "$WORK/v3.txt" -o "$WORK/v3e.txt" > "$WORK/v3e.log" 2>&1; r3=$?
+if [ "$r1" -eq 1 ] && grep -q 'buf_mb' "$WORK/v3c.log" \
+   && [ "$r2" -eq 1 ] && grep -q 'dram_enq' "$WORK/v3d.log" \
+   && [ "$r3" -eq 1 ] && grep -q 'job_overhead' "$WORK/v3e.log"; then
+  ok "V3b invalid -buf_mb/-dram_enq/-job_overhead rejected"
+else
+  bad "V3b rejection exit codes: buf=$r1 enq=$r2 ovh=$r3"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
 ```
@@ -120,7 +139,7 @@ Run: `chmod +x tests/tpuv6e.sh`
 - [ ] **Step 2: Run to verify all three fail for the right reason**
 
 Run: `tests/tpuv6e.sh`
-Expected: 3 FAIL. The logs must show `Failed to parse passed flag: '-buf_mb'` (thrown by `parse_args`) — proving the flags don't exist yet, not some other breakage.
+Expected: 4 FAIL. The logs must show `Failed to parse passed flag: '-buf_mb'` (thrown by `parse_args`) — proving the flags don't exist yet, not some other breakage.
 
 - [ ] **Step 3: Implement**
 
@@ -183,7 +202,7 @@ In `src/Arch.cc`, at the dispatch site, add one line directly after `state->init
 - [ ] **Step 4: Build and run both suites**
 
 Run: `export CCACHE_DIR=/data2/s2chitni/.tmp/ccache && cmake --build build -j8 && tests/regression.sh && tests/tpuv6e.sh`
-Expected: 5/5 and 3/3 PASS.
+Expected: regression 5/5; tpuv6e all green (0 failed).
 
 - [ ] **Step 5: Commit**
 
@@ -209,9 +228,10 @@ git commit -m "Promote buffer/dram-enqueue knobs to flags; add -job_overhead"
 - [ ] **Step 1: Append the failing test V4 to `tests/tpuv6e.sh`** (before the final `echo "===="` line; same for every later task)
 
 ```bash
-# V4: -dram_ini selects the DRAM config. GDDR6 (x16 bus) has a different
-# request size than HBM2 (x128), so REQUEST SIZE BYTES must change; a
-# missing file must die cleanly with a message naming the path.
+# V4: -dram_ini selects the DRAM config. The GDDR6 ini has bus_width=128
+# with BL=16 -> 256-byte requests vs HBM2's 64 (verified by running the
+# binary against it during plan review), so REQUEST SIZE BYTES must change;
+# a missing file must die cleanly with a message naming the path.
 printf 'LayerNorm 1024 1024\n' > "$WORK/v4.txt"
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_ini ../dramsim3/configs/GDDR6_8Gb_x16.ini \
   -i "$WORK/v4.txt" -o "$WORK/v4_stats.txt" > "$WORK/v4.log" 2>&1
@@ -274,7 +294,7 @@ void mem::setup() {
 
 - [ ] **Step 4: Build; run both suites**
 
-Expected: regression 5/5 (unchanged default path proves ordering is safe), tpuv6e 4/4.
+Expected: regression 5/5 (unchanged default path proves ordering is safe); tpuv6e all green (0 failed).
 
 - [ ] **Step 5: Commit**
 
@@ -349,7 +369,7 @@ Add a header comment at the top of the file:
 
 - [ ] **Step 4: Build not needed (config only); run both suites**
 
-Expected: regression 5/5, tpuv6e 5/5. If V5's bandwidth lands below 800 GB/s, diagnose before touching the threshold: check the `DRAM CMDs` counter in `v5.log` grows ~12.5M (800 MB / 64 B), and check `dram_enq` reached 32 (a typo'd flag falls back to a parse error, not a silent default).
+Expected: regression 5/5, tpuv6e all green (0 failed). If V5's bandwidth lands below 800 GB/s, diagnose before touching the threshold: check the `DRAM CMDs` counter in `v5.log` grows ~12.5M (800 MB / 64 B), and check `dram_enq` reached 32 (a typo'd flag falls back to a parse error, not a silent default).
 
 - [ ] **Step 5: Commit**
 
@@ -362,7 +382,9 @@ git commit -m "Add HBM2e_v6e DRAMSim3 config (~1.64 TB/s, 32 GiB)"
 
 ### Task 4: Preserve true M in OS-mode SA jobs
 
-`createSAJobs` (`src/frontends/standard/StandardLayers.cc:23`) is always called with `m = sa_sz_allo`: a `Matmul 1 K N` becomes a job claiming `M = 64`. This destroys the under-fill information that Task 5's cycle accounting and Task 6's FLOP-utilization stat report, and mis-models decode (M=1) read traffic. Fix: callers pass the layer's true M; `createSAJobs` splits it into `div_ru(M, sa_sz)` jobs, the last one carrying the remainder.
+`createSAJobs` (`src/frontends/standard/StandardLayers.cc:23`) is always called with `m = sa_sz_allo` by the OS paths: a `Matmul 1 K N` becomes a job claiming `M = 64`. This destroys the under-fill information that Task 5's cycle accounting and Task 6's FLOP-utilization stat report. Fix: callers pass the layer's true M; `createSAJobs` splits it into `div_ru(M, sa_sz)` jobs, the last one carrying the remainder.
+
+Caution (from plan review): because the OS read model scales all reads with `min(sz, M)`, this task by itself REDUCES modeled read traffic for small-M jobs — the old M=64 rounding was accidentally closer to true traffic magnitude. Task 4b immediately follows to add the weight-side read term the model has always lacked; Tasks 4 and 4b land as consecutive commits and only together restore traffic honesty. Do not stop between them.
 
 For M an exact multiple of `sa_sz` (every shipped example: cnn conv M=50176=784×64, matmul M=1 → 1 job either way but dims change 64→1), job COUNT is unchanged; only sub-`sa_sz` dims become honest.
 
@@ -427,7 +449,7 @@ JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
 Update every call site to the new contract (pass true M and the array size; delete the caller-side `num_jobs` computation):
 - `Matmul` OS branch: `JobList matmul_layers = createSAJobs(M, K, N, a_config.sa_sz_allo, a_config.n_cores);`
 - `Conv` OS branch: same as Matmul.
-- `MatmulAct` WS branch: this caller splits K, not M — preserve its job count exactly: `createSAJobs(M, a_config.sa_sz_allo, N, ...)` created `num_jobs = ceil(K/sa)` copies. Recreate that behavior explicitly with the new function by calling it once per K-block:
+- `MatmulAct` WS branch: this caller splits K, not M, and (unlike the OS paths) already passes the TRUE M — it creates `ceil(K/sa)` jobs each of dims M×sa×N. Recreate that with the new function by calling it once per K-block:
   ```cpp
   JobList matmul_layers;
   for (int kb = 0; kb < std::max(1, int(std::ceil(float(K) / a_config.sa_sz_allo))); ++kb) {
@@ -435,20 +457,91 @@ Update every call site to the new contract (pass true M and the array size; dele
     matmul_layers.insert(matmul_layers.end(), part.begin(), part.end());
   }
   ```
-  Note this multiplies job count by `ceil(M/sa)` vs. the old single-job-per-K-block only when M > sa — the old code modeled ONE M=sa job per K block regardless of true M, i.e. it dropped rows; carrying all rows is the honest model. `MatmulAct` is not used by any shipped example (`grep -rl MatmulAct examples/` is empty) so no example output changes.
+  Job count is identical for M <= sa. For M > sa the old code packed all M rows into ONE job per K-block (tiled internally); the new form emits `ceil(M/sa)` jobs per K-block — count changes, total modeled work is equivalent. Neither `MatmulAct` nor `ActMatmul` is used by any shipped example (`grep -rl MatmulAct examples/` is empty; `ActMatmul` is not even registered in `getLayerLambda` — dead code), so no example output changes.
 - `MatmulAct` OS branch: `createSAJobs(M, K, N, a_config.sa_sz_allo)`.
-- `ActMatmul` WS branch: same K-block loop as MatmulAct WS; OS branch: `createSAJobs(M, K, N, a_config.sa_sz_allo)`.
+- `ActMatmul` WS branch: same K-block loop as MatmulAct WS but with the old FLOOR count preserved (`std::max(1, K / a_config.sa_sz_allo)` iterations — the old code used floor here, not ceil); OS branch: `createSAJobs(M, K, N, a_config.sa_sz_allo)`.
 - `SelfAttention` OS branch (6 sites): replace each `createSAJobs(a_config.sa_sz_allo, X, Y, num_jobs)` with `createSAJobs(M, X, Y, a_config.sa_sz_allo)` keeping each site's existing K/N arguments; delete the local `num_jobs`.
 
 - [ ] **Step 4: Build; run both suites**
 
-Expected: regression 5/5 (cnn/transformer examples use exact-multiple or M=1 shapes; T1-T5 assert no OS SA dims), tpuv6e 6/6.
+Expected: regression 5/5 (cnn/transformer examples use exact-multiple or M=1 shapes; T1-T5 assert no OS SA dims); tpuv6e all green (0 failed).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/frontends/standard/StandardLayers.cc tests/tpuv6e.sh
 git commit -m "Preserve true M in OS systolic-array jobs"
+```
+
+---
+
+### Task 4b: Model weight/KV-side read traffic in OS mode
+
+The OS read model (`src/units/standard/SysArray.cc:135-137,161`) scales ALL reads with `min(sz, M)`: the weight block that changes on every column tile is charged at activation-panel size instead of its true `K x min(sz, N)`. For M >> sz this roughly cancels; for decode (M small, N = context large) modeled reads are ~30-50x under truth — the exact regime spec §3.4 promises to account ("decode accounts KV-cache reads as DRAM traffic"). Fix: charge the weight block per column tile and the activation panel per row tile.
+
+Behavior preservation: for full tiles (M, N >= sz) the new formulas are EXACTLY the old ones — row move: old `sz*K*(1+1)*dtw` = new `sz*K*dtw (activation) + sz*K*dtw (weights)`; column move: old `sz*K*1*dtw` = new `min(sz,N)*K*dtw`. Only under-filled tiles change.
+
+**Files:**
+- Modify: `src/units/standard/SysArray.cc` (`init_row_loop`, OS branch of `init`)
+- Test: `tests/tpuv6e.sh` (V6b)
+
+**Interfaces:**
+- Consumes: true-M job dims (Task 4); `SysArrayJob.M/K/N`; `batched_weights`.
+- Produces: honest OS read traffic. Task 5's memstall attribution and the future calibration plan depend on decode-shaped jobs being memory-heavy, as hardware is.
+
+- [ ] **Step 1: Append failing test V6b**
+
+```bash
+# V6b: a decode-shaped GEMM must read its full weight/KV panel. Matmul 1 64 2048
+# at -sa_sz 64: weights = K*N*dtw = 64*2048*2 = 256 KiB = 4096 beats (64 B/beat),
+# charged min(sz,N)*K*dtw = 8 KiB per column tile x 32 tiles. Before this fix
+# the reads are min(sz,M)*K-scaled: ~2 beats/tile, ~64 beats total, and DRAM
+# CMDs (reads+writes+init) sit far below 4000.
+printf 'Matmul 1 64 2048\n' > "$WORK/v6c.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v6c.txt" -o "$WORK/v6c_s.txt" > "$WORK/v6c.log" 2>&1
+cmds=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v6c.log" | tail -1 | awk '{print $3}')
+if [ "${cmds:-0}" -ge 4000 ]; then
+  ok "V6b decode-shaped GEMM reads its KV/weight panel (DRAM CMDs=$cmds)"
+else
+  bad "V6b DRAM CMDs=$cmds (< 4000: weight-side reads missing)"
+fi
+```
+
+- [ ] **Step 2: Run to verify V6b fails** — record the observed DRAM CMDs (expected: a few hundred at most), confirming the weight reads are absent today.
+
+- [ ] **Step 3: Implement**
+
+`src/units/standard/SysArray.cc`, replace the OS (`else`) branch of `init_row_loop`:
+```cpp
+  } else {
+    min_stage_cycles = sj->K * systolic_fpu_latency;
+    // Weight/KV block for this column tile: K x min(sz, N). Activation panel
+    // (min(sz, M) x K) is re-read only when the row tile advances.
+    int weight_bytes = std::min(sz, sj->N) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
+    n_read_bytes = weight_bytes;
+    if (new_row) {
+      n_read_bytes += std::min(sz, sj->M) * sj->K * batch_size * data_type_width;
+    }
+    n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
+  }
+```
+and in the OS branch of `init()`, replace the `n_read_bytes` line with the same two-term form (first tile = activation panel + first weight block):
+```cpp
+    int n_read_bytes = std::min(sz, sj->M) * sj->K * batch_size * data_type_width
+                     + std::min(sz, sj->N) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
+    int n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
+```
+(`init()` previously used a bare division that could yield 0 beats; `max(.,1)` matches `init_row_loop` and only affects sub-64-byte jobs.)
+
+- [ ] **Step 4: Build; run both suites**
+
+Expected: regression 5/5 — T1/T2 are VPU-only, T3 is WS, T5's conv layers are full-tile (M=50176, N>=64 multiples). tpuv6e all green (0 failed): V2/V7-style VPU tests unaffected; V6 asserts dims only; V8's eff_util bound has margin (extra read cycles are memstall or overlap under the 512-cycle compute floor).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/units/standard/SysArray.cc tests/tpuv6e.sh
+git commit -m "Charge weight/KV-side reads per column tile in OS mode"
 ```
 
 ---
@@ -527,15 +620,19 @@ Add to `struct State` (after `bool is_idle_from_memory = false;`):
 ```
 (add `#include <algorithm>` if not already transitively present).
 
-`include/units/standard/VectorUnit.h` — add to `VecUnitState` (public):
+`include/units/standard/VectorUnit.h` — NOTE: `VecUnitState` is declared BEFORE `VecUnitJob` in this header, so an inline body inside the class cannot reference `VecUnitJob` (verified during plan review: g++ rejects it). Declare in-class, define after the job struct. Inside `VecUnitState` (public):
 ```cpp
-    // Approximation: a REDUCE/BROADCAST pass with fewer parallel rows than
-    // lanes leaves lanes idle; finer per-phase modeling is not needed for
-    // the paper's per-unit attribution.
-    bool is_underfilled() const override {
-      if (j == nullptr) return false;
-      return ((VecUnitJob *) j)->parallel_dimension < sz;
-    }
+    bool is_underfilled() const override;
+```
+and AFTER the closing `};` of `struct VecUnitJob` (still inside `namespace VectorUnit`):
+```cpp
+  // Approximation: a REDUCE/BROADCAST pass with fewer parallel rows than
+  // lanes leaves lanes idle; finer per-phase modeling is not needed for
+  // the paper's per-unit attribution.
+  inline bool VecUnitState::is_underfilled() const {
+    if (j == nullptr) return false;
+    return ((VecUnitJob *) j)->parallel_dimension < sz;
+  }
 ```
 
 `src/Arch.cc` — in the per-cycle loop, replace:
@@ -578,7 +675,7 @@ Note: counters are cumulative across periods; with `periods = 1` (the only suppo
 
 - [ ] **Step 4: Build; run both suites**
 
-Expected: regression 5/5, tpuv6e 7/7. If V7(b) memstall is 0, first check `is_idle_from_memory` is being set: the non-VCD macro fix is the usual culprit.
+Expected: regression 5/5, tpuv6e all green (0 failed). If V7(b) memstall is 0, first check `is_idle_from_memory` is being set: the non-VCD macro fix is the usual culprit.
 
 - [ ] **Step 5: Commit**
 
@@ -663,7 +760,7 @@ fi
 
 Update V7's awk field positions? No — V7 reads fields 5/7/9/11 which keep their positions (new fields append). Verify V7 still passes.
 
-- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e 8/8.
+- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e all green (0 failed).
 
 - [ ] **Step 5: Commit**
 
@@ -738,7 +835,7 @@ and register in `getLayerLambda`:
     return Add;
 ```
 
-- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e 9/9.
+- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e all green (0 failed).
 
 - [ ] **Step 5: Commit**
 
@@ -833,6 +930,7 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows) {
     }
     Mp /= spl;
   }
+  std::cout << "Splitting by " << spl << std::endl;// preserved from Softmax: stdout must stay identical
   int n_jobs = div_ru(n_rows, Mp);
   JobList softmax_layer;
   for (int i = 0; i < n_jobs; ++i)
@@ -842,7 +940,7 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows) {
 ```
 and shrink `Softmax` to parse dims then `JobList softmax_layer = makeSoftmaxJobs(M, M * heads); return {softmax_layer, softmax_layer};` — for the old code `row_len = M` and total rows `= M * heads` with the buffer test `heads*M*M*dtw <= buf`: `row_len*n_rows*dtw = M*(M*heads)*dtw` — identical. `Mp` init `M*heads` — identical. T2 must still pass.
 
-- [ ] **Step 4: Build; run both suites** — regression 5/5 (T2 proves Softmax refactor is behavior-preserving), tpuv6e 10/10.
+- [ ] **Step 4: Build; run both suites** — regression 5/5 (T2 proves Softmax refactor is behavior-preserving); tpuv6e all green (0 failed).
 
 - [ ] **Step 5: Commit**
 
@@ -891,7 +989,7 @@ fin=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v11.log" | tail -1 | grep -o '[0-9
 # DAG check via jobs.dot: the silu-multiply node is the only "8 x 16" VPU
 # node; it must have in-degree 4 (2 gate jobs + 2 up jobs), proving the
 # expansion wires real fan-in, not a linear chain.
-silu=$(awk -F'[" ]' '/label="8 x 16"/{print $1}' jobs.dot | tr -d ' ')
+silu=$(awk -F'[" ]' '/label="8 x 16"/{print $3}' jobs.dot)
 indeg=$(grep -c -- "-> ${silu};" jobs.dot)
 if [ "$rc" -eq 0 ] && [ "${total:-0}" = "25" ] && [ "$fin" = "$total" ] && [ "${indeg:-0}" -eq 4 ]; then
   ok "V11 Transformer prefill: 25 jobs, all finish, silu fan-in=4"
@@ -899,7 +997,7 @@ else
   bad "V11 rc=$rc total=${total:-?} fin=${fin:-?} silu_indeg=${indeg:-?}"
 fi
 ```
-Note `jobs.dot` is written to the CWD (`build/`) by `main.cc`. The awk extracts the node name from a line like `  job17 [label="8 x 16"];` — field 1 after splitting on quote/space is the indented name; verify the extraction interactively if it misfires (the label is `parallel x linearized` = `8 x 16` for `VecUnitJob(16, 8, ...)`).
+Note `jobs.dot` is written to the CWD (`build/`) by `main.cc`. Node lines have TWO leading spaces (`  job17 [label="8 x 16"];`), so with `-F'[" ]'` the node name is field 3 (fields 1-2 are empty) — verified against a real jobs.dot during plan review. The label is `parallel x linearized` = `8 x 16` for `VecUnitJob(16, 8, ...)` and is unique in this graph (SA labels have three components; softmax is "16 x 8"; norms/residuals are "8 x 8"; rope is "128 x 1").
 
 - [ ] **Step 2: Run to verify V11 fails** — `Unknown layer type: Transformer`.
 
@@ -998,7 +1096,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
 ```
 Register `Transformer` in `getLayerLambda`.
 
-- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e 11/11. If the V11 count differs, dump `jobs.dot` node labels and re-derive per the Global Constraints rule.
+- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e all green (0 failed). If the V11 count differs, dump `jobs.dot` node labels and re-derive per the Global Constraints rule.
 
 - [ ] **Step 5: Commit**
 
@@ -1128,7 +1226,7 @@ and the res2 block:
 ```
 (Note: with fusing on, `res1` may contain jobs already in `prev_tail`'s lineage; `connectJobLists(prev_tail, norm1)` in the next iteration handles duplicates fine — `add_child` just increments `rem_deps` per edge, and duplicate edges are not created here because each list element is distinct.)
 
-- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e 13/13 (V11/V12 confirm default-off still yields 25 jobs).
+- [ ] **Step 4: Build; run both suites** — regression 5/5, tpuv6e all green (0 failed) (V11/V12 confirm default-off still yields 25 jobs).
 
 - [ ] **Step 5: Commit**
 
@@ -1201,7 +1299,7 @@ Run: `chmod +x configs/tpuv6e.sh`
 - [ ] **Step 4: Full final sweep**
 
 Run: `tests/regression.sh && tests/tpuv6e.sh` and additionally the three shipped examples through `build/perf_model` with defaults (exit 0, all jobs finish) — the same check Task 0 relied on.
-Expected: 5/5, 14/14, examples clean.
+Expected: regression 5/5; tpuv6e all green (0 failed); examples clean.
 
 - [ ] **Step 5: Commit**
 
