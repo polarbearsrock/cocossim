@@ -278,7 +278,17 @@ else
 fi
 
 # V13: -fuse_epilogue 1 removes exactly 2 VPU jobs per layer (res1, res2).
-# Tiny prefill config from V11 has 25 jobs -> 23 fused. All still finish.
+# 1-layer tiny prefill config from V11 has 25 jobs -> 23 fused, all finish.
+# 2-layer variant (Transformer 2 8 2 2 16 8 0 1) is the multi-layer-wiring
+# regression guard: it is the only run where block_in=prev_tail (l>0) and
+# prev_tail is itself the fused union from the prior layer's res1/res2, so
+# it exercises connectJobLists(prev_tail, norm1) with a multi-element fused
+# prev_tail -- duplicate list elements there would double-increment
+# rem_deps and deadlock, which the "Jobs finished == total" check below
+# catches. Per-layer job count is uniform regardless of l (norm1..res2 are
+# all created fresh inside the loop body, same derivation as V11): unfused
+# total = 2*25 = 50; fusing removes res1+res2 (2 VPU jobs) per layer:
+# 50 - 2*2 = 46.
 printf 'Transformer 1 8 2 2 16 8 0 1\n' > "$WORK/v13.txt"
 "$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_epilogue 1 -i "$WORK/v13.txt" -o "$WORK/v13_s.txt" > "$WORK/v13.log" 2>&1
 rc=$?
@@ -286,10 +296,16 @@ total=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v13.log" | tail -1 | sed '
 fin=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v13.log" | tail -1 | grep -o '[0-9]*')
 "$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_epilogue 2 -i "$WORK/v13.txt" -o "$WORK/v13b_s.txt" > "$WORK/v13b.log" 2>&1
 rcb=$?
-if [ "$rc" -eq 0 ] && [ "${total:-0}" = "23" ] && [ "$fin" = "$total" ] && [ "$rcb" -eq 1 ]; then
-  ok "V13 -fuse_epilogue 1 -> 23 jobs; invalid value rejected"
+printf 'Transformer 2 8 2 2 16 8 0 1\n' > "$WORK/v13c.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_epilogue 1 -i "$WORK/v13c.txt" -o "$WORK/v13c_s.txt" > "$WORK/v13c.log" 2>&1
+rcc=$?
+totalc=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v13c.log" | tail -1 | sed 's|.*/||')
+finc=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v13c.log" | tail -1 | grep -o '[0-9]*')
+if [ "$rc" -eq 0 ] && [ "${total:-0}" = "23" ] && [ "$fin" = "$total" ] && [ "$rcb" -eq 1 ] \
+   && [ "$rcc" -eq 0 ] && [ "${totalc:-0}" = "46" ] && [ "$finc" = "$totalc" ]; then
+  ok "V13 -fuse_epilogue 1 -> 23 jobs (1L) / 46 jobs (2L, multi-layer wiring); invalid value rejected"
 else
-  bad "V13 rc=$rc total=${total:-?} fin=${fin:-?} badval_rc=$rcb"
+  bad "V13 rc=$rc total=${total:-?} fin=${fin:-?} badval_rc=$rcb 2L rc=$rcc total=${totalc:-?} fin=${finc:-?}"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
