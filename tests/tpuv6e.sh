@@ -85,5 +85,27 @@ else
   bad "V4 rc=$rc req=${req:-none} missing-file rc=$rcb"
 fi
 
+# V5: HBM2e_v6e ini must deliver >= 800 GB/s achieved on a memory-bound
+# streaming workload (target 1638 GB/s x typical DRAM efficiency), and the
+# request size must stay 64B. Two caps must be non-binding for the test to
+# measure DRAM: enqueue width (-dram_enq 32 at 1.75 GHz = 3.58 TB/s issue)
+# and compute (-vu_sz 2048: 200M elems / 2048 lanes = 98k compute cycles,
+# far below the ~1.4M memory cycles; at the default vu_sz 64 the run is
+# compute-bound and measures nothing about the ini).
+# Workload: Activation 200000000 = 200M elems: 400 MB read + 400 MB write.
+printf 'Activation 200000000\n' > "$WORK/v5.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 2048 -f 1.75 -dram_enq 32 -dram_ini ../configs/HBM2e_v6e.ini \
+  -i "$WORK/v5.txt" -o "$WORK/v5_stats.txt" > "$WORK/v5.log" 2>&1
+rc=$?
+cyc=$(cycles_of "$WORK/v5_stats.txt")
+req=$(awk '/REQUEST SIZE BYTES/{print $NF; exit}' "$WORK/v5.log")
+# achieved GB/s = 800e6 bytes / (cycles / 1.75 GHz) / 1e9 = 800*1.75/cycles * 1e6... in awk:
+bw=$(awk -v c="${cyc:-0}" 'BEGIN{ if (c>0) printf "%d", 800000000.0 / (c / 1.75) ; else print 0 }')
+if [ "$rc" -eq 0 ] && [ "$req" = "64" ] && [ "$bw" -ge 800 ] && [ "$bw" -le 1800 ]; then
+  ok "V5 HBM2e_v6e achieves ${bw} GB/s (cycles=$cyc)"
+else
+  bad "V5 rc=$rc req=${req:-?} bw=${bw:-?} GB/s cycles=${cyc:-?}"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
