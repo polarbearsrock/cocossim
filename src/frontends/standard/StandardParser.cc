@@ -8,6 +8,7 @@
  */
 
 #include "frontends/standard/StandardParser.h"
+#include "memory.h"
 
 using namespace frontend::standard;
 
@@ -56,6 +57,7 @@ Arch* StandardParser::make_arch() {
     exit(1);
   }
   buffer_size_bytes = buf_mb * 1024 * 1024;
+  mem::setup();
   arch_config = ArchConfig(cores, sa_sz, vu_sz, ws);
   return new StandardArch;
 }

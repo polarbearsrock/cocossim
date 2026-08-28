@@ -9,6 +9,8 @@
 
 #include "memory.h"
 #include "global.h"
+#include "frontends/ArchParser.h"
+#include <fstream>
 
 using namespace mem;
 
@@ -57,7 +59,13 @@ bool mem::try_enqueue_tx() {
 }
 
 void mem::setup() {
-  dramsim3config = new dramsim3::Config("../dramsim3/configs/HBM2_8Gb_x128.ini", "./");
+  std::ifstream probe(dram_ini_path);
+  if (!probe.good()) {
+    std::cerr << "Error: DRAM config file not found: " << dram_ini_path << std::endl;
+    exit(1);
+  }
+  probe.close();
+  dramsim3config = new dramsim3::Config(dram_ini_path, "./");
   mem_sys = new mem_ty(*dramsim3config, "./", [](uint64_t addr) {
         auto it = address_reads_bkwds_lookup.find(addr);
         if (it != address_reads_bkwds_lookup.end()) {

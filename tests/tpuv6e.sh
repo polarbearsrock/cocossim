@@ -67,5 +67,23 @@ else
   bad "V3b rejection exit codes: buf=$r1 enq=$r2 ovh=$r3"
 fi
 
+# V4: -dram_ini selects the DRAM config. The GDDR6 ini has bus_width=128
+# with BL=16 -> 256-byte requests vs HBM2's 64 (verified by running the
+# binary against it during plan review), so REQUEST SIZE BYTES must change;
+# a missing file must die cleanly with a message naming the path.
+printf 'LayerNorm 1024 1024\n' > "$WORK/v4.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_ini ../dramsim3/configs/GDDR6_8Gb_x16.ini \
+  -i "$WORK/v4.txt" -o "$WORK/v4_stats.txt" > "$WORK/v4.log" 2>&1
+rc=$?
+req=$(awk '/REQUEST SIZE BYTES/{print $NF; exit}' "$WORK/v4.log")
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_ini /nonexistent/nope.ini \
+  -i "$WORK/v4.txt" -o "$WORK/v4b.txt" > "$WORK/v4b.log" 2>&1
+rcb=$?
+if [ "$rc" -eq 0 ] && [ -n "$req" ] && [ "$req" -ne 64 ] && [ "$rcb" -eq 1 ] && grep -q 'nope.ini' "$WORK/v4b.log"; then
+  ok "V4 -dram_ini honored (req size $req) and missing file rejected"
+else
+  bad "V4 rc=$rc req=${req:-none} missing-file rc=$rcb"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

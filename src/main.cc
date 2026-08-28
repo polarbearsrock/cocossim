@@ -16,6 +16,7 @@
 
 std::string layer_file;
 std::string ofile;
+std::string dram_ini_path = "../dramsim3/configs/HBM2_8Gb_x128.ini";
 
 using namespace frontend::standard;
 
@@ -27,7 +28,6 @@ int main(int argc, char **argv) {
   MyLayerParser layerParser;
 
   auto t1 = std::chrono::high_resolution_clock::now();
-  mem::setup();
 
 #ifdef VCD
   vcd = fopen("out.vcd", "w");

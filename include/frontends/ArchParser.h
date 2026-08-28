@@ -15,6 +15,7 @@
 
 extern std::string layer_file;
 extern std::string ofile;
+extern std::string dram_ini_path;
 
 struct ArchParser {
   virtual Arch *make_arch() {
@@ -26,13 +27,16 @@ struct ArchParser {
         layer_file = argv[++i];
       } else if (strcmp(argv[i], "-o") == 0) {
         ofile = argv[++i];
+      } else if (strcmp(argv[i], "-dram_ini") == 0) {
+        dram_ini_path = argv[++i];
       } else if (strcmp(argv[i], "-f") == 0) {
         freq_sa = std::stof(argv[++i]);
       } else if (strcmp(argv[i], "-h") == 0) {
         std::cerr << "Global Options:\n"
                      "-i <file>     layer input file\n"
                      "-o <file>     output statistic file\n"
-                     "-f <float>    frequency (GHz)\n";
+                     "-f <float>    frequency (GHz)\n"
+                     "-dram_ini <file> DRAMSim3 config ini (default ../dramsim3/configs/HBM2_8Gb_x128.ini)\n";
         if (help_str != "") {
           std::cerr << "Arch Specific Options:\n"
                     << help_str << std::endl;
