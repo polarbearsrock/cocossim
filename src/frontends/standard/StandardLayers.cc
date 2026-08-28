@@ -350,6 +350,96 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows) {
   return softmax_layer;
 }
 
+// Llama/Gemma-style decoder stack (spec 3.4).
+// Line: Transformer n_layers d_model n_heads n_kv_heads d_ff seq_len mode batch
+//   mode 0 = prefill: every GEMM has M = seq_len rows, attention context = seq_len
+//   mode 1 = decode:  every GEMM has M = batch rows, KV context = seq_len
+// Residual adds depend on BOTH true parents so the simulator is allowed the
+// same SA/VPU overlap the hardware has. KV-cache traffic rides the score/AV
+// jobs' weight-side reads. For layer 0 the residual's block-input parent is
+// approximated by norm1 (the true parent is the external predecessor line).
+JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
+  if (l_config.dimensions.size() != 8) {
+    std::cerr << "Transformer expects 8 dims: n_layers d_model n_heads n_kv_heads d_ff seq_len mode batch" << std::endl;
+    throw std::exception();
+  }
+  const auto &d = l_config.dimensions;
+  int n_layers = d[0], d_model = d[1], nh = d[2], nkv = d[3], d_ff = d[4], seq_len = d[5], mode = d[6], batch = d[7];
+  if (n_layers < 1 || d_model < 1 || nh < 1 || nkv < 1 || d_ff < 1 || seq_len < 1 || batch < 1 ||
+      (mode != 0 && mode != 1) || d_model % nh != 0 || nh % nkv != 0) {
+    std::cerr << "Transformer: invalid dims (need positive sizes, mode 0|1, nh | d_model, nkv | nh)" << std::endl;
+    throw std::exception();
+  }
+  int head_dim = d_model / nh;
+  int M = (mode == 0) ? seq_len : batch;// rows through every GEMM
+  int S = seq_len;                      // attention context length
+
+  auto mk_binary_ew = [&](int rows, int cols) -> JobList {
+    auto *jb = new VectorUnit::VecUnitJob(cols, rows, false, {{VectorUnit::VPUPhase::BROADCAST, 1}});
+    jb->n_read_operands = 2;
+    return {jb};
+  };
+
+  JobList model_head, prev_tail;
+  for (int l = 0; l < n_layers; ++l) {
+    JobList norm1 = makeRMSNormJobs(d_model, M);
+    if (l == 0) model_head = norm1;
+    else connectJobLists(prev_tail, norm1);
+
+    auto q = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_model}));
+    auto k = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
+    auto v = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
+    connectJobLists(norm1, q.first);
+    connectJobLists(norm1, k.first);
+    connectJobLists(norm1, v.first);
+
+    JobList rope = {new VectorUnit::VecUnitJob(1, M * (d_model + nkv * head_dim), false,
+                                               {{VectorUnit::VPUPhase::BROADCAST, 1}})};
+    connectJobLists(q.second, rope);
+    connectJobLists(k.second, rope);
+
+    JobList scores, av;
+    for (int h = 0; h < nh; ++h) scores.push_back(new SystolicArray::SysArrayJob(M, head_dim, S));
+    for (int h = 0; h < nh; ++h) av.push_back(new SystolicArray::SysArrayJob(M, S, head_dim));
+    connectJobLists(rope, scores);
+
+    JobList sm = makeSoftmaxJobs(S, M * nh);
+    connectJobLists(scores, sm);
+    connectJobLists(sm, av);
+    connectJobLists(v.second, av);
+
+    auto o = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_model}));
+    connectJobLists(av, o.first);
+
+    JobList block_in = (l == 0) ? norm1 : prev_tail;
+    JobList res1 = mk_binary_ew(M, d_model);
+    connectJobLists(o.second, res1);
+    connectJobLists(block_in, res1);
+
+    JobList norm2 = makeRMSNormJobs(d_model, M);
+    connectJobLists(res1, norm2);
+
+    auto gate = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
+    auto up = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
+    connectJobLists(norm2, gate.first);
+    connectJobLists(norm2, up.first);
+
+    JobList silu_mul = mk_binary_ew(M, d_ff);
+    connectJobLists(gate.second, silu_mul);
+    connectJobLists(up.second, silu_mul);
+
+    auto down = Matmul(a_config, LayerConfig("Matmul", {M, d_ff, d_model}));
+    connectJobLists(silu_mul, down.first);
+
+    JobList res2 = mk_binary_ew(M, d_model);
+    connectJobLists(down.second, res2);
+    connectJobLists(res1, res2);
+
+    prev_tail = res2;
+  }
+  return {model_head, prev_tail};
+}
+
 JobPair Softmax(const ArchConfig &a_config, const LayerConfig &l_config) {
   int M;
   int heads = 1;
@@ -475,6 +565,8 @@ JobCreate_f getLayerLambda(const std::string &layer_type) {
     return SelfAttention;
   if (layer_type == "MultiHeadSelfAttention")
     return MultiHeadSelfAttention;
+  if (layer_type == "Transformer")
+    return Transformer;
   throw std::runtime_error("Unknown layer type: " + layer_type);
 }
 

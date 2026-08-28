@@ -231,5 +231,32 @@ else
   bad "V10 rc=$rc rms=$cr ln=$cl"
 fi
 
+# V11: tiny prefill Transformer job count + DAG shape.
+#   Transformer 1 8 2 2 16 8 0 1  with -sa_sz 4 -vu_sz 4 -c 1, OS mode.
+# Derivation (head_dim=8/2=4, M=seq=8, S=8):
+#   norm1: 1 (VPU)          qkv: 3 matmuls M8 K8 N8 -> ceil(8/4)=2 jobs each = 6 (SA)
+#   rope: 1 (VPU)           scores: n_heads=2 SA jobs (M8 K4 N8)
+#   softmax: rows=M*nh=16 len=8 -> 1 job (VPU)
+#   av: 2 (SA)              o_proj: M8 K8 N8 -> 2 (SA)
+#   res1: 1 (VPU)           norm2: 1 (VPU)
+#   gate,up: M8 K8 N16 -> 2 each = 4 (SA)   silu_mul: 1 (VPU)
+#   down: M8 K16 N8 -> 2 (SA)               res2: 1 (VPU)
+# total = 1+6+1+2+1+2+2+1+1+4+1+2+1 = 25
+printf 'Transformer 1 8 2 2 16 8 0 1\n' > "$WORK/v11.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v11.txt" -o "$WORK/v11_s.txt" > "$WORK/v11.log" 2>&1
+rc=$?
+total=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v11.log" | tail -1 | sed 's|.*/||')
+fin=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v11.log" | tail -1 | grep -o '[0-9]*')
+# DAG check via jobs.dot: the silu-multiply node is the only "8 x 16" VPU
+# node; it must have in-degree 4 (2 gate jobs + 2 up jobs), proving the
+# expansion wires real fan-in, not a linear chain.
+silu=$(awk -F'[" ]' '/label="8 x 16"/{print $3}' jobs.dot)
+indeg=$(grep -c -- "-> ${silu};" jobs.dot)
+if [ "$rc" -eq 0 ] && [ "${total:-0}" = "25" ] && [ "$fin" = "$total" ] && [ "${indeg:-0}" -eq 4 ]; then
+  ok "V11 Transformer prefill: 25 jobs, all finish, silu fan-in=4"
+else
+  bad "V11 rc=$rc total=${total:-?} fin=${fin:-?} silu_indeg=${indeg:-?}"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
