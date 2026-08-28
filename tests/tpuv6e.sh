@@ -107,5 +107,21 @@ else
   bad "V5 rc=$rc req=${req:-?} bw=${bw:-?} GB/s cycles=${cyc:-?}"
 fi
 
+# V6: OS-mode job dims must carry the true M. Matmul 1 256 256 at -sa_sz 64
+# must produce exactly one SA job printed as "Dims: 1 x 256 x 256" (the old
+# code prints "Dims: 64 x 256 x 256"). Matmul 100 256 256 must produce
+# ceil(100/64)=2 jobs: one 64-row and one 36-row.
+printf 'Matmul 1 256 256\n' > "$WORK/v6.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v6.txt" -o "$WORK/v6_stats.txt" > "$WORK/v6.log" 2>&1
+printf 'Matmul 100 256 256\n' > "$WORK/v6b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v6b.txt" -o "$WORK/v6b_stats.txt" > "$WORK/v6b.log" 2>&1
+if grep -q 'Dims: 1 x 256 x 256' "$WORK/v6.log" \
+   && grep -q 'Dims: 64 x 256 x 256' "$WORK/v6b.log" \
+   && grep -q 'Dims: 36 x 256 x 256' "$WORK/v6b.log"; then
+  ok "V6 OS jobs carry true M (1; 64+36)"
+else
+  bad "V6 job dims wrong (see $WORK/v6.log, $WORK/v6b.log)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

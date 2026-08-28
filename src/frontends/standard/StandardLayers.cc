@@ -20,23 +20,23 @@
 
 using namespace frontend::standard;
 
-JobList createSAJobs(int m, int k, int n, int num_jobs, int n_cores = 1) {
+// OS-mode job creation. M is the layer's TRUE row count: it is split into
+// ceil(M / sa_sz) row-block jobs, the last carrying the remainder, so job
+// dims preserve under-fill information (spec 3.5). N is split across cores.
+JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
   JobList jobs;
-  
-  // Tensor parallelism: split N dimension across cores
-  int core_n = n / n_cores;
-  
-  // Per-core task counters for independent scheduling
+  int core_n = N / n_cores;
+  int num_jobs = div_ru(M, sa_sz);
   static std::vector<int> core_task_counters(n_cores, 0);
   for (int core = 0; core < n_cores; ++core) {
     for (int job = 0; job < num_jobs; ++job) {
-      auto sys_job = new SystolicArray::SysArrayJob(m, k, core_n);
-      sys_job->core_id = core;  // Assign to specific core for parallel execution
-      sys_job->task_idx = core_task_counters[core]++;  // Sequential task ID per core
+      int m = std::min(sa_sz, M - job * sa_sz);
+      auto sys_job = new SystolicArray::SysArrayJob(m, K, core_n);
+      sys_job->core_id = core;
+      sys_job->task_idx = core_task_counters[core]++;
       jobs.push_back(sys_job);
     }
   }
-  
   return jobs;
 }
 
@@ -115,10 +115,7 @@ JobPair Matmul(const ArchConfig &a_config, const LayerConfig &l_config) {
     return {jl, jl};
   } else {
     // OS: Create sequential jobs per core
-    int num_jobs = std::max(1, M / a_config.sa_sz_allo);
-    JobList matmul_layers = createSAJobs(a_config.sa_sz_allo,
-                                         K,
-                                         N, num_jobs, a_config.n_cores);
+    JobList matmul_layers = createSAJobs(M, K, N, a_config.sa_sz_allo, a_config.n_cores);
     return {matmul_layers, matmul_layers};
   }
 }
@@ -166,11 +163,8 @@ JobPair Conv(const ArchConfig &a_config, const LayerConfig &l_config) {
     JobList jl = createWSJobs(a_config, M, K, N, "Conv WS");
     return {jl, jl};
   } else {
-    // OS: Create sequential jobs per core  
-    int num_jobs = std::max(1, M / a_config.sa_sz_allo);
-    JobList matmul_layers = createSAJobs(a_config.sa_sz_allo,
-                                         K,
-                                         N, num_jobs, a_config.n_cores);
+    // OS: Create sequential jobs per core
+    JobList matmul_layers = createSAJobs(M, K, N, a_config.sa_sz_allo, a_config.n_cores);
     return {matmul_layers, matmul_layers};
   }
 }
@@ -193,21 +187,18 @@ JobPair MatmulAct(const ArchConfig &a_config, const LayerConfig &l_config) {
   }
 
   if (a_config.ws) {
-    int num_jobs = std::max(1, int(std::ceil(float(K) / a_config.sa_sz_allo)));
-
-    JobList matmul_layers = createSAJobs(M,
-                                         a_config.sa_sz_allo,
-                                         N, num_jobs);
+    JobList matmul_layers;
+    for (int kb = 0; kb < std::max(1, int(std::ceil(float(K) / a_config.sa_sz_allo))); ++kb) {
+      JobList part = createSAJobs(M, a_config.sa_sz_allo, N, a_config.sa_sz_allo);
+      matmul_layers.insert(matmul_layers.end(), part.begin(), part.end());
+    }
     JobList act_layer = {new VectorUnit::VecUnitJob(1, M * K, true, {{VectorUnit::VPUPhase::BROADCAST, 1}})};
 
     connectJobLists(matmul_layers, act_layer);
 
     return {matmul_layers, act_layer};
   } else {
-    int num_jobs = std::max(1, M / a_config.sa_sz_allo);
-    JobList matmul_layers = createSAJobs(a_config.sa_sz_allo,
-                                         K,
-                                         N, num_jobs);
+    JobList matmul_layers = createSAJobs(M, K, N, a_config.sa_sz_allo);
     JobList act_layer = {new VectorUnit::VecUnitJob(1, M * K, true, {{VectorUnit::VPUPhase::BROADCAST, 1}})};
 
     connectJobLists(matmul_layers, act_layer);
@@ -236,18 +227,16 @@ JobPair ActMatmul(const ArchConfig &a_config, const LayerConfig &l_config) {
   JobList act_layer = {new VectorUnit::VecUnitJob(1, M * K, true, {{VectorUnit::VPUPhase::BROADCAST, 1}})};
 
   if (a_config.ws) {
-    int num_jobs = std::max(1, K / a_config.sa_sz_allo);
-    JobList matmul_layers = createSAJobs(M,
-                                         a_config.sa_sz_allo,
-                                         N, num_jobs);
+    JobList matmul_layers;
+    for (int kb = 0; kb < std::max(1, K / a_config.sa_sz_allo); ++kb) {
+      JobList part = createSAJobs(M, a_config.sa_sz_allo, N, a_config.sa_sz_allo);
+      matmul_layers.insert(matmul_layers.end(), part.begin(), part.end());
+    }
     connectJobLists(act_layer, matmul_layers);
 
     return {act_layer, matmul_layers};
   } else {
-    int num_jobs = std::max(1, M / a_config.sa_sz_allo);
-    JobList matmul_layers = createSAJobs(a_config.sa_sz_allo,
-                                         K,
-                                         N, num_jobs);
+    JobList matmul_layers = createSAJobs(M, K, N, a_config.sa_sz_allo);
     connectJobLists(act_layer, matmul_layers);
 
     return {act_layer, matmul_layers};
@@ -372,25 +361,24 @@ JobPair SelfAttention(const ArchConfig &a_config, const LayerConfig &l_config) {
     connectJobs(Dot2, O_proj);
     return {K_proj.first, O_proj.second};
   } else {
-    int num_jobs = std::max(1, M / a_config.sa_sz_allo);
-    JobList K_proj = createSAJobs(a_config.sa_sz_allo,
+    JobList K_proj = createSAJobs(M,
                                   K,
-                                  N, num_jobs);
-    JobList Q_proj = createSAJobs(a_config.sa_sz_allo,
+                                  N, a_config.sa_sz_allo);
+    JobList Q_proj = createSAJobs(M,
                                   K,
-                                  N, num_jobs);
-    JobList V_proj = createSAJobs(a_config.sa_sz_allo,
+                                  N, a_config.sa_sz_allo);
+    JobList V_proj = createSAJobs(M,
                                   K,
-                                  N, num_jobs);
-    JobList Dot1 = createSAJobs(a_config.sa_sz_allo,
+                                  N, a_config.sa_sz_allo);
+    JobList Dot1 = createSAJobs(M,
                                 K,// / m_config.n_heads,
-                                M, num_jobs);
-    JobList Dot2 = createSAJobs(a_config.sa_sz_allo,
+                                M, a_config.sa_sz_allo);
+    JobList Dot2 = createSAJobs(M,
                                 M,
-                                N, num_jobs);/// m_config.n_heads
-    JobList O_proj = createSAJobs(a_config.sa_sz_allo,
+                                N, a_config.sa_sz_allo);/// m_config.n_heads
+    JobList O_proj = createSAJobs(M,
                                   K,
-                                  N, num_jobs);
+                                  N, a_config.sa_sz_allo);
 
     JobList softmax_layer = {new VectorUnit::VecUnitJob(M, M, true,
                                                         {{VectorUnit::VPUPhase::REDUCE, 1}, {VectorUnit::VPUPhase::REDUCE, 1}, {VectorUnit::VPUPhase::BROADCAST, 1}})};
