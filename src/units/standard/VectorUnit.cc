@@ -41,12 +41,14 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
           state_transfer(VectorUnit::VPUState::buffered_lin,
                          0, 0,
                          ph_ar.front().second * lin * div_ru(par, sz));
+          total_work += (uint64_t) lin * par * ph_ar.front().second;
           ph_ar.pop();
         } else if (ph_ar.front().first == VPUPhase::BROADCAST) {
           // Broadcast phase: distribute values across parallel dimension
           state_transfer(VectorUnit::VPUState::buffered_par,
                          0, 0,
                          div_ru(lin * par * ph_ar.front().second, sz));
+          total_work += (uint64_t) lin * par * ph_ar.front().second;
           ph_ar.pop();
         }
       }
@@ -54,7 +56,6 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
     case VectorUnit::VPUState::write:
       enqueue_writes();
       if (process_stage()) {
-        total_work += (uint64_t) sj->linearized_dimension * sj->parallel_dimension;
         state_transfer(VectorUnit::idle, 0, 0, 0);
         TO_IDLE_CLEANUP();
       }
@@ -104,6 +105,7 @@ void VecUnitState::init() {
                  first_phase_read,
                  0,
                  first_phase_cycles);
+  total_work += (uint64_t) sj->linearized_dimension * sj->parallel_dimension * front.second;
   sj->phases.pop();
   loop_cols_tiles = 1;
   loop_row_tiles = 1;

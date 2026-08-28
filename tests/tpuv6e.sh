@@ -174,5 +174,32 @@ else
   bad "V8 work=${wk:-?} eff_util=${eu:-?}"
 fi
 
+# V8b: VPU work must sum every phase's multiplier, not just one pass, or a
+# multi-phase job (e.g. Softmax's BROADCAST+REDUCE+BROADCAST) reads as
+# under-utilized even at full lane occupancy. Softmax 4096 at default flags
+# (no -buf_mb -> 8 MiB buffer): spl=max(ceil(32MiB/8MiB)=4, ceil(4096/1024)=4)
+# =4 -> 4 jobs of lin=4096, par=1024 (established by V1). Each job's 3
+# phases (softmax_phases, mult 1,1,1) each take exactly
+# div_ru(4096*1024,64)=65536 cycles (REDUCE's lin*div_ru(par,sz)=4096*16
+# coincides with BROADCAST's div_ru(lin*par,sz) here since 1024/64 divides
+# exactly): work = 4*4096*1024*(1+1+1) = 50331648; active =
+# busy+underfilled = 4*3*65536 = 786432 (par=1024 >= vu_sz=64, so never
+# underfilled); eff_util = 50331648/(64*786432) = 1.0 exactly, memstall
+# (present, from the initial unbuffered read) excluded from the ratio by
+# design. Verified empirically (build/perf_model, this binary): observed
+# ACCT VECTOR_UNIT line is "busy 786432 underfilled 0 memstall 141537 idle 4
+# work 50331648 eff_util 1.000000", and the pre-fix code (git-stashed
+# for comparison) reported work=16777216 eff_util=0.333333 on this same
+# workload -- undercounted by exactly the 3 summed phases, confirming the
+# fix.
+printf 'Softmax 4096\n' > "$WORK/v8b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v8b.txt" -o "$WORK/v8b_stats.txt" > "$WORK/v8b.log" 2>&1
+read -r vwk veu <<< "$(awk '/^ACCT VECTOR_UNIT/{print $13, $15; exit}' "$WORK/v8b_stats.txt")"
+if [ "${vwk:-0}" = "50331648" ] && [ "${veu:-0}" = "1.000000" ]; then
+  ok "V8b Softmax VPU work=$vwk, eff_util=$veu (multi-phase work summed correctly)"
+else
+  bad "V8b Softmax VPU work=${vwk:-?} eff_util=${veu:-?} (want 50331648 / 1.000000)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
