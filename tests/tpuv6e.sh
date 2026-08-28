@@ -137,5 +137,28 @@ else
   bad "V6b DRAM CMDs=$cmds (< 4000: weight-side reads missing)"
 fi
 
+# V7: cycle-accounting invariant + attribution.
+# (a) For every unit: busy+underfilled+memstall+idle == Cycles.
+# (b) A memory-bound workload must show memstall > 0 on the vector unit.
+#     Activation 50M elems at -vu_sz 1024: compute = 50M/1024 = 49k cycles,
+#     memory = 100 MB read + 100 MB write = 3.1M beats at ~4-9 beats/cycle
+#     >> compute, so the VPU spends most cycles waiting on DRAM. (At the
+#     default vu_sz 64 the VPU demand of 128 B/cycle sits below HBM2's
+#     ~256 B/cycle and the run is compute-bound: memstall would be 0.)
+# (c) An underfilling GEMM (M=1 on a 64-wide array) must show
+#     underfilled > 0 on the systolic array.
+printf 'Activation 50000000\n' > "$WORK/v7.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 1024 -f 1 -i "$WORK/v7.txt" -o "$WORK/v7_stats.txt" > "$WORK/v7.log" 2>&1
+printf 'Matmul 1 256 256\n' > "$WORK/v7b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v7b.txt" -o "$WORK/v7b_stats.txt" > "$WORK/v7b.log" 2>&1
+inv=$(awk '/^Cycles/{c=$2} /^ACCT/{ if ($5+$7+$9+$11 != c) print "bad:" $0 }' "$WORK/v7_stats.txt" "$WORK/v7b_stats.txt")
+ms=$(awk '/^ACCT VECTOR_UNIT/{print $9; exit}' "$WORK/v7_stats.txt")
+uf=$(awk '/^ACCT SYSTOLIC_ARRAY/{print $7; exit}' "$WORK/v7b_stats.txt")
+if [ -z "$inv" ] && [ "${ms:-0}" -gt 0 ] && [ "${uf:-0}" -gt 0 ]; then
+  ok "V7 accounting sums to Cycles; memstall=$ms underfilled=$uf attributed"
+else
+  bad "V7 invariant='$inv' memstall=${ms:-?} underfilled=${uf:-?}"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

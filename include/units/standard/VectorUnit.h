@@ -56,6 +56,8 @@ public:
       return VECTOR_UNIT_STRING;
     }
 
+    bool is_underfilled() const override;
+
 private:
     uint8_t idx;
     int beats_per_wb;
@@ -75,6 +77,14 @@ private:
 
     int get_type() const override;
   };
+
+  // Approximation: a REDUCE/BROADCAST pass with fewer parallel rows than
+  // lanes leaves lanes idle; finer per-phase modeling is not needed for
+  // the paper's per-unit attribution.
+  inline bool VecUnitState::is_underfilled() const {
+    if (j == nullptr) return false;
+    return ((VecUnitJob *) j)->parallel_dimension < sz;
+  }
 
 };// namespace VectorUnit
 

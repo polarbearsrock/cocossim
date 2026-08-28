@@ -29,7 +29,7 @@
 #else
 #define LOG_TO_WAVEFORM(stat_idx, to)
 #define UPDATE_STATE(x) set_state(x)
-#define UPDATE_IDLEMEM(to)
+#define UPDATE_IDLEMEM(to) is_idle_from_memory = to
 #endif
 
 #ifdef VERBOSE
@@ -77,6 +77,14 @@ struct State {
   int mem_queued = 0;             // Memory operations queued
   int core_memory_priority = 0;
   bool is_idle_from_memory = false;
+
+  // Per-unit cycle accounting (spec 3.5): every non-idle cycle is classified
+  // in Arch::get_cycles as memstall (waiting on DRAM with no compute left),
+  // underfilled (working, but the job cannot fill the unit), or busy.
+  uint64_t acct_busy = 0;
+  uint64_t acct_underfilled = 0;
+  uint64_t acct_memstall = 0;
+  virtual bool is_underfilled() const { return false; }
 
   int loop_row_tiles = 0; // Number of row tiles in the loop
   int loop_cols_tiles = 0;// Number of column tiles in the loop

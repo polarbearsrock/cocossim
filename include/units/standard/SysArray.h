@@ -11,6 +11,7 @@
 #define PERF_MODEL_SYSARRAY_H
 #include "State.h"
 #include "frontends/standard/StandardUnits.h"
+#include <algorithm>
 
 namespace SystolicArray {
   struct SysArrayJob : Job {
@@ -61,6 +62,12 @@ public:
     }
     std::string get_ty_string() override {
       return SYSTOLIC_ARRAY_STRING;
+    }
+
+    bool is_underfilled() const override {
+      if (j == nullptr) return false;
+      auto *sj = (SysArrayJob *) j;
+      return std::min(sz, sj->M) * std::min(sz, sj->N) < sz * sz;
     }
 
 private:

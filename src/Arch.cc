@@ -243,9 +243,13 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 #pragma clang diagnostic pop
 
     for (int i = 0; i < states.size(); ++i) {
-      bool is_active = states[i]->increment(enqueue_job, total_idle, n_idle_units);
+      State *s = states[i];
+      bool is_active = s->increment(enqueue_job, total_idle, n_idle_units);
       if (is_active) {
         per_array_act[i]++;
+        if (s->is_idle_from_memory) s->acct_memstall++;
+        else if (s->is_underfilled()) s->acct_underfilled++;
+        else s->acct_busy++;
       }
     }
 

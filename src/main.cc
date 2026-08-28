@@ -108,6 +108,16 @@ int main(int argc, char **argv) {
     for (int i = 0; i < arch->states.size(); ++i) {
       fprintf(f, "%s %f\n", arch->states[i]->get_ty_string().c_str(), res[p].pct_active[i]);
     }
+    for (int i = 0; i < arch->states.size(); ++i) {
+      State *s = arch->states[i];
+      uint64_t accounted = s->acct_busy + s->acct_underfilled + s->acct_memstall;
+      fprintf(f, "ACCT %s %d busy %llu underfilled %llu memstall %llu idle %llu\n",
+              s->get_ty_string().c_str(), i,
+              (unsigned long long) s->acct_busy,
+              (unsigned long long) s->acct_underfilled,
+              (unsigned long long) s->acct_memstall,
+              (unsigned long long) (gcycles - accounted));
+    }
   }
 
 
