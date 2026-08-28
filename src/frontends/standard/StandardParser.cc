@@ -16,14 +16,21 @@ Arch* StandardParser::make_arch() {
   int sa_sz = 64;
   int vu_sz = 64;
   int ws = 0;
+  int buf_mb = 8;
   parse_args({{"-c", &cores},
               {"-sa_sz", &sa_sz},
               {"-vu_sz", &vu_sz},
-              {"-ws", &ws}},
-             "-c       number of cores\n"
-             "-sa_sz   size of the systolic array\n"
-             "-vu_sz   size of the vector unit\n"
-             "-ws      weight stationary (1) or output stationary (0)");
+              {"-ws", &ws},
+              {"-buf_mb", &buf_mb},
+              {"-dram_enq", &dram_enq_per_cycle},
+              {"-job_overhead", &job_overhead_cycles}},
+             "-c            number of cores\n"
+             "-sa_sz        size of the systolic array\n"
+             "-vu_sz        size of the vector unit\n"
+             "-ws           weight stationary (1) or output stationary (0)\n"
+             "-buf_mb       on-chip buffer size in MiB (default 8)\n"
+             "-dram_enq     memory requests issued per cycle (default 9)\n"
+             "-job_overhead fixed dispatch overhead per job in cycles (default 0)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -36,6 +43,19 @@ Arch* StandardParser::make_arch() {
     std::cerr << "Error: -ws must be 0 (output stationary) or 1 (weight stationary), got " << ws << std::endl;
     exit(1);
   }
+  if (buf_mb < 1) {
+    std::cerr << "Error: -buf_mb must be >= 1, got " << buf_mb << std::endl;
+    exit(1);
+  }
+  if (dram_enq_per_cycle < 1) {
+    std::cerr << "Error: -dram_enq must be >= 1, got " << dram_enq_per_cycle << std::endl;
+    exit(1);
+  }
+  if (job_overhead_cycles < 0) {
+    std::cerr << "Error: -job_overhead must be >= 0, got " << job_overhead_cycles << std::endl;
+    exit(1);
+  }
+  buffer_size_bytes = buf_mb * 1024 * 1024;
   arch_config = ArchConfig(cores, sa_sz, vu_sz, ws);
   return new StandardArch;
 }

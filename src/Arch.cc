@@ -189,6 +189,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           state->j = job;
           LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, state->vcd_idx), job->job_idx);
           state->init();
+          state->min_stage_cycles += job_overhead_cycles;
           enqueued_job = true;
           any_job_assigned = true;
         }

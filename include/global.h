@@ -26,9 +26,9 @@ const int n_mxus = 4;
 const int n_vpus = 4;
 const int data_type_width = 2;
 const int seq_len = 2048;
-const int dram_enq_per_cycle = 9;
-
-const int buffer_size_bytes = 8 * 1024 * 1024;
+extern int dram_enq_per_cycle;
+extern int buffer_size_bytes;
+extern int job_overhead_cycles;
 
 const int embedding_dim= 768;
 const int n_heads = 6;
