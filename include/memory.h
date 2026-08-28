@@ -11,6 +11,7 @@
 #define PROSE_COMPILER_MEMORY_H
 #include "State.h"
 #include "memory_system.h"
+#include <deque>
 
 
 namespace mem {
@@ -18,7 +19,7 @@ namespace mem {
   using mem_ty = dramsim3::JedecDRAMSystem;
 
   extern dramsim3::Config *dramsim3config;
-  extern std::unordered_map<uint64_t, State *> address_reads_bkwds_lookup, address_writes_bkwds_lookup;
+  extern std::unordered_map<uint64_t, std::deque<State *>> address_reads_bkwds_lookup, address_writes_bkwds_lookup;
   extern mem_ty *mem_sys;
 
   void setup();

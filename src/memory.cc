@@ -10,6 +10,7 @@
 #include "memory.h"
 #include "global.h"
 #include "frontends/ArchParser.h"
+#include <deque>
 #include <fstream>
 
 using namespace mem;
@@ -17,8 +18,8 @@ using namespace mem;
 namespace mem {
   mem_ty *mem_sys;
   dramsim3::Config *dramsim3config;
-  std::unordered_map<uint64_t, State *> address_reads_bkwds_lookup;
-  std::unordered_map<uint64_t, State *> address_writes_bkwds_lookup;
+  std::unordered_map<uint64_t, std::deque<State *>> address_reads_bkwds_lookup;
+  std::unordered_map<uint64_t, std::deque<State *>> address_writes_bkwds_lookup;
 }
 
 static int q = 0;
@@ -43,9 +44,9 @@ bool mem::try_enqueue_tx() {
             mem_sys->AddTransaction(addr, is_write);
             // Register callback mapping for completion notification
             if (is_write) {
-                address_writes_bkwds_lookup[addr] = state;
+                address_writes_bkwds_lookup[addr].push_back(state);
             } else {
-                address_reads_bkwds_lookup[addr] = state;
+                address_reads_bkwds_lookup[addr].push_back(state);
             }
             // Remove processed transaction from queue
             if (i != to_enqueue.size() - 1) {
@@ -68,17 +69,23 @@ void mem::setup() {
   dramsim3config = new dramsim3::Config(dram_ini_path, "./");
   mem_sys = new mem_ty(*dramsim3config, "./", [](uint64_t addr) {
         auto it = address_reads_bkwds_lookup.find(addr);
-        if (it != address_reads_bkwds_lookup.end()) {
-            State *q = it->second;
-            address_reads_bkwds_lookup.erase(it);
+        if (it != address_reads_bkwds_lookup.end() && !it->second.empty()) {
+            State *q = it->second.front();
+            it->second.pop_front();
+            if (it->second.empty()) {
+                address_reads_bkwds_lookup.erase(it);
+            }
             q->mem_read_left -= 1;
         } else {
             std::cerr << "Error: Address " << std::hex << addr << " not found in address_reads_bkwds_lookup" << std::endl;
         } }, [](uint64_t addr) {
         auto it = address_writes_bkwds_lookup.find(addr);
-        if (it != address_writes_bkwds_lookup.end()) {
-            State *q = it->second;
-            address_writes_bkwds_lookup.erase(it);
+        if (it != address_writes_bkwds_lookup.end() && !it->second.empty()) {
+            State *q = it->second.front();
+            it->second.pop_front();
+            if (it->second.empty()) {
+                address_writes_bkwds_lookup.erase(it);
+            }
             q->mem_write_left -= 1;
         } else {
             std::cerr << "Error: Address " << addr << " not found in address_writes_bkwds_lookup" << std::endl;
