@@ -258,5 +258,24 @@ else
   bad "V11 rc=$rc total=${total:-?} fin=${fin:-?} silu_indeg=${indeg:-?}"
 fi
 
+# V12: decode semantics. Transformer 1 8 2 1 16 32 1 4 -sa_sz 4:
+#   GQA: K/V projections have N = nkv*head_dim = 1*4 = 4 -> SA job "4 x 8 x 4"
+#   scores read the 32-token KV context: SA job "4 x 4 x 32"
+#   AV contracts over the context:       SA job "4 x 32 x 4"
+#   M = batch = 4 everywhere (no seq_len-sized GEMM rows: no "32 x 8 x" node)
+printf 'Transformer 1 8 2 1 16 32 1 4\n' > "$WORK/v12.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v12.txt" -o "$WORK/v12_s.txt" > "$WORK/v12.log" 2>&1
+rc=$?
+fin_eq=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v12.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4)?1:0}')
+if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ] \
+   && grep -q 'label="4 x 8 x 4"' jobs.dot \
+   && grep -q 'label="4 x 4 x 32"' jobs.dot \
+   && grep -q 'label="4 x 32 x 4"' jobs.dot \
+   && ! grep -q 'label="32 x 8 x' jobs.dot; then
+  ok "V12 decode: GQA K/V, KV-context scores/AV, batch-sized rows"
+else
+  bad "V12 rc=$rc fin_eq=${fin_eq:-?} (check jobs.dot labels)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
