@@ -10,6 +10,7 @@
 #include "frontends/Frontend.h"
 #include "frontends/standard/StandardLayer.h"
 #include "frontends/standard/StandardParser.h"
+#include "frontends/standard/StandardUnits.h"
 
 #include "memory.h"
 #include <chrono>
@@ -111,12 +112,18 @@ int main(int argc, char **argv) {
     for (int i = 0; i < arch->states.size(); ++i) {
       State *s = arch->states[i];
       uint64_t accounted = s->acct_busy + s->acct_underfilled + s->acct_memstall;
-      fprintf(f, "ACCT %s %d busy %llu underfilled %llu memstall %llu idle %llu\n",
+      uint64_t active = s->acct_busy + s->acct_underfilled;
+      double cap = (s->get_ty_idx() == SYSTOLIC_ARRAY_IDX)
+                       ? (double) s->sz * s->sz
+                       : (double) s->sz;
+      double eff = active > 0 ? (double) s->total_work / (cap * (double) active) : 0.0;
+      fprintf(f, "ACCT %s %d busy %llu underfilled %llu memstall %llu idle %llu work %llu eff_util %f\n",
               s->get_ty_string().c_str(), i,
               (unsigned long long) s->acct_busy,
               (unsigned long long) s->acct_underfilled,
               (unsigned long long) s->acct_memstall,
-              (unsigned long long) (gcycles - accounted));
+              (unsigned long long) (gcycles - accounted),
+              (unsigned long long) s->total_work, eff);
     }
   }
 

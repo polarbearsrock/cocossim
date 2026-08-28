@@ -84,6 +84,7 @@ struct State {
   uint64_t acct_busy = 0;
   uint64_t acct_underfilled = 0;
   uint64_t acct_memstall = 0;
+  uint64_t total_work = 0;// SA: MACs; VPU: lane-ops. Accumulated at job completion.
   virtual bool is_underfilled() const { return false; }
 
   int loop_row_tiles = 0; // Number of row tiles in the loop

@@ -59,6 +59,7 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
               // Job completed
+              total_work += (uint64_t) sj->M * sj->K * sj->N;
               state_transfer(idle, 0, 0, 0);
               TO_IDLE_CLEANUP();
             } else {
@@ -89,6 +90,7 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
               // Job completed
+              total_work += (uint64_t) sj->M * sj->K * sj->N;
               state_transfer(SystolicArray::idle, 0, 0, 0);
               TO_IDLE_CLEANUP();
             } else {
@@ -178,6 +180,7 @@ void SystolicArray::SysArrayState::init() {
 }
 
 SystolicArray::SysArrayState::SysArrayState(int sz, bool ws) : State(1), sz(sz), ws(ws), state(SystolicArray::idle) {
+  State::sz = sz;
   beats_per_wb = std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1);
 }
 

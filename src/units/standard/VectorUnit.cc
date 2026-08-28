@@ -54,6 +54,7 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
     case VectorUnit::VPUState::write:
       enqueue_writes();
       if (process_stage()) {
+        total_work += (uint64_t) sj->linearized_dimension * sj->parallel_dimension;
         state_transfer(VectorUnit::idle, 0, 0, 0);
         TO_IDLE_CLEANUP();
       }
@@ -111,6 +112,7 @@ void VecUnitState::init() {
 }
 
 VecUnitState::VecUnitState(int sz) : State(2), sz(sz) {
+  State::sz = sz;
   beats_per_wb = std::max((sz * batch_size) / bytes_per_tx, 1);
 }
 

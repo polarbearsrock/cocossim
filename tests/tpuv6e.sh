@@ -160,5 +160,19 @@ else
   bad "V7 invariant='$inv' memstall=${ms:-?} underfilled=${uf:-?}"
 fi
 
+# V8: effective FLOP utilization must expose under-fill that pct_active
+# hides. Matmul 1 256 256 on a 64-wide array: work = 1*256*256 = 65536
+# MACs; a full-width job would be 64x. eff_util must be < 0.05 while the
+# ACCT work field equals exactly 65536.
+printf 'Matmul 1 256 256\n' > "$WORK/v8.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v8.txt" -o "$WORK/v8_stats.txt" > "$WORK/v8.log" 2>&1
+read -r wk eu <<< "$(awk '/^ACCT SYSTOLIC_ARRAY/{print $13, $15; exit}' "$WORK/v8_stats.txt")"
+low=$(awk -v e="${eu:-1}" 'BEGIN{print (e > 0 && e < 0.05) ? 1 : 0}')
+if [ "${wk:-0}" = "65536" ] && [ "$low" -eq 1 ]; then
+  ok "V8 work=65536 MACs, eff_util=$eu"
+else
+  bad "V8 work=${wk:-?} eff_util=${eu:-?}"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
