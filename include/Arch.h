@@ -22,7 +22,6 @@ extern std::unordered_map<int, int> state_updates;
 struct Arch {
   std::vector<State *> states;
 
-  State *have_idle_type(int ty);
 
 
   int total_frontier = 0;

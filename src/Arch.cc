@@ -16,15 +16,6 @@
 
 std::unordered_map<int, int> state_updates;
 
-State *Arch::have_idle_type(int ty) {
-  for (auto &state: states) {
-    if (state->get_ty_idx() == ty && state->get_state() == 0) {
-      return state;
-    }
-  }
-  return nullptr;
-}
-
 void Arch::init_waveforms() {
 #ifdef VCD
 #define dec(nm) fprintf(vcd, "$var wire %d %s %s_%d_%s $end\n", \
@@ -55,39 +46,33 @@ void Arch::init_waveforms() {
 
 
 RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
-  int n_types;
-  {
-    std::set<int> a;
-
-    for (const auto &st : states) {
-        int ty_idx = st->get_ty_idx();
-        a.insert(ty_idx);
-    }
-    n_types = (int) a.size();
+  std::set<int> present_types;
+  for (const auto &st : states) {
+    present_types.insert(st->get_ty_idx());
   }
-  
+  int n_types = (int) present_types.size();
+
   n_idle_units = new int[n_types];
   memset(n_idle_units, 0, sizeof(int) * n_types);
-  // Per-core job queues enable true parallel execution
+  // Per-core job queues hold jobs pinned to a specific core; per-type queues
+  // hold unpinned (core_id == -1) jobs, which any idle core of that type may
+  // dispatch. Routing unpinned jobs at dispatch time (not enqueue time) is
+  // what lets multiple units of one type share the anonymous workload.
   std::vector<std::vector<Job *>> core_queues(states.size());
-  
+  std::unordered_map<int, std::vector<Job *>> type_queues;
+
   std::function<void(Job *)> enqueue_job = [&](Job *job) -> void {
-    if (job->core_id >= 0 && job->core_id < states.size()) {
-    core_queues[job->core_id].push_back(job);     // Specific core requested
+    if (job->core_id >= 0 && job->core_id < (int) states.size()) {
+      core_queues[job->core_id].push_back(job);// Specific core requested
     } else {
-      // core_id == -1: Find ANY available core of the matching type
-      bool assigned = false;
-      for (int core_idx = 0; core_idx < states.size(); ++core_idx) {
-        if (states[core_idx]->get_ty_idx() == job->get_type()) {
-          core_queues[core_idx].push_back(job);
-          assigned = true;
-          break;
-        }
+      if (present_types.find(job->get_type()) == present_types.end()) {
+        // A job no unit can ever execute would otherwise sit in a queue
+        // forever and the simulation loop would never terminate.
+        throw std::runtime_error("enqueue_job: no unit of type " +
+                                 std::to_string(job->get_type()) +
+                                 " exists in this architecture");
       }
-      if (!assigned) {
-        // Fallback: assign to first core (shouldn't happen if architecture is correct)
-        core_queues[0].push_back(job);
-      }
+      type_queues[job->get_type()].push_back(job);
     }
     total_frontier += 1;
   };
@@ -148,7 +133,10 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   // DRAM ticks per simulator (compute) cycle = sim_cycle_period / dram_cycle_period
   //   = (1/freq_sa) / tCK = 1 / (freq_sa * tCK). The prior form tCK/freq_sa is
   // INVERTED for tCK != 1 (a faster DRAM clock, smaller tCK, must tick MORE per
-  // sim cycle). Identical at tCK=1 (all stock HBM2 configs + TPU-validated runs).
+  // sim cycle). At tCK=1 the average tick RATE matches the old code, but the
+  // per-cycle tick phase differs for any -f != 1 (the old loop drained against
+  // the differential instead of 1.0), so old cycle counts reproduce exactly
+  // only at -f 1.
   const double differential_mem = 1.0 / (freq_sa * mem::dramsim3config->tCK) / mem_slow_factor;
   const double cycle_adjust = 1. / freq_sa;
 
@@ -171,28 +159,38 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     }
 
     bool enqueued_job = false;
-    
-    // Core-specific scheduling: each core processes its own job queue
+
+    // Dispatch: an idle core first takes the next job pinned to it, then
+    // falls back to the shared queue for its unit type.
     bool any_job_assigned = true;
     while (any_job_assigned) {
       any_job_assigned = false;
       for (int core_idx = 0; core_idx < states.size(); ++core_idx) {
-        if (!core_queues[core_idx].empty()) {
-          Job *job = core_queues[core_idx].front();
-          State *state = states[core_idx];
-          
-          if (state->get_state() == 0 && state->get_ty_idx() == job->get_type()) {
-            core_queues[core_idx].erase(core_queues[core_idx].begin());
-            n_idle_units[job->get_type()] -= 1;
-            total_idle -= 1;
-            total_frontier--;
-            
-            state->j = job;
-            LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, state->vcd_idx), job->job_idx);
-            state->init();
-            enqueued_job = true;
-            any_job_assigned = true;
+        State *state = states[core_idx];
+        if (state->get_state() != 0) continue;
+
+        Job *job = nullptr;
+        auto &cq = core_queues[core_idx];
+        if (!cq.empty() && cq.front()->get_type() == state->get_ty_idx()) {
+          job = cq.front();
+          cq.erase(cq.begin());
+        } else {
+          auto &tq = type_queues[state->get_ty_idx()];
+          if (!tq.empty()) {
+            job = tq.front();
+            tq.erase(tq.begin());
           }
+        }
+        if (job) {
+          n_idle_units[job->get_type()] -= 1;
+          total_idle -= 1;
+          total_frontier--;
+
+          state->j = job;
+          LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, state->vcd_idx), job->job_idx);
+          state->init();
+          enqueued_job = true;
+          any_job_assigned = true;
         }
       }
     }

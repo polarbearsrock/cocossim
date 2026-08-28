@@ -40,6 +40,56 @@ JobList createSAJobs(int m, int k, int n, int num_jobs, int n_cores = 1) {
   return jobs;
 }
 
+// Weight-stationary N-splitting shared by Matmul and Conv: split N across
+// cores, then across sequential jobs sized so each job's modeled working set
+// (M output columns plus the M x min(K, sa_sz) activation panel) satisfies the
+// same inequality as the bufferability test below.
+static JobList createWSJobs(const ArchConfig &a_config, int M, int K, int N, const char *label) {
+  JobList jl;
+
+  int core_n = N / a_config.n_cores;
+  std::cout << label << " N-splitting: " << N << " output channels across " << a_config.n_cores << " cores" << std::endl;
+
+  static std::vector<int> core_task_counters(a_config.n_cores, 0);
+  for (int core = 0; core < a_config.n_cores; ++core) {
+    int required_buff_sz_per_core = (M * core_n + M * std::min(K, a_config.sa_sz_allo)) * batch_size * data_type_width;
+    bool core_is_bufferable = required_buff_sz_per_core <= buffer_size_bytes;
+
+    if (core_is_bufferable) {
+      auto job = new SystolicArray::SysArrayJob(M, K, core_n);
+      job->core_id = core;
+      job->task_idx = core_task_counters[core]++;
+      jl.push_back(job);
+      std::cout << "  Core " << core << ": " << core_n << " out dim - bufferable" << std::endl;
+    } else {
+      // Sequential jobs: reserve room for the activation panel so each job
+      // passes the same buffer-fit test that routed us here.
+      std::cout << "  Core " << core << ": " << core_n << " out dim - not bufferable, using sequential execution" << std::endl;
+      int cap = buffer_size_bytes / (data_type_width * M * batch_size);
+      int N_per_job = cap - std::min(K, a_config.sa_sz_allo);
+      if (N_per_job < 1) {
+        std::cerr << "Warning: " << label << " M=" << M << " K=" << K
+                  << " cannot fit one output column plus its activation panel in the "
+                  << buffer_size_bytes << "-byte buffer; modeled working set will exceed it"
+                  << " (M/K tiling is not implemented)" << std::endl;
+        N_per_job = 1;
+      }
+      int num_sequential_jobs = div_ru(core_n, N_per_job);
+
+      for (int i = 0; i < num_sequential_jobs; ++i) {
+        int remaining_N = core_n - i * N_per_job;
+        int current_N = std::min(N_per_job, remaining_N);
+        auto job = new SystolicArray::SysArrayJob(M, K, current_N);
+        job->core_id = core;
+        job->task_idx = core_task_counters[core]++;
+        jl.push_back(job);
+      }
+    }
+  }
+
+  return jl;
+}
+
 static const std::vector<std::pair<VectorUnit::VPUPhase, int>> softmax_phases =
     {{VectorUnit::VPUPhase::BROADCAST, 1}, {VectorUnit::VPUPhase::REDUCE, 1}, {VectorUnit::VPUPhase::BROADCAST, 1}};
 
@@ -61,40 +111,7 @@ JobPair Matmul(const ArchConfig &a_config, const LayerConfig &l_config) {
   }
 
   if (a_config.ws) {
-    JobList jl;
-    
-    // WS: Split N first, then check buffer constraints per core
-    int core_n = N / a_config.n_cores;
-    std::cout << "WS N-splitting: " << N << " output channels across " << a_config.n_cores << " cores" << std::endl;
-    
-    static std::vector<int> core_task_counters(a_config.n_cores, 0);
-    for (int core = 0; core < a_config.n_cores; ++core) {
-      int required_buff_sz_per_core = (M * core_n + M * std::min(K, a_config.sa_sz_allo)) * batch_size * data_type_width;
-      bool core_is_bufferable = required_buff_sz_per_core <= buffer_size_bytes;
-      
-      if (core_is_bufferable) {
-        auto job = new SystolicArray::SysArrayJob(M, K, core_n);
-        job->core_id = core;
-        job->task_idx = core_task_counters[core]++;
-        jl.push_back(job);
-        std::cout << "  Core " << core << ": " << core_n << " out dim - bufferable" << std::endl;
-      } else {
-        // Fallback: sequential jobs if buffer too small
-        std::cout << "  Core " << core << ": " << core_n << " out dim - not bufferable, using sequential execution" << std::endl;
-        float new_N_f = (float) buffer_size_bytes / float(data_type_width * M * batch_size);
-        int N_per_job = std::max(1, (int) std::floor(new_N_f));
-        int num_sequential_jobs = (core_n + N_per_job - 1) / N_per_job;
-        
-        for (int i = 0; i < num_sequential_jobs; ++i) {
-          int remaining_N = core_n - i * N_per_job;
-          int current_N = std::min(N_per_job, remaining_N);
-          auto job = new SystolicArray::SysArrayJob(M, K, current_N);
-          job->core_id = core;
-          job->task_idx = core_task_counters[core]++;
-          jl.push_back(job);
-        }
-      }
-    }
+    JobList jl = createWSJobs(a_config, M, K, N, "WS");
     return {jl, jl};
   } else {
     // OS: Create sequential jobs per core
@@ -146,41 +163,7 @@ JobPair Conv(const ArchConfig &a_config, const LayerConfig &l_config) {
   std::cout << "           GEMM dimensions: M=" << M << ", K=" << K << ", N=" << N << std::endl;
 
   if (a_config.ws) {
-    JobList jl;
-    
-  // First split N by number of cores (assume remainder is 0)
-    int core_n = N / a_config.n_cores;
-    std::cout << "Conv WS N-splitting: " << N << " output channels across " << a_config.n_cores << " cores" << std::endl;
-    
-    static std::vector<int> core_task_counters(a_config.n_cores, 0);  // Per-core task counters
-    for (int core = 0; core < a_config.n_cores; ++core) {
-      // Check if this core's portion fits in buffer
-      int required_buff_sz_per_core = (M * core_n + M * std::min(K, a_config.sa_sz_allo)) * batch_size * data_type_width;
-      bool core_is_bufferable = required_buff_sz_per_core <= buffer_size_bytes;
-      
-      if (core_is_bufferable) {
-        auto job = new SystolicArray::SysArrayJob(M, K, core_n);
-        job->core_id = core;  // Assign core ID for parallel scheduling
-        job->task_idx = core_task_counters[core]++;  // Sequential task ID per core (0,1,2,3...)
-        jl.push_back(job);
-        std::cout << "  Core " << core << ": " << core_n << " out dim - bufferable (core_id=" << core << ")" << std::endl;
-      } else {
-        // Sequential execution for this core's portion
-        std::cout << "  Core " << core << ": " << core_n << " out dim - not bufferable, using sequential execution" << std::endl;
-        float new_N_f = (float) buffer_size_bytes / float(data_type_width * M * batch_size);
-        int N_per_job = std::max(1, (int) std::floor(new_N_f));
-        int num_sequential_jobs = (core_n + N_per_job - 1) / N_per_job;
-        
-        for (int i = 0; i < num_sequential_jobs; ++i) {
-          int remaining_N = core_n - i * N_per_job;
-          int current_N = std::min(N_per_job, remaining_N);
-          auto job = new SystolicArray::SysArrayJob(M, K, current_N);
-          job->core_id = core;
-          job->task_idx = core_task_counters[core]++;
-          jl.push_back(job);
-        }
-      }
-    }
+    JobList jl = createWSJobs(a_config, M, K, N, "Conv WS");
     return {jl, jl};
   } else {
     // OS: Create sequential jobs per core  
@@ -339,7 +322,10 @@ JobPair Softmax(const ArchConfig &a_config, const LayerConfig &l_config) {
   }
   std::cout << "Splitting by " << spl << std::endl;
 
-  int n_jobs = div_ru(div_ru(M * heads, Mp), n_vpus);
+  // One job per Mp-row chunk: every chunk must be modeled, on however many
+  // vector units the architecture actually has (the scheduler spreads
+  // unpinned jobs across idle units of the type at dispatch time).
+  int n_jobs = div_ru(M * heads, Mp);
   JobList softmax_layer;
   for (int i = 0; i < n_jobs; ++i)
     softmax_layer.push_back(new VectorUnit::VecUnitJob(M, Mp, false, softmax_phases));

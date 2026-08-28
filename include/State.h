@@ -60,25 +60,29 @@
 using enqueue_job_f_t = std::function<void(Job *)>;
 
 struct State {
-  int sz;          // Size of the functional array
+  int sz = 0;      // Size of the functional array
   Job *j = nullptr;// Job being processed by the array
 
   uint8_t vcd_idx = 0;// Index for VCD tracing
 
-  int min_stage_cycles;       // Minimum cycles required to read data / shift / whatever
-  int mem_read_left;          // Remaining memory reads to complete
-  int mem_write_left;         // Remaining memory writes to complete
-  int mem_read_left_unqueued; // Unqueued memory reads left
-  int mem_write_left_unqueued;// Unqueued memory writes left
-  int mem_queued;             // Memory operations queued
-  int core_memory_priority;
+  // All counters must start at zero: increment() runs every cycle on every
+  // unit, including units that have never received a job, and enqueue_reads/
+  // enqueue_writes act on these fields (an uninitialized positive value
+  // dereferences the null job pointer).
+  int min_stage_cycles = 0;       // Minimum cycles required to read data / shift / whatever
+  int mem_read_left = 0;          // Remaining memory reads to complete
+  int mem_write_left = 0;         // Remaining memory writes to complete
+  int mem_read_left_unqueued = 0; // Unqueued memory reads left
+  int mem_write_left_unqueued = 0;// Unqueued memory writes left
+  int mem_queued = 0;             // Memory operations queued
+  int core_memory_priority = 0;
   bool is_idle_from_memory = false;
 
-  int loop_row_tiles; // Number of row tiles in the loop
-  int loop_cols_tiles;// Number of column tiles in the loop
-  int row_i, col_i;   // Current row and column indices
+  int loop_row_tiles = 0; // Number of row tiles in the loop
+  int loop_cols_tiles = 0;// Number of column tiles in the loop
+  int row_i = 0, col_i = 0;// Current row and column indices
 
-  int beats_per_wb;// Number of memory beats per write-back
+  int beats_per_wb = 0;// Number of memory beats per write-back
 
   bool activation_in_buffer = false;// Enable DRAM-to-buffer flow simulation if false
 
