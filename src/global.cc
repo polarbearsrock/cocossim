@@ -13,6 +13,7 @@
 int dram_enq_per_cycle = 9;
 int buffer_size_bytes = 8 * 1024 * 1024;
 int job_overhead_cycles = 0;
+int fuse_epilogue = 0;
 
 int total_jobs = 0;
 int jobs_finished = 0;

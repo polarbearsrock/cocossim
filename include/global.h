@@ -29,6 +29,7 @@ const int seq_len = 2048;
 extern int dram_enq_per_cycle;
 extern int buffer_size_bytes;
 extern int job_overhead_cycles;
+extern int fuse_epilogue;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

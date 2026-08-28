@@ -277,5 +277,20 @@ else
   bad "V12 rc=$rc fin_eq=${fin_eq:-?} (check jobs.dot labels)"
 fi
 
+# V13: -fuse_epilogue 1 removes exactly 2 VPU jobs per layer (res1, res2).
+# Tiny prefill config from V11 has 25 jobs -> 23 fused. All still finish.
+printf 'Transformer 1 8 2 2 16 8 0 1\n' > "$WORK/v13.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_epilogue 1 -i "$WORK/v13.txt" -o "$WORK/v13_s.txt" > "$WORK/v13.log" 2>&1
+rc=$?
+total=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v13.log" | tail -1 | sed 's|.*/||')
+fin=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v13.log" | tail -1 | grep -o '[0-9]*')
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_epilogue 2 -i "$WORK/v13.txt" -o "$WORK/v13b_s.txt" > "$WORK/v13b.log" 2>&1
+rcb=$?
+if [ "$rc" -eq 0 ] && [ "${total:-0}" = "23" ] && [ "$fin" = "$total" ] && [ "$rcb" -eq 1 ]; then
+  ok "V13 -fuse_epilogue 1 -> 23 jobs; invalid value rejected"
+else
+  bad "V13 rc=$rc total=${total:-?} fin=${fin:-?} badval_rc=$rcb"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

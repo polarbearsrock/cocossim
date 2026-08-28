@@ -412,9 +412,17 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     connectJobLists(av, o.first);
 
     JobList block_in = (l == 0) ? norm1 : prev_tail;
-    JobList res1 = mk_binary_ew(M, d_model);
-    connectJobLists(o.second, res1);
-    connectJobLists(block_in, res1);
+    JobList res1;
+    if (fuse_epilogue) {
+      // Residual absorbed into the projection epilogue: downstream work
+      // depends on both contributors directly, no VPU job.
+      res1 = o.second;
+      res1.insert(res1.end(), block_in.begin(), block_in.end());
+    } else {
+      res1 = mk_binary_ew(M, d_model);
+      connectJobLists(o.second, res1);
+      connectJobLists(block_in, res1);
+    }
 
     JobList norm2 = makeRMSNormJobs(d_model, M);
     connectJobLists(res1, norm2);
@@ -431,9 +439,15 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     auto down = Matmul(a_config, LayerConfig("Matmul", {M, d_ff, d_model}));
     connectJobLists(silu_mul, down.first);
 
-    JobList res2 = mk_binary_ew(M, d_model);
-    connectJobLists(down.second, res2);
-    connectJobLists(res1, res2);
+    JobList res2;
+    if (fuse_epilogue) {
+      res2 = down.second;
+      res2.insert(res2.end(), res1.begin(), res1.end());
+    } else {
+      res2 = mk_binary_ew(M, d_model);
+      connectJobLists(down.second, res2);
+      connectJobLists(res1, res2);
+    }
 
     prev_tail = res2;
   }
