@@ -201,5 +201,21 @@ else
   bad "V8b Softmax VPU work=${vwk:-?} eff_util=${veu:-?} (want 50331648 / 1.000000)"
 fi
 
+# V9: Add must read two operands. Same element count as Activation ->
+# roughly 2x the read traffic; total DRAM CMDs (reads+writes) must be at
+# least 1.4x the Activation run's. Both runs memory-dominated.
+printf 'Activation 8000000\n' > "$WORK/v9a.txt"
+printf 'Add 8000000\n'        > "$WORK/v9b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v9a.txt" -o "$WORK/v9a_s.txt" > "$WORK/v9a.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v9b.txt" -o "$WORK/v9b_s.txt" > "$WORK/v9b.log" 2>&1
+ca=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v9a.log" | tail -1 | awk '{print $3}')
+cb=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v9b.log" | tail -1 | awk '{print $3}')
+ratio_ok=$(awk -v a="${ca:-0}" -v b="${cb:-0}" 'BEGIN{print (a>0 && b>=1.4*a) ? 1 : 0}')
+if [ "$ratio_ok" -eq 1 ]; then
+  ok "V9 Add reads two operands (DRAM CMDs $ca -> $cb)"
+else
+  bad "V9 DRAM CMDs activation=$ca add=$cb"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

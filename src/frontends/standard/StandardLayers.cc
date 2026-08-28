@@ -286,6 +286,14 @@ JobPair Activation(const ArchConfig &a_config, const LayerConfig &l_config) {
   return {{job}, {job}};
 }
 
+JobPair Add(const ArchConfig &a_config, const LayerConfig &l_config) {
+  int sz = 1;
+  for (const auto &dim: l_config.dimensions) sz *= dim;
+  auto job = new VectorUnit::VecUnitJob(1, sz, false, {{VectorUnit::VPUPhase::BROADCAST, 1}});
+  job->n_read_operands = 2;
+  return {{job}, {job}};
+}
+
 JobPair Softmax(const ArchConfig &a_config, const LayerConfig &l_config) {
   int M;
   int heads = 1;
@@ -420,6 +428,8 @@ JobCreate_f getLayerLambda(const std::string &layer_type) {
     return Softmax;
   if (layer_type == "Activation")
     return Activation;
+  if (layer_type == "Add")
+    return Add;
   if (layer_type == "LayerNorm")
     return LayerNorm;
   if (layer_type == "SelfAttention")

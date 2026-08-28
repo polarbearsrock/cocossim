@@ -70,6 +70,9 @@ private:
     std::queue<std::pair<VPUPhase, int>> phases;
     bool is_prebuffered;
     int op_latency = 1;
+    // Number of input tensors this job streams from memory (1 = unary,
+    // 2 = binary elementwise such as residual add). Scales unbuffered reads.
+    int n_read_operands = 1;
 
     [[nodiscard]] std::string get_job_dims_string() const override;
     VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::queue<std::pair<VPUPhase, int>> &phases);

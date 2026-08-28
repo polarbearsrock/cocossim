@@ -89,7 +89,7 @@ void VecUnitState::init() {
       first_state = VectorUnit::VPUState::buffered_lin;
     }
   } else {
-    first_phase_read = sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width;
+    first_phase_read = sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width * sj->n_read_operands;
     if (front.first == VPUPhase::BROADCAST) {
       first_state = VectorUnit::VPUState::unbuffered_par;
     } else {
