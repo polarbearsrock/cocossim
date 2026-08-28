@@ -131,10 +131,12 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     throw std::exception();
   } else {
     min_stage_cycles = sj->K * systolic_fpu_latency;
+    // Weight/KV block for this column tile: K x min(sz, N). Activation panel
+    // (min(sz, M) x K) is re-read only when the row tile advances.
+    int weight_bytes = std::min(sz, sj->N) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
+    n_read_bytes = weight_bytes;
     if (new_row) {
-      n_read_bytes = std::min(sz, sj->M) * sj->K * (batch_size + (j->batched_weights ? batch_size : 1)) * data_type_width;
-    } else {
-      n_read_bytes = std::min(sz, sj->M) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
+      n_read_bytes += std::min(sz, sj->M) * sj->K * batch_size * data_type_width;
     }
     n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
   }
@@ -158,8 +160,9 @@ void SystolicArray::SysArrayState::init() {
   } else {
     UPDATE_STATE(SystolicArray::read);
     min_stage_cycles = sj->K * std::max(systolic_fpu_latency, batch_size);
-    int n_read_bytes = std::min(sz, sj->M) * sj->K * (batch_size + (j->batched_weights ? batch_size : 1)) * data_type_width;
-    int n_read_beats = n_read_bytes / bytes_per_tx;
+    int n_read_bytes = std::min(sz, sj->M) * sj->K * batch_size * data_type_width
+                     + std::min(sz, sj->N) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
+    int n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);

@@ -123,5 +123,19 @@ else
   bad "V6 job dims wrong (see $WORK/v6.log, $WORK/v6b.log)"
 fi
 
+# V6b: a decode-shaped GEMM must read its full weight/KV panel. Matmul 1 64 2048
+# at -sa_sz 64: weights = K*N*dtw = 64*2048*2 = 256 KiB = 4096 beats (64 B/beat),
+# charged min(sz,N)*K*dtw = 8 KiB per column tile x 32 tiles. Before this fix
+# the reads are min(sz,M)*K-scaled: ~2 beats/tile, ~64 beats total, and DRAM
+# CMDs (reads+writes+init) sit far below 4000.
+printf 'Matmul 1 64 2048\n' > "$WORK/v6c.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v6c.txt" -o "$WORK/v6c_s.txt" > "$WORK/v6c.log" 2>&1
+cmds=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v6c.log" | tail -1 | awk '{print $3}')
+if [ "${cmds:-0}" -ge 4000 ]; then
+  ok "V6b decode-shaped GEMM reads its KV/weight panel (DRAM CMDs=$cmds)"
+else
+  bad "V6b DRAM CMDs=$cmds (< 4000: weight-side reads missing)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
