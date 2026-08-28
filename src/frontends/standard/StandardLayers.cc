@@ -93,6 +93,9 @@ static JobList createWSJobs(const ArchConfig &a_config, int M, int K, int N, con
 static const std::vector<std::pair<VectorUnit::VPUPhase, int>> softmax_phases =
     {{VectorUnit::VPUPhase::BROADCAST, 1}, {VectorUnit::VPUPhase::REDUCE, 1}, {VectorUnit::VPUPhase::BROADCAST, 1}};
 
+static const std::vector<std::pair<VectorUnit::VPUPhase, int>> rmsnorm_phases =
+    {{VectorUnit::VPUPhase::REDUCE, 2}, {VectorUnit::VPUPhase::BROADCAST, 1}};
+
 using JobCreate_f = std::function<JobPair(const ArchConfig &, const LayerConfig &)>;
 
 JobPair Matmul(const ArchConfig &a_config, const LayerConfig &l_config) {
@@ -278,6 +281,34 @@ JobPair LayerNorm(const ArchConfig &a_config, const LayerConfig &l_config) {
   return {{jl}, {jl}};
 }
 
+// RMSNorm over par_dim rows of length lin_dim, chunked to the buffer the
+// same way LayerNorm is.
+static JobList makeRMSNormJobs(int lin_dim, int par_dim) {
+  JobList jl;
+  int par_acc = par_dim;
+  int dec_amt = buffer_size_bytes / data_type_width / lin_dim;
+  while (par_acc > 0) {
+    jl.push_back(new VectorUnit::VecUnitJob(lin_dim, std::min(dec_amt, par_acc), false, rmsnorm_phases));
+    par_acc -= dec_amt;
+  }
+  return jl;
+}
+
+JobPair RMSNorm(const ArchConfig &a_config, const LayerConfig &l_config) {
+  int lin_dim, par_dim = 1;
+  if (l_config.dimensions.size() == 1) {
+    lin_dim = l_config.dimensions[0];
+  } else if (l_config.dimensions.size() == 2) {
+    par_dim = l_config.dimensions[0];
+    lin_dim = l_config.dimensions[1];
+  } else {
+    std::cerr << "RMSNorm expects 1 or 2 dimensions, got " << l_config.dimensions.size() << std::endl;
+    throw std::exception();
+  }
+  JobList jl = makeRMSNormJobs(lin_dim, par_dim);
+  return {jl, jl};
+}
+
 JobPair Activation(const ArchConfig &a_config, const LayerConfig &l_config) {
   int sz = 1;
   for (const auto &dim: l_config.dimensions) sz *= dim;
@@ -294,6 +325,31 @@ JobPair Add(const ArchConfig &a_config, const LayerConfig &l_config) {
   return {{job}, {job}};
 }
 
+// n_rows independent softmax rows of length row_len, chunked so each job's
+// working set fits the buffer and no job exceeds 1024 rows.
+static JobList makeSoftmaxJobs(int row_len, int n_rows) {
+  int spl = 1;
+  int Mp = n_rows;
+  if (row_len * n_rows * data_type_width * batch_size > buffer_size_bytes || Mp > 1024) {
+    spl = std::max(div_ru(row_len * n_rows * data_type_width * batch_size, buffer_size_bytes),
+                   div_ru(Mp, 1024));
+    if (spl > Mp) {
+      std::cerr << "Can't split this enough to fit inside buffer." << std::endl;
+      throw std::exception();
+    }
+    Mp /= spl;
+  }
+  std::cout << "Splitting by " << spl << std::endl;// preserved from Softmax: stdout must stay identical
+  // One job per Mp-row chunk: every chunk must be modeled, on however many
+  // vector units the architecture actually has (the scheduler spreads
+  // unpinned jobs across idle units of the type at dispatch time).
+  int n_jobs = div_ru(n_rows, Mp);
+  JobList softmax_layer;
+  for (int i = 0; i < n_jobs; ++i)
+    softmax_layer.push_back(new VectorUnit::VecUnitJob(row_len, Mp, false, softmax_phases));
+  return softmax_layer;
+}
+
 JobPair Softmax(const ArchConfig &a_config, const LayerConfig &l_config) {
   int M;
   int heads = 1;
@@ -307,26 +363,7 @@ JobPair Softmax(const ArchConfig &a_config, const LayerConfig &l_config) {
     throw std::exception();
   }
 
-  int spl = 1;
-  int Mp = M * heads;
-  if (heads * M * M * data_type_width * batch_size > buffer_size_bytes || Mp > 1024) {
-    spl = std::max(div_ru(heads * M * M * data_type_width * batch_size, buffer_size_bytes), div_ru(Mp, 1024));
-    if (spl > Mp) {
-      std::cerr << "Can't split this enough to fit inside buffer." << std::endl;
-      throw std::exception();
-    }
-    Mp /= spl;
-  }
-  std::cout << "Splitting by " << spl << std::endl;
-
-  // One job per Mp-row chunk: every chunk must be modeled, on however many
-  // vector units the architecture actually has (the scheduler spreads
-  // unpinned jobs across idle units of the type at dispatch time).
-  int n_jobs = div_ru(M * heads, Mp);
-  JobList softmax_layer;
-  for (int i = 0; i < n_jobs; ++i)
-    softmax_layer.push_back(new VectorUnit::VecUnitJob(M, Mp, false, softmax_phases));
-
+  JobList softmax_layer = makeSoftmaxJobs(M, M * heads);
   return {softmax_layer, softmax_layer};
 }
 
@@ -432,6 +469,8 @@ JobCreate_f getLayerLambda(const std::string &layer_type) {
     return Add;
   if (layer_type == "LayerNorm")
     return LayerNorm;
+  if (layer_type == "RMSNorm")
+    return RMSNorm;
   if (layer_type == "SelfAttention")
     return SelfAttention;
   if (layer_type == "MultiHeadSelfAttention")

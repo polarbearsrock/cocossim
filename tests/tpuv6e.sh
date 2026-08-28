@@ -217,5 +217,19 @@ else
   bad "V9 DRAM CMDs activation=$ca add=$cb"
 fi
 
+# V10: RMSNorm parses, runs, and is cheaper than LayerNorm at equal shape
+# (2+1 phase-units/row vs 1+4+1): fewer cycles, same single-chunk job count.
+printf 'RMSNorm 512 1024\n'   > "$WORK/v10a.txt"
+printf 'LayerNorm 512 1024\n' > "$WORK/v10b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v10a.txt" -o "$WORK/v10a_s.txt" > "$WORK/v10a.log" 2>&1
+rc=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v10b.txt" -o "$WORK/v10b_s.txt" > "$WORK/v10b.log" 2>&1
+cr=$(cycles_of "$WORK/v10a_s.txt"); cl=$(cycles_of "$WORK/v10b_s.txt")
+if [ "$rc" -eq 0 ] && [ -n "$cr" ] && [ -n "$cl" ] && [ "$cr" -lt "$cl" ]; then
+  ok "V10 RMSNorm runs and is cheaper than LayerNorm ($cr < $cl)"
+else
+  bad "V10 rc=$rc rms=$cr ln=$cl"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
