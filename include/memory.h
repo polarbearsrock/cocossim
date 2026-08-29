@@ -19,6 +19,11 @@ namespace mem {
   using mem_ty = dramsim3::JedecDRAMSystem;
 
   extern dramsim3::Config *dramsim3config;
+  // One queued credit per in-flight transaction: DRAMSim3 fires one callback
+  // per AddTransaction, and same-address requests each get their own callback,
+  // so credits must queue per address (FIFO) — a single State* entry would be
+  // overwritten by a same-address re-issue and orphan the first requester
+  // (hangs the run). Do not simplify back to State*.
   extern std::unordered_map<uint64_t, std::deque<State *>> address_reads_bkwds_lookup, address_writes_bkwds_lookup;
   extern mem_ty *mem_sys;
 

@@ -218,6 +218,32 @@ it, refit from scratch, log the iteration. The log becomes the methodology secti
 6. **Access hiccups** — everything scripted before the first session; A + C
    front-loaded; queued resources as fallback.
 
+### 6.7 Known modeling gaps feeding the Plan-2/3 mechanism list
+
+Identified during implementation review; none block M0/M2, but each is a candidate
+mechanism for the calibration loop (§5) and should be weighed against Phase D
+residuals before being dismissed as noise.
+
+- **Decode attention KV-cache reads.** The `Transformer` expansion creates `nh`
+  score/AV jobs per layer, each charging one S×head_dim K/V panel. Hardware reads
+  batch×nkv panels (one KV cache per sequence, ideal intra-group reuse). Modeled/true
+  factor = nh/(batch·nkv): the model over-charges when batch < nh/nkv and
+  under-charges when batch > nh/nkv — 2–16× under at Phase-D decode batches for
+  Llama-8B-class shapes (nh=32, nkv=8). Candidate mechanism: a per-job weight-read
+  multiplier set to `batch` on score/AV jobs.
+- **RoPE and binary-elementwise jobs never chunk to the buffer.** RoPE and
+  binary-elementwise ops (residual add, SiLU) are emitted as one unsplit
+  `VecUnitJob` regardless of working-set size, unlike RMSNorm/Softmax/LayerNorm,
+  which chunk to the buffer. At calibration scale this yields a single tens-of-MB
+  memstall block instead of pipelined chunks and can distort the phase-length
+  distributions Exp 2 depends on.
+- **`SysArrayJob`'s DRAM address range under-allocates for decode shapes.**
+  Allocation uses m·m·n-style sizing (`src/units/standard/SysArray.cc:188`), which
+  is smaller than post-Task-4b read volumes for decode shapes, so concurrent units'
+  read cursors alias each other's address ranges. Traffic totals are still correct;
+  the address stream is not bank/row-realistic. Revisit only if bank-level effects
+  show up in calibration residuals.
+
 ## 7. Milestones (~10 weeks to mid-November)
 
 - **M0 (wk 1):** commit the 2026-08 fix series; promote the four hardware flags of

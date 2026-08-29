@@ -55,16 +55,19 @@ if [ -n "$cb" ] && [ -n "$co" ] && [ $((co - cb)) -ge 900 ]; then
   ok "V3 -job_overhead 1000 adds $((co - cb)) cycles"
 else bad "V3 base=$cb overhead=$co"; fi
 
-# V3b: invalid values for each new flag must be rejected (exit 1 + message).
+# V3b: invalid values for each new flag must be rejected (exit 1 + message),
+# including -buf_mb's upper bound (buf_mb*1024*1024 must stay in-range for int).
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 0 -i "$WORK/v3.txt" -o "$WORK/v3c.txt" > "$WORK/v3c.log" 2>&1; r1=$?
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_enq 0 -i "$WORK/v3.txt" -o "$WORK/v3d.txt" > "$WORK/v3d.log" 2>&1; r2=$?
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -job_overhead -1 -i "$WORK/v3.txt" -o "$WORK/v3e.txt" > "$WORK/v3e.log" 2>&1; r3=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 2048 -i "$WORK/v3.txt" -o "$WORK/v3f.txt" > "$WORK/v3f.log" 2>&1; r4=$?
 if [ "$r1" -eq 1 ] && grep -q 'buf_mb' "$WORK/v3c.log" \
    && [ "$r2" -eq 1 ] && grep -q 'dram_enq' "$WORK/v3d.log" \
-   && [ "$r3" -eq 1 ] && grep -q 'job_overhead' "$WORK/v3e.log"; then
+   && [ "$r3" -eq 1 ] && grep -q 'job_overhead' "$WORK/v3e.log" \
+   && [ "$r4" -eq 1 ] && grep -q 'buf_mb' "$WORK/v3f.log"; then
   ok "V3b invalid -buf_mb/-dram_enq/-job_overhead rejected"
 else
-  bad "V3b rejection exit codes: buf=$r1 enq=$r2 ovh=$r3"
+  bad "V3b rejection exit codes: buf=$r1 enq=$r2 ovh=$r3 buf_hi=$r4"
 fi
 
 # V4: -dram_ini selects the DRAM config. The GDDR6 ini has bus_width=128

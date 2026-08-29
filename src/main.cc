@@ -109,6 +109,9 @@ int main(int argc, char **argv) {
     for (int i = 0; i < arch->states.size(); ++i) {
       fprintf(f, "%s %f\n", arch->states[i]->get_ty_string().c_str(), res[p].pct_active[i]);
     }
+    // acct_*/total_work are cumulative across periods while Cycles/pct_active are
+    // per-phase: these lines are correct only at periods == 1 (the only supported
+    // configuration; the V7 sum invariant relies on it).
     for (int i = 0; i < arch->states.size(); ++i) {
       State *s = arch->states[i];
       uint64_t accounted = s->acct_busy + s->acct_underfilled + s->acct_memstall;

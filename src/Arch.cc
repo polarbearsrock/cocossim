@@ -247,6 +247,9 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
       bool is_active = s->increment(enqueue_job, total_idle, n_idle_units);
       if (is_active) {
         per_array_act[i]++;
+        // Precedence is load-bearing: a stalled cycle counts as memstall even if the
+        // job is also underfilled — memory starvation must be separated from shape
+        // under-fill for the per-unit attribution (spec 3.5).
         if (s->is_idle_from_memory) s->acct_memstall++;
         else if (s->is_underfilled()) s->acct_underfilled++;
         else s->acct_busy++;

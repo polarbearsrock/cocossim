@@ -46,8 +46,8 @@ Arch* StandardParser::make_arch() {
     std::cerr << "Error: -ws must be 0 (output stationary) or 1 (weight stationary), got " << ws << std::endl;
     exit(1);
   }
-  if (buf_mb < 1) {
-    std::cerr << "Error: -buf_mb must be >= 1, got " << buf_mb << std::endl;
+  if (buf_mb < 1 || buf_mb > 1024) {
+    std::cerr << "Error: -buf_mb must be in [1, 1024], got " << buf_mb << std::endl;
     exit(1);
   }
   if (dram_enq_per_cycle < 1) {
