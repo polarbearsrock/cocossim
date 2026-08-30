@@ -31,7 +31,7 @@ JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
   for (int core = 0; core < n_cores; ++core) {
     for (int job = 0; job < num_jobs; ++job) {
       int m = std::min(sa_sz, M - job * sa_sz);
-      auto sys_job = new SystolicArray::SysArrayJob(m, K, core_n);
+      auto sys_job = new SystolicArray::SysArrayJob(m, K, core_n, sa_sz, /*ws=*/false);
       sys_job->core_id = core;
       sys_job->task_idx = core_task_counters[core]++;
       jobs.push_back(sys_job);
@@ -56,7 +56,7 @@ static JobList createWSJobs(const ArchConfig &a_config, int M, int K, int N, con
     bool core_is_bufferable = required_buff_sz_per_core <= buffer_size_bytes;
 
     if (core_is_bufferable) {
-      auto job = new SystolicArray::SysArrayJob(M, K, core_n);
+      auto job = new SystolicArray::SysArrayJob(M, K, core_n, a_config.sa_sz_allo, /*ws=*/true);
       job->core_id = core;
       job->task_idx = core_task_counters[core]++;
       jl.push_back(job);
@@ -79,7 +79,7 @@ static JobList createWSJobs(const ArchConfig &a_config, int M, int K, int N, con
       for (int i = 0; i < num_sequential_jobs; ++i) {
         int remaining_N = core_n - i * N_per_job;
         int current_N = std::min(N_per_job, remaining_N);
-        auto job = new SystolicArray::SysArrayJob(M, K, current_N);
+        auto job = new SystolicArray::SysArrayJob(M, K, current_N, a_config.sa_sz_allo, /*ws=*/true);
         job->core_id = core;
         job->task_idx = core_task_counters[core]++;
         jl.push_back(job);
@@ -320,8 +320,7 @@ JobPair Activation(const ArchConfig &a_config, const LayerConfig &l_config) {
 JobPair Add(const ArchConfig &a_config, const LayerConfig &l_config) {
   int sz = 1;
   for (const auto &dim: l_config.dimensions) sz *= dim;
-  auto job = new VectorUnit::VecUnitJob(1, sz, false, {{VectorUnit::VPUPhase::BROADCAST, 1}});
-  job->n_read_operands = 2;
+  auto job = new VectorUnit::VecUnitJob(1, sz, false, {{VectorUnit::VPUPhase::BROADCAST, 1}}, 2);
   return {{job}, {job}};
 }
 
@@ -375,8 +374,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
   int S = seq_len;                      // attention context length
 
   auto mk_binary_ew = [&](int rows, int cols) -> JobList {
-    auto *jb = new VectorUnit::VecUnitJob(cols, rows, false, {{VectorUnit::VPUPhase::BROADCAST, 1}});
-    jb->n_read_operands = 2;
+    auto *jb = new VectorUnit::VecUnitJob(cols, rows, false, {{VectorUnit::VPUPhase::BROADCAST, 1}}, 2);
     return {jb};
   };
 
@@ -399,8 +397,8 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     connectJobLists(k.second, rope);
 
     JobList scores, av;
-    for (int h = 0; h < nh; ++h) scores.push_back(new SystolicArray::SysArrayJob(M, head_dim, S));
-    for (int h = 0; h < nh; ++h) av.push_back(new SystolicArray::SysArrayJob(M, S, head_dim));
+    for (int h = 0; h < nh; ++h) scores.push_back(new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws));
+    for (int h = 0; h < nh; ++h) av.push_back(new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws));
     connectJobLists(rope, scores);
 
     JobList sm = makeSoftmaxJobs(S, M * nh);

@@ -125,21 +125,25 @@ std::string VecUnitJob::get_job_dims_string() const {
 VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
                        bool is_prebuffered,
-                       const std::queue<std::pair<VPUPhase, int>> &phases)
-    : Job(linearizedDimension * parallelDimension * data_type_width * batch_size),
+                       const std::queue<std::pair<VPUPhase, int>> &phases,
+                       int n_read_operands)
+    : Job(vec_job_alloc_bytes(linearizedDimension, parallelDimension, is_prebuffered, n_read_operands)),
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
+      phases(phases),
       is_prebuffered(is_prebuffered),
-      phases(phases) {}
+      n_read_operands(n_read_operands) {}
 
 VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
                        bool is_prebuffered,
-                       const std::vector<std::pair<VPUPhase, int>> &vphases)
-    : Job(linearizedDimension * parallelDimension * data_type_width * batch_size),
+                       const std::vector<std::pair<VPUPhase, int>> &vphases,
+                       int n_read_operands)
+    : Job(vec_job_alloc_bytes(linearizedDimension, parallelDimension, is_prebuffered, n_read_operands)),
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
-      is_prebuffered(is_prebuffered) {
+      is_prebuffered(is_prebuffered),
+      n_read_operands(n_read_operands) {
   for (const auto &q: vphases) {
     phases.push(q);
   }

@@ -64,6 +64,18 @@ private:
   };
 
 
+  // Bytes a VecUnitJob touches over its whole life, and therefore the size of
+  // the address window it must own. VecUnitState::init streams n_read_operands
+  // copies of the tensor (none when the inputs are already buffered) and the
+  // write phase streams one more; sizing the allocation for the reads alone --
+  // as this did before -- pushed every job's write pass onto the next job's
+  // input range, which livelocks multi-core runs (see Job::alloc_size).
+  inline uint64_t vec_job_alloc_bytes(int lin, int par, bool is_prebuffered, int n_read_operands) {
+    const uint64_t tensor = (uint64_t) lin * par * data_type_width * batch_size;
+    const uint64_t n_passes = (is_prebuffered ? 0u : (uint64_t) n_read_operands) + 1u;
+    return tensor * n_passes;
+  }
+
   struct VecUnitJob : public Job {
     int linearized_dimension;
     int parallel_dimension;
@@ -72,11 +84,14 @@ private:
     int op_latency = 1;
     // Number of input tensors this job streams from memory (1 = unary,
     // 2 = binary elementwise such as residual add). Scales unbuffered reads.
-    int n_read_operands = 1;
+    // Const because the base Job allocation is sized from it at construction
+    // (see vec_job_alloc_bytes): raising it afterwards would make the job walk
+    // past its own address window and into the next job's.
+    const int n_read_operands;
 
     [[nodiscard]] std::string get_job_dims_string() const override;
-    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::queue<std::pair<VPUPhase, int>> &phases);
-    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::vector<std::pair<VPUPhase, int>> &phases);
+    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::queue<std::pair<VPUPhase, int>> &phases, int n_read_operands = 1);
+    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::vector<std::pair<VPUPhase, int>> &phases, int n_read_operands = 1);
 
     int get_type() const override;
   };

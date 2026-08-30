@@ -21,6 +21,16 @@ struct Job {
   bool batched_weights = false;
   uint64_t addr;
   const uint64_t addr_hold;
+  // Bytes reserved for this job at [addr_hold, addr_hold + alloc_size). The
+  // address cursor `addr` must never leave that window: jobs are bump-allocated
+  // back to back, so a job that walks past its own allocation lands on the next
+  // job's, and two units running those jobs concurrently then issue a read and a
+  // write to one address. DRAMSim3's controller deadlocks on exactly that -- a
+  // full write buffer re-arms write_draining_ every tick, so the read queue is
+  // never scheduled, while the head write is held back forever by the R->W
+  // dependency check against the read that can no longer issue. State's enqueue
+  // paths enforce the bound.
+  const uint64_t alloc_size;
   int task_idx;
   int core_id = -1;  // Core ID for parallel scheduling (-1 = any core)
   int job_idx;

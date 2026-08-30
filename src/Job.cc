@@ -15,7 +15,7 @@
 uint64_t alloc_addr = 0;
 static int job_identifier = 0;
 
-Job::Job(uint64_t alloc_sz) : rem_deps(0), addr_hold(alloc_addr), addr(alloc_addr) {
+Job::Job(uint64_t alloc_sz) : addr(alloc_addr), addr_hold(alloc_addr), alloc_size(alloc_sz), rem_deps(0) {
   alloc_addr += alloc_sz;
   total_jobs++;
   task_idx = alloc_task_idx;

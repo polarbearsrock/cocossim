@@ -47,7 +47,7 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
             if (row_i == loop_row_tiles) {
               amt_to_write = sj->M * sj->N * data_type_width * batch_size;
             } else {
-              activation_preload = std::min(sz, sj->K) * sj->M * batch_size * data_type_width;
+              activation_preload = ws_activation_preload_bytes(sj->M, sj->K, sz);
             }
           }
           amt_to_read = activation_preload;
@@ -135,12 +135,11 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     min_stage_cycles = sj->K * systolic_fpu_latency;
     // Weight/KV block for this column tile: K x min(sz, N). Activation panel
     // (min(sz, M) x K) is re-read only when the row tile advances.
-    int weight_bytes = std::min(sz, sj->N) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
-    n_read_bytes = weight_bytes;
+    n_read_bytes = weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
     if (new_row) {
-      n_read_bytes += std::min(sz, sj->M) * sj->K * batch_size * data_type_width;
+      n_read_bytes += activation_panel_bytes(sj->M, sj->K, sz);
     }
-    n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
+    n_read_beats = demand_beats(n_read_bytes);
   }
   mem_read_left = mem_read_left_unqueued = n_read_beats;
 }
@@ -155,16 +154,16 @@ void SystolicArray::SysArrayState::init() {
     loop_cols_tiles = div_ru(sj->N, sz);
     loop_row_tiles = div_ru(sj->K, sz);
     int sys_array_preload = std::min(sz, sj->N) * std::min(sz, sj->K) * data_type_width;
-    int activation_preload = std::min(sz, sj->K) * sj->M * data_type_width;
+    int activation_preload = ws_activation_preload_bytes(sj->M, sj->K, sz);
     state_transfer(SystolicArray::prefetch, activation_preload + sys_array_preload, 0, sz);
     row_i = 1;
     col_i = 1;
   } else {
     UPDATE_STATE(SystolicArray::read);
     min_stage_cycles = sj->K * std::max(systolic_fpu_latency, batch_size);
-    int n_read_bytes = std::min(sz, sj->M) * sj->K * batch_size * data_type_width
-                     + std::min(sz, sj->N) * sj->K * (j->batched_weights ? batch_size : 1) * data_type_width;
-    int n_read_beats = std::max(n_read_bytes / bytes_per_tx, 1);
+    int n_read_bytes = activation_panel_bytes(sj->M, sj->K, sz)
+                     + weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
+    int n_read_beats = demand_beats(n_read_bytes);
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);
@@ -184,8 +183,10 @@ SystolicArray::SysArrayState::SysArrayState(int sz, bool ws) : State(1), sz(sz),
   beats_per_wb = std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1);
 }
 
-SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n)
-    : Job(m * m * n * data_type_width * batch_size * 2 + n * m * data_type_width * batch_size), M(m), K(k), N(n) {}
+SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws)
+    : Job(sys_job_alloc_bytes(m, k, n, sz, ws, /*batched_weights=*/false,
+                              std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1))),
+      M(m), K(k), N(n) {}
 
 
 std::string SystolicArray::SysArrayJob::get_job_dims_string() const {

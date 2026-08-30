@@ -323,5 +323,56 @@ else
   bad "V14 rc=$rc fin_eq=${fin_eq:-?} acct_units=${n_acct:-?}"
 fi
 
+# V15: many independent VPU jobs must all finish on a multi-core arch.
+# Softmax 512 32 splits into 16 unpinned VecUnitJobs (row_len=512, n_rows=16384
+# capped at 1024 rows/job), so with -c >= 2 several vector units run neighbouring
+# jobs at the same time. Before the address-window fix each VPU job's write pass
+# continued the cursor past its own allocation and landed exactly on the next
+# job's read range: job k wrote [base_k+1, base_k+2) == job k+1's inputs. A
+# concurrent write and read to one address wedges DRAMSim3's controller -- a full
+# write buffer re-arms write_draining_ every tick so the read queue is never
+# scheduled, while the head write is held back forever by the R->W dependency
+# check against a read that can no longer issue. Both DRAM queues then stay full,
+# no transaction is ever accepted, and the run spins forever: observed 4/16 jobs
+# at -c 4 and 6/16 at -c 3, with cycles climbing past 40M and "Jobs finished"
+# frozen. Fixed runs settle in ~17k cycles (0.13 s), so the timeout below is
+# pure hang-detection, not a performance bound -- without it a regression hangs
+# the suite instead of failing it.
+printf 'Softmax 512 32\n' > "$WORK/v15.txt"
+v15_bad=""
+for c in 2 3 4 8; do
+  timeout 60 "$BIN" -c "$c" -sa_sz 256 -vu_sz 256 -f 1.75 -ws 0 -buf_mb 8 \
+    -i "$WORK/v15.txt" -o "$WORK/v15_s_$c.txt" > "$WORK/v15_$c.log" 2>&1
+  rc=$?
+  fin=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v15_$c.log" | tail -1)
+  if [ "$rc" -ne 0 ] || [ "$fin" != "Jobs finished: 16/16" ]; then
+    v15_bad="$v15_bad -c$c(rc=$rc ${fin:-no-progress})"
+  fi
+done
+if [ -z "$v15_bad" ]; then
+  ok "V15 16 independent VPU jobs all finish at -c 2/3/4/8"
+else
+  bad "V15 multi-core VPU dispatch stalled:$v15_bad"
+fi
+
+# V15b: the allocation guard that keeps V15 fixed must actually be armed --
+# every job type has to declare an address window covering its whole walk.
+# State::enqueue_reads/enqueue_writes throw if a job steps outside its window,
+# so a workload mixing both unit types across cores completes only when every
+# declared window is right. Transformer decode exercises SA (GEMM/score/AV) and
+# VPU (norms, softmax, residual adds with n_read_operands=2) together.
+printf 'Transformer 1 8 2 1 16 32 1 4\n' > "$WORK/v15b.txt"
+timeout 120 "$BIN" -c 4 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v15b.txt" \
+  -o "$WORK/v15b_s.txt" > "$WORK/v15b.log" 2>&1
+rc=$?
+fin_eq=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v15b.log" | tail -1 \
+         | awk -F'[:/ ]+' '{print ($3==$4 && $3>0)?1:0}')
+overran=$(grep -c 'walked past its allocation' "$WORK/v15b.log")
+if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ] && [ "$overran" -eq 0 ]; then
+  ok "V15b mixed SA+VPU decode on -c 4 finishes with no allocation overrun"
+else
+  bad "V15b rc=$rc fin_eq=${fin_eq:-?} overruns=$overran"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

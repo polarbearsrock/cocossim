@@ -10,11 +10,30 @@
 #include "Arch.h"
 #include "State.h"
 #include "global.h"
+#include <stdexcept>
+
+// A job owns exactly [addr_hold, addr_hold + alloc_size). Walking past it
+// silently overlaps the next bump-allocated job, and concurrent units then
+// issue a read and a write to the same address, which deadlocks DRAMSim3's
+// controller (see the alloc_size comment in Job.h). A job type whose declared
+// allocation does not cover its real traffic is a modeling bug: fail loudly
+// here instead of hanging the run tens of millions of cycles later.
+static void check_in_bounds(const Job *j, int n_beats, const char *what) {
+  if (j->addr + (uint64_t) n_beats * bytes_per_tx > j->addr_hold + j->alloc_size) {
+    throw std::runtime_error(
+        "job " + std::to_string(j->job_idx) + " (type " + std::to_string(j->get_type()) +
+        ", dims " + j->get_job_dims_string() + ") walked past its allocation on " + what +
+        ": alloc_size=" + std::to_string(j->alloc_size) +
+        " offset=" + std::to_string(j->addr - j->addr_hold) +
+        " beats=" + std::to_string(n_beats));
+  }
+}
 
 void State::enqueue_writes() {
   // Queue memory write transactions with bandwidth limits
   if (mem_write_left_unqueued > 0) {
     int to_enq = std::min(dram_enq_per_cycle, mem_write_left_unqueued);
+    check_in_bounds(j, to_enq, "writes");
     mem_write_left_unqueued -= to_enq;
     mem_queued += to_enq;
     for (int i = 0; i < to_enq; ++i) {
@@ -28,6 +47,7 @@ void State::enqueue_reads() {
   // Queue memory read transactions with bandwidth limits
   if (mem_read_left_unqueued > 0) {
     int to_enq = std::min(dram_enq_per_cycle, mem_read_left_unqueued);
+    check_in_bounds(j, to_enq, "reads");
     mem_read_left_unqueued -= to_enq;
     mem_queued += to_enq;
     for (int i = 0; i < to_enq; ++i) {
