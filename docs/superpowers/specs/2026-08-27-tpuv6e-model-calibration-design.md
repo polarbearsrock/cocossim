@@ -42,18 +42,25 @@ modeling (Exp 3), and any learned correction models.
 
 ## 3. The v6e model in COCOSSim
 
-### 3.1 Geometry (hypothesis, not assumption)
+### 3.1 Geometry (amended 2026-08-30; original hypothesis falsified)
 
-Public facts: 918 bf16 TFLOPS peak, 32 GB HBM at ~1.64 TB/s, 256×256-generation MXU.
-Clock and MXU count are unpublished, but peak pins their product:
-918e12 / (2 · 256² ops/cycle) ≈ 7.0e9 MXU-cycles/s. Four MXUs at ~1.75 GHz is the only
-decomposition consistent with the v5e lineage (v5e's published peak works out to
-4 × 128×128 at ~1.5 GHz; 2 MXUs would need an implausible 3.5 GHz).
+Public facts: 918 bf16 TFLOPS peak (1836 int8 TOPs), 32 GB HBM at 1638 GB/s, and —
+per Google's own v6e documentation — **one TensorCore per chip with 2 MXUs, one
+vector unit, and one scalar unit**, with a 256×256 MXU (scaling-book corroboration).
+The original 4-MXU/1.75 GHz decomposition below the line was falsified by those docs.
 
-**Default model: `-c 4 -sa_sz 256 -f 1.75`.** Phase C probes (§4) confirm or falsify
-this; the clock is a fitted parameter, never a constant. If probes cannot fully
-disambiguate, use the decomposition that matches small-M behavior and state the
-ambiguity in the paper.
+With 2 × 256² at 1.75 GHz, the published peak requires **2 packed bf16 MACs/PE/cycle**
+(2 · 256² · 2 MACs · 2 FLOP · 1.75e9 = 918e12; the int8 peak at exactly 2× bf16 is
+consistent with packed-arithmetic PEs). MACs/PE and the VPU width are the remaining
+unpublished quantities — both are hypotheses Phase C probes confirm or falsify.
+
+**Default model: `-c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1.75`.**
+The clock is a fitted parameter with a physical prior; it must never absorb structural
+factors (that is what `-mxu_macs_per_pe` exists for).
+
+> Superseded original (kept for the record): "Four MXUs at ~1.75 GHz is the only
+> decomposition consistent with the v5e lineage; 2 MXUs would need an implausible
+> 3.5 GHz." The overlooked possibility was 2 MACs/PE/cycle at 1.75 GHz.
 
 ### 3.2 New runtime flags (defaults preserve current behavior)
 
@@ -64,8 +71,18 @@ ambiguity in the paper.
 | `-dram_enq <int>` | `dram_enq_per_cycle` in `global.h` | 9 |
 | `-job_overhead <cycles>` | (new) fixed cost added at job init | 0 |
 | `-fuse_epilogue <0\|1>` | (new) residual add as separate VPU job vs absorbed into GEMM | 0 |
+| `-mxu_macs_per_pe <int>` | (new) OS accumulation throughput per PE | 1 |
+| `-n_vpu <int>` | (new) vector-unit count, decoupled from `-c` | match `-c` |
 
-All existing examples and regression tests must pass unchanged with defaults.
+All existing examples and regression tests must pass unchanged with defaults, with
+three documented exceptions: the two under-filled-tile changes (true-M dims and the
+weight/KV read term, from the implementation plan), and — amended 2026-08-30 — the
+`-mxu_macs_per_pe` physics fix: OS accumulation now costs ceil(K/macs) cycles instead
+of K·systolic_fpu_latency, so DEFAULT OS timing is ~2× faster than the original code
+(the old 2-cycle K-step modeled no real machine; `systolic_fpu_latency` is demoted to
+WS fill/drain only). Stats files declare `SCHEMA 2`: SA eff_util capacity is
+macs·sz² and full tiles read ~1.0, vs the schema-1 ceiling of ~0.5 — numbers are not
+comparable across schemas.
 
 ### 3.3 HBM model
 
@@ -167,12 +184,13 @@ Phases A + C run in the first session.
 
 | Parameter | Meaning | Prior / source |
 |---|---|---|
-| `-f` | clock | ~1.75 GHz (§3.1); Phase C |
+| `-f` | clock | physical ~1.75 GHz (§3.1); Phase C |
 | `-dram_enq` | memory issue width per cycle | current value 9 |
 | `-job_overhead` | fixed cycles per job dispatch | Phase B small-size intercept |
-| `-vu_sz` | effective VPU width | Phase B roofline |
+| `-vu_sz` | effective VPU width | prior 512 (§3.1, unpublished); Phase B roofline |
 
-Set structurally, **not** fitted: geometry (`-c`, `-sa_sz`) from Phase C evidence;
+Set structurally, **not** fitted: geometry (`-c 2`, `-n_vpu 1`, `-sa_sz 256` from
+Google docs; `-mxu_macs_per_pe 2` from the peak decomposition, Phase C-confirmable);
 `-buf_mb` from the working-set probe; the HBM ini frozen after matching measured stream
 bandwidth. Keeping the DRAM model out of the fitting loop stops it from absorbing
 unrelated error.

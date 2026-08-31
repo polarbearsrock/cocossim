@@ -1315,3 +1315,9 @@ git commit -m "Add pinned TPUv6e model configuration script"
 - Measurement harness `benchmarks/tpuv6e/` (spec §4) — Plan 2, separate environment (GCP/JAX).
 - Fit driver and calibration (spec §5) — Plan 3, needs Plan 2's data.
 - Known pre-existing defects deliberately untouched: `createSAJobs` static counter first-call sizing, multi-period `state_updates.at(-1)` crash, unchecked `fopen(ofile)` (three open task chips).
+
+---
+
+## Post-plan amendments
+
+- 2026-08-30: spec §3.1/§3.2/§5 amended — Google's v6e docs falsified the 4-MXU geometry hypothesis. The model now uses 2 MXUs + 1 shared VPU (`-n_vpu`) with 2 packed bf16 MACs/PE/cycle (`-mxu_macs_per_pe`), and default OS timing changed (SCHEMA 2 stats). This supersedes this plan's "defaults preserve behavior" constraint; see the spec for the full statement.
