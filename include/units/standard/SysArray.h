@@ -73,12 +73,29 @@ namespace SystolicArray {
               std::max(ws_act_beats, out_beats);
     } else {
       const int cols = std::max(N / sz, 1);
-      // First column tile of a row tile reads activations + weights; the rest
-      // read weights only. Every column tile writes back beats_per_wb (which
-      // the state machine passes through state_transfer's byte argument, so it
-      // is divided by bytes_per_tx again -- mirrored here on purpose).
-      beats = demand_beats(activation_panel_bytes(M, K, sz)) +
-              (uint64_t) cols * weight_beats +
+      // The first column tile of a row-tile pass reads activations + weights
+      // TOGETHER, floored ONCE -- mirroring SysArrayState::init's combined
+      // `rb` (activation_panel_bytes + weight_panel_bytes*n_weight_streams,
+      // one division) and init_row_loop's `new_row` branch, which charges
+      // every later row-tile pass the identical combined way after the
+      // cursor rewinds to addr_hold (so the first pass computed here, with no
+      // VMEM residency assumed, is the widest one -- residency only removes
+      // weight-side reads, never adds any). Flooring the two parts
+      // SEPARATELY, as this used to, undercounts by one beat whenever their
+      // byte remainders sum to >= bytes_per_tx, and the walk then exceeds
+      // this window. The remaining (cols-1) column tiles of the pass read
+      // weights alone (init_row_loop's non-new_row branch), each floored on
+      // its own -- that part was already right. Every column tile writes
+      // back beats_per_wb (which the state machine passes through
+      // state_transfer's byte argument, so it is divided by bytes_per_tx
+      // again -- mirrored here on purpose).
+      const int64_t combined_first_tile_bytes =
+          (int64_t) activation_panel_bytes(M, K, sz) +
+          (int64_t) weight_panel_bytes(K, N, sz, batched_weights) * n_weight_streams;
+      const uint64_t combined_first_tile_beats =
+          std::max<int64_t>(combined_first_tile_bytes / bytes_per_tx, 1);
+      beats = combined_first_tile_beats +
+              (uint64_t) (cols - 1) * weight_beats +
               (uint64_t) cols * demand_beats(beats_per_wb);
     }
     return beats * (uint64_t) bytes_per_tx;

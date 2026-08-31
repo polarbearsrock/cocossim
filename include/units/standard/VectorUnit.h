@@ -11,6 +11,7 @@
 #define PERF_MODEL_VECTORUNIT_H
 #include "State.h"
 
+#include <algorithm>
 #include <cstdint>
 #include "frontends/standard/StandardUnits.h"
 #include <queue>
@@ -72,8 +73,29 @@ private:
   // input range, which livelocks multi-core runs (see Job::alloc_size).
   inline uint64_t vec_job_alloc_bytes(int lin, int par, bool is_prebuffered, int n_read_operands) {
     const uint64_t tensor = (uint64_t) lin * par * data_type_width * batch_size;
-    const uint64_t n_passes = (is_prebuffered ? 0u : (uint64_t) n_read_operands) + 1u;
-    return tensor * n_passes;
+    // Reads and writes are each quantized to whole bytes_per_tx-byte beats
+    // with a 1-beat floor per non-zero transfer -- State::state_transfer's
+    // SET_READS/SET_WRITES macros (SET_READS(x) = max(read_amt>0?1:0,
+    // read_amt/bytes_per_tx), symmetric for writes) never charge less than
+    // one beat for a transfer that has any bytes at all. Sizing the window
+    // in raw bytes, as this did before, undercounts any tensor smaller than
+    // one beat: two non-zero transfers (a read pass + the write pass) then
+    // cost at least 2*bytes_per_tx bytes of window, not `tensor`.
+    //
+    // Derived directly from the two charging sites in VectorUnit.cc:
+    //  - VecUnitState::init's first_phase_read = tensor * n_read_operands,
+    //    passed to state_transfer as the read amount; 0 when is_prebuffered
+    //    (the init() branch sets first_phase_read = 0 in that case), so no
+    //    read beats are ever charged.
+    //  - The write, issued once all REDUCE/BROADCAST phases are consumed:
+    //    state_transfer(write, 0, lin*par*data_type_width*batch_size, 0) --
+    //    always exactly `tensor` bytes, one copy of the output, regardless
+    //    of n_read_operands or is_prebuffered.
+    const uint64_t read_beats =
+        is_prebuffered ? 0u
+                       : std::max<uint64_t>(tensor * (uint64_t) n_read_operands / bytes_per_tx, 1u);
+    const uint64_t write_beats = std::max<uint64_t>(tensor / bytes_per_tx, 1u);
+    return (read_beats + write_beats) * (uint64_t) bytes_per_tx;
   }
 
   struct VecUnitJob : public Job {

@@ -486,23 +486,54 @@ fi
 # double the job count either way; the parallel schedule must be strictly
 # faster than the sequential chaining (overlap exists), and both must finish
 # every job. -mp 0 rejected.
+#
+# V19 extension: the sequential-chaining cross-replica anchor
+# (StandardLayer::make_layers, the do_par==false branch) used to set
+# jp = lists[0].second -- replica m's FIRST layer's tail -- instead of
+# lists.back().second, its LAST layer's tail. At -mp 2 this is invisible:
+# jp is (re)computed once per replica m>0 and only ever consumed by the NEXT
+# replica, so with just two replicas (m=0,1) the bad value computed at m=1
+# is never read. It first bites at -mp 3: replica 2's Matmul jobs get
+# anchored on replica 1's Matmul tail instead of replica 1's Softmax tail,
+# so replica 2's SA work can start while replica 1's Softmax is still
+# running on the VPU -- a real, if partial, overlap (the two live on
+# different physical units). On this workload at -c 1 (1 SA + 1 VPU total,
+# so the single SA still serializes each replica's own 8 Matmul jobs
+# regardless of the bug -- why the overlap is a fraction of a cycle count,
+# not a collapse), measured exactly: -mp 1 = 51657 cycles (single replica,
+# unaffected by the bug either way). Pre-fix -mp 3 -mp_par 0 = 145194
+# cycles, ratio 145194/51657 = 2.8107. Post-fix = 154937 cycles, ratio
+# 154937/51657 = 2.9993 (essentially exact 3x chaining, as expected once
+# replica 2 truly waits on replica 1's Softmax). A >= 2.8x assertion does
+# NOT discriminate here -- the pre-fix ratio already clears 2.8 -- so this
+# asserts >= 2.9x instead, which has margin below the post-fix value and
+# above the measured pre-fix one. (-mp 2 is untouched by the bug either way:
+# measured 103456 post-fix cycles, ratio 2.0029, consistent with the
+# "invisible at N=2" analysis above; not asserted since it doesn't
+# discriminate.)
 printf 'Matmul 512 512 512\nSoftmax 512\n' > "$WORK/v19.txt"
 run_mp() { # mp par out
   "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -mp "$1" -mp_par "$2" -i "$WORK/v19.txt" -o "$WORK/$3_s.txt" > "$WORK/$3.log" 2>&1
 }
-run_mp 1 0 v19a; run_mp 2 0 v19b; run_mp 2 1 v19c
+run_mp 1 0 v19a; run_mp 2 0 v19b; run_mp 2 1 v19c; run_mp 3 0 v19e
 j1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19a.log" | tail -1 | sed 's|.*/||')
 j2=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19b.log" | tail -1 | sed 's|.*/||')
 f2=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19b.log" | tail -1 | grep -o '^[^/]*' | grep -o '[0-9]*$')
 j3=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19c.log" | tail -1 | sed 's|.*/||')
+j5=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19e.log" | tail -1 | sed 's|.*/||')
+f5=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19e.log" | tail -1 | grep -o '^[^/]*' | grep -o '[0-9]*$')
 cseq=$(cycles_of "$WORK/v19b_s.txt"); cpar=$(cycles_of "$WORK/v19c_s.txt")
+c_mp1=$(cycles_of "$WORK/v19a_s.txt"); c_mp3=$(cycles_of "$WORK/v19e_s.txt")
+ratio3_ok=$(awk -v a="${c_mp1:-0}" -v b="${c_mp3:-0}" 'BEGIN{print (a>0 && b>=2.9*a) ? 1 : 0}')
+ratio3=$(awk -v a="${c_mp1:-1}" -v b="${c_mp3:-0}" 'BEGIN{printf "%.3f", b/a}')
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -mp 0 -i "$WORK/v19.txt" -o "$WORK/v19d_s.txt" > "$WORK/v19d.log" 2>&1; rz=$?
 if [ "${j2:-0}" -eq $((j1 * 2)) ] && [ "${j3:-0}" -eq $((j1 * 2)) ] \
    && [ -n "$cseq" ] && [ -n "$cpar" ] && [ "$cpar" -lt "$cseq" ] \
+   && [ "${j5:-0}" -eq $((j1 * 3)) ] && [ "$f5" = "$j5" ] && [ "$ratio3_ok" -eq 1 ] \
    && [ "$rz" -eq 1 ] && grep -q 'mp' "$WORK/v19d.log"; then
-  ok "V19 -mp 2 doubles jobs ($j1 -> $j2); parallel beats sequential ($cseq -> $cpar)"
+  ok "V19 -mp 2 doubles jobs ($j1 -> $j2); parallel beats sequential ($cseq -> $cpar); -mp 3 sequential chains fully ($c_mp1 -> $c_mp3, ratio $ratio3)"
 else
-  bad "V19 jobs=$j1/$j2/$j3 cyc seq=$cseq par=$cpar badval_rc=$rz"
+  bad "V19 jobs=$j1/$j2/$j3/$j5 cyc seq=$cseq par=$cpar mp3=$c_mp3(f=$f5) ratio=$ratio3 badval_rc=$rz"
 fi
 
 # V20: decode KV-cache traffic must scale with batch and share within GQA
@@ -553,6 +584,55 @@ if [ "$rb" -eq 0 ] && [ "${jb:-0}" -eq $((${ja:-0} + 3)) ] && [ "$fb" = "$jb" ] 
   ok "V21 LM head: +3 jobs, head weights streamed (CMDs $ca -> $cb)"
 else
   bad "V21 rc=$rb jobs=$ja->$jb(fin=$fb) cmds_delta=$cd negvocab_rc=$rc_neg"
+fi
+
+# V22: address-window sizing bugs that aborted these three inputs with
+# "walked past its allocation" at HEAD -- State::enqueue_reads/enqueue_writes'
+# livelock-fix guard (src/State.cc check_in_bounds) firing because the job's
+# declared window (Job::alloc_size) was smaller than its real walk. Both
+# window helpers under-sized relative to their own unit's charging code:
+#  - SysArray OS mode (include/units/standard/SysArray.h sys_job_alloc_bytes):
+#    the charging code (SysArrayState::init / init_row_loop) floors a row-tile
+#    pass's FIRST column tile as ONE division of the combined activation +
+#    weight*n_weight_streams bytes; the window floored the two parts
+#    SEPARATELY, undercounting by one beat whenever their byte remainders sum
+#    to >= bytes_per_tx. Odd-shape decode: Transformer 1 640 8 4 64 1023 1 1
+#    at -sa_sz 256 hits exactly that remainder-carry case. Pre-fix: aborted
+#    "job 13 (type 0, dims 1 x 1023 x 80) walked past its allocation on
+#    writes: alloc_size=167680 offset=167424 beats=5".
+#  - VectorUnit (include/units/standard/VectorUnit.h vec_job_alloc_bytes): the
+#    window returned raw bytes, but reads and writes are each quantized to a
+#    whole bytes_per_tx-byte beat with a 1-beat floor per non-zero transfer
+#    (State::state_transfer's SET_READS/SET_WRITES), so any tensor under one
+#    beat overflows. Softmax 4: tensor = 4*4*2*1 = 32 bytes, under one beat
+#    both ways (read + write), so the raw-byte window (64) was half the true
+#    2-beat (128-byte) minimum. Pre-fix: aborted "job 0 (type 1, dims 4 x 4)
+#    walked past its allocation on writes: alloc_size=64 offset=64 beats=1".
+#    Same shortfall hits the batch-1 tiny Transformer's first RMSNorm job
+#    (Transformer 1 8 2 1 16 32 1 1 at -sa_sz 4 -vu_sz 4: lin=8, par=1,
+#    tensor=16 bytes). Pre-fix: aborted "job 0 (type 1, dims 1 x 8) walked
+#    past its allocation on reads: alloc_size=32 offset=0 beats=1".
+# All three must now run to completion (rc=0, every job finished).
+printf 'Transformer 1 640 8 4 64 1023 1 1\n' > "$WORK/v22a.txt"
+printf 'Softmax 4\n'                        > "$WORK/v22b.txt"
+printf 'Transformer 1 8 2 1 16 32 1 1\n'    > "$WORK/v22c.txt"
+"$BIN" -c 1 -sa_sz 256 -vu_sz 64 -f 1 -i "$WORK/v22a.txt" -o "$WORK/v22a_s.txt" > "$WORK/v22a.log" 2>&1
+ra=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v22b.txt" -o "$WORK/v22b_s.txt" > "$WORK/v22b.log" 2>&1
+rb=$?
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v22c.txt" -o "$WORK/v22c_s.txt" > "$WORK/v22c.log" 2>&1
+rc3=$?
+fa=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v22a.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3>0)?1:0}')
+fb=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v22b.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3>0)?1:0}')
+fc=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v22c.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3>0)?1:0}')
+overran=$(cat "$WORK/v22a.log" "$WORK/v22b.log" "$WORK/v22c.log" 2>/dev/null | grep -c 'walked past its allocation')
+if [ "$ra" -eq 0 ] && [ "${fa:-0}" -eq 1 ] \
+   && [ "$rb" -eq 0 ] && [ "${fb:-0}" -eq 1 ] \
+   && [ "$rc3" -eq 0 ] && [ "${fc:-0}" -eq 1 ] \
+   && [ "${overran:-1}" -eq 0 ]; then
+  ok "V22 address-window fixes: odd-shape decode / Softmax 4 / batch-1 Transformer all complete"
+else
+  bad "V22 rc=$ra/$rb/$rc3 fin=${fa:-?}/${fb:-?}/${fc:-?} overran=${overran:-?} (walked-past-allocation regression)"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

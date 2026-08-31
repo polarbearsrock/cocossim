@@ -663,7 +663,7 @@ std::vector<JobPair> StandardLayer::make_layers(const std::vector<LayerConfig> &
       jp = lists.back().second;
     } else {
       connectJobLists(jp, lists[0].first);
-      jp = lists[0].second;
+      jp = lists.back().second;
     }
   }
 

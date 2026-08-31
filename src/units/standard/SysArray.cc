@@ -171,7 +171,11 @@ void SystolicArray::SysArrayState::init() {
     col_i = 1;
   } else {
     UPDATE_STATE(SystolicArray::read);
-    min_stage_cycles = div_ru(sj->K * batch_size, mxu_macs_per_pe);
+    // No `* batch_size` here, matching init_row_loop's div_ru(sj->K,
+    // mxu_macs_per_pe): batch_size is a compile-time 1 (global.h), so the two
+    // were always numerically equal -- harmonized to stop them drifting if
+    // batch_size ever becomes configurable.
+    min_stage_cycles = div_ru(sj->K, mxu_macs_per_pe);
     // VMEM residency handoff (spec 6.7): a job whose weight_tag is already
     // staged pays no weight-side HBM traffic; otherwise it fetches, and its
     // slice stays resident for successors iff it fits the VMEM share. An
