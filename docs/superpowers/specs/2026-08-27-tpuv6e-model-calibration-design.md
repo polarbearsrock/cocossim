@@ -266,9 +266,19 @@ residuals before being dismissed as noise.
   `ecddd90`, flags `-vmem_reuse`/`-vmem_headroom`, tests V18/V18b/V18c) OS weight
   re-reads ignored VMEM reuse — was the dominant fidelity gap.** Weights now stay
   resident across row-block jobs (and row passes) when the slice fits the per-MXU
-  VMEM share. Measured effect: Matmul 4096³ traffic 672→101 MB (exactly the true
-  working set), 306→646 TF/s (70% of peak, memstall 62%→21%); prefill-512
-  858→659 µs; decode bit-identical (M=1 has nothing to reuse), as required.
+  VMEM share. Measured effect: Matmul 4096³ traffic 672→101 MB (672 MB was
+  measured on the old 4-MXU geometry, before the v6e config was pinned to 2
+  MXUs in commit `b7e120d`; at the pinned 2-MXU config the pre-fix figure is
+  604 MB, reverified against `configs/tpuv6e.sh` — the post-fix 101 MB
+  stands either way: exactly the true working set), 306→646 TF/s (70% of
+  peak, memstall 62%→21%); prefill-512 858→659 µs; decode: `-vmem_reuse 0`
+  also disables GQA sibling sharing, since GQA reuse rides the same
+  weight_tag/residency machinery as weight staging (`SysArrayState::init`'s
+  `weights_resident`/`resident_weight_tag`) — the ablation over-charges
+  decode KV reads by nh/nkv, exactly matching the pre-fix staging-free
+  model. This coupling is deliberate: `-vmem_reuse` is the single ablation
+  switch for VMEM staging (`global.h`), not two independently toggleable
+  mechanisms.
   Residual, deliberately unmodeled: (a) the fetch pass is not double-buffered —
   the first job of a slice exposes its fetch instead of prefetching under the
   previous op's compute, leaving GEMMs ~40% above their compute floor; (b)
@@ -276,7 +286,13 @@ residuals before being dismissed as noise.
   (c) VMEM is a shared capacity *parameter*, not a contended *resource* — each
   consumer checks fit independently (MXUs against buf/n_cores·headroom, VPU
   chunkers against the full buffer), so co-residency can be over-committed near
-  the capacity edge; the model is optimistic exactly there. Historical text:
+  the capacity edge; the model is optimistic exactly there. (d) WS mode ignores
+  both `n_weight_streams` and VMEM residency entirely — neither
+  `sys_job_alloc_bytes`'s `ws` branch nor `SysArrayState`'s WS `init`/`increment`
+  reference either mechanism. Out of scope for the v6e model, which is pinned to
+  OS mode (`-ws 0`), but a `-ws 1` user should not be surprised that GQA
+  KV-stream scaling and weight staging silently do nothing there. Historical
+  text:
   OS weight re-reads ignore VMEM reuse — Every row tile re-reads the
   full weight panel, so a `Matmul 4096^3` moves ~6.7x its true bytes and prefill-512
   moves ~2.4x; with honest MXU throughput (`-mxu_macs_per_pe 2`) this phantom
