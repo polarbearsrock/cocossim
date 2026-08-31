@@ -20,6 +20,8 @@
 
 struct State;
 
+// WS-only pipeline latency (fill/drain/shift). OS accumulation throughput is
+// governed by mxu_macs_per_pe, not this constant.
 const int systolic_fpu_latency = 2;
 const int batch_size = 1;
 const int n_mxus = 4;
@@ -30,6 +32,7 @@ extern int dram_enq_per_cycle;
 extern int buffer_size_bytes;
 extern int job_overhead_cycles;
 extern int fuse_epilogue;
+extern int mxu_macs_per_pe;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

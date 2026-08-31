@@ -25,7 +25,8 @@ Arch* StandardParser::make_arch() {
               {"-buf_mb", &buf_mb},
               {"-dram_enq", &dram_enq_per_cycle},
               {"-job_overhead", &job_overhead_cycles},
-              {"-fuse_epilogue", &fuse_epilogue}},
+              {"-fuse_epilogue", &fuse_epilogue},
+              {"-mxu_macs_per_pe", &mxu_macs_per_pe}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -33,7 +34,8 @@ Arch* StandardParser::make_arch() {
              "-buf_mb       on-chip buffer size in MiB (default 8)\n"
              "-dram_enq     memory requests issued per cycle (default 9)\n"
              "-job_overhead fixed dispatch overhead per job in cycles (default 0)\n"
-             "-fuse_epilogue residual adds fused into GEMM epilogue: 0 off (default), 1 on");
+             "-fuse_epilogue residual adds fused into GEMM epilogue: 0 off (default), 1 on\n"
+             "-mxu_macs_per_pe MACs each PE retires per cycle in OS mode (default 1)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -60,6 +62,10 @@ Arch* StandardParser::make_arch() {
   }
   if (fuse_epilogue != 0 && fuse_epilogue != 1) {
     std::cerr << "Error: -fuse_epilogue must be 0 or 1, got " << fuse_epilogue << std::endl;
+    exit(1);
+  }
+  if (mxu_macs_per_pe < 1) {
+    std::cerr << "Error: -mxu_macs_per_pe must be >= 1, got " << mxu_macs_per_pe << std::endl;
     exit(1);
   }
   buffer_size_bytes = buf_mb * 1024 * 1024;

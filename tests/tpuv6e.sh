@@ -374,5 +374,36 @@ else
   bad "V15b rc=$rc fin_eq=${fin_eq:-?} overruns=$overran"
 fi
 
+# V16: -mxu_macs_per_pe sets OS accumulation throughput. On a compute-bound
+# full-tile GEMM (fast DRAM ini required: at the default HBM2 service rate
+# memory ties compute at macs=2 and the ratio collapses to ~1.3), macs=2 must
+# cut cycles by ~2x vs the default 1. Not exactly 2x, and eff is NOT exactly
+# invariant: active = compute (K/macs per tile, halves) + fixed per-tile
+# write/drain cycles (~4150 across this run's 64 tiles, does not halve), so
+# measured 37014->20699 cycles (1.79x) and eff 0.888->0.798. The assertions
+# pin what a regression would break: (a) ratio in [1.7, 2.05] catches a lost
+# formula change (ratio ~1); (b) eff1 > 0.85 proves the schema-1 0.5 ceiling
+# is gone; (c) eff2 <= 1.0 catches a lost capacity scale (unscaled sz^2 cap
+# would read ~1.6). Invalid value rejected (exit 1 + message); stats file
+# declares metric semantics via SCHEMA 2.
+printf 'Matmul 512 512 512\n' > "$WORK/v16.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_ini ../configs/HBM2e_v6e.ini -dram_enq 32 \
+  -i "$WORK/v16.txt" -o "$WORK/v16a_s.txt" > "$WORK/v16a.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dram_ini ../configs/HBM2e_v6e.ini -dram_enq 32 \
+  -mxu_macs_per_pe 2 -i "$WORK/v16.txt" -o "$WORK/v16b_s.txt" > "$WORK/v16b.log" 2>&1
+c1=$(cycles_of "$WORK/v16a_s.txt"); c2=$(cycles_of "$WORK/v16b_s.txt")
+e1=$(awk '/^ACCT SYSTOLIC_ARRAY/{print $15; exit}' "$WORK/v16a_s.txt")
+e2=$(awk '/^ACCT SYSTOLIC_ARRAY/{print $15; exit}' "$WORK/v16b_s.txt")
+ratio_ok=$(awk -v a="${c1:-0}" -v b="${c2:-1}" 'BEGIN{r=a/b; print (r>=1.7 && r<=2.05)?1:0}')
+eff_ok=$(awk -v x="${e1:-0}" -v y="${e2:-0}" 'BEGIN{print (x>0.85 && y>0 && y<=1.0)?1:0}')
+head -1 "$WORK/v16a_s.txt" | grep -q '^SCHEMA 2$'; sch=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -mxu_macs_per_pe 0 -i "$WORK/v16.txt" -o "$WORK/v16c_s.txt" > "$WORK/v16c.log" 2>&1; r3=$?
+if [ "$ratio_ok" -eq 1 ] && [ "$eff_ok" -eq 1 ] && [ "$sch" -eq 0 ] \
+   && [ "$r3" -eq 1 ] && grep -q 'mxu_macs_per_pe' "$WORK/v16c.log"; then
+  ok "V16 -mxu_macs_per_pe 2 ~halves compute cycles ($c1 -> $c2), capacity scaled (eff $e1 -> $e2 <= 1), SCHEMA 2"
+else
+  bad "V16 cycles=$c1/$c2 eff=$e1/$e2 schema_rc=$sch badval_rc=$r3"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

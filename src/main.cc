@@ -104,6 +104,10 @@ int main(int argc, char **argv) {
 
   auto res = arch->get_cycles(time_enqueues);
   FILE *f = fopen(ofile.c_str(), "w");
+  // SCHEMA 2: SA eff_util capacity is mxu_macs_per_pe * sz^2 (full tile ~1.0).
+  // Schema-1 files (no SCHEMA line) used sz^2 against 2-cycle K-steps, capping
+  // full-tile eff_util at ~0.5 -- not comparable across schemas.
+  fprintf(f, "SCHEMA 2\n");
   for (int p = 0; p < periods; ++p) {
     fprintf(f, "Cycles %llu\n", res[p].cycles);
     for (int i = 0; i < arch->states.size(); ++i) {
@@ -117,7 +121,7 @@ int main(int argc, char **argv) {
       uint64_t accounted = s->acct_busy + s->acct_underfilled + s->acct_memstall;
       uint64_t active = s->acct_busy + s->acct_underfilled;
       double cap = (s->get_ty_idx() == SYSTOLIC_ARRAY_IDX)
-                       ? (double) s->sz * s->sz
+                       ? (double) mxu_macs_per_pe * s->sz * s->sz
                        : (double) s->sz;
       double eff = active > 0 ? (double) s->total_work / (cap * (double) active) : 0.0;
       fprintf(f, "ACCT %s %d busy %llu underfilled %llu memstall %llu idle %llu work %llu eff_util %f\n",

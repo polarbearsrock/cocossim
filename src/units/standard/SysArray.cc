@@ -132,7 +132,10 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
   if (ws) {
     throw std::exception();
   } else {
-    min_stage_cycles = sj->K * systolic_fpu_latency;
+    // OS throughput: each PE retires mxu_macs_per_pe MACs/cycle, so a K-deep
+    // accumulation takes ceil(K / macs) cycles (spec 3.1; v6e uses 2 packed
+    // bf16 MACs/PE/cycle). systolic_fpu_latency plays no role in OS timing.
+    min_stage_cycles = div_ru(sj->K, mxu_macs_per_pe);
     // Weight/KV block for this column tile: K x min(sz, N). Activation panel
     // (min(sz, M) x K) is re-read only when the row tile advances.
     n_read_bytes = weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
@@ -160,7 +163,7 @@ void SystolicArray::SysArrayState::init() {
     col_i = 1;
   } else {
     UPDATE_STATE(SystolicArray::read);
-    min_stage_cycles = sj->K * std::max(systolic_fpu_latency, batch_size);
+    min_stage_cycles = div_ru(sj->K * batch_size, mxu_macs_per_pe);
     int n_read_bytes = activation_panel_bytes(sj->M, sj->K, sz)
                      + weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
     int n_read_beats = demand_beats(n_read_bytes);
