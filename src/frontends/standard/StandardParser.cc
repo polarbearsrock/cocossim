@@ -18,6 +18,7 @@ Arch* StandardParser::make_arch() {
   int vu_sz = 64;
   int ws = 0;
   int buf_mb = 8;
+  int n_vpu = -1;
   parse_args({{"-c", &cores},
               {"-sa_sz", &sa_sz},
               {"-vu_sz", &vu_sz},
@@ -26,7 +27,8 @@ Arch* StandardParser::make_arch() {
               {"-dram_enq", &dram_enq_per_cycle},
               {"-job_overhead", &job_overhead_cycles},
               {"-fuse_epilogue", &fuse_epilogue},
-              {"-mxu_macs_per_pe", &mxu_macs_per_pe}},
+              {"-mxu_macs_per_pe", &mxu_macs_per_pe},
+              {"-n_vpu", &n_vpu}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -35,7 +37,8 @@ Arch* StandardParser::make_arch() {
              "-dram_enq     memory requests issued per cycle (default 9)\n"
              "-job_overhead fixed dispatch overhead per job in cycles (default 0)\n"
              "-fuse_epilogue residual adds fused into GEMM epilogue: 0 off (default), 1 on\n"
-             "-mxu_macs_per_pe MACs each PE retires per cycle in OS mode (default 1)");
+             "-mxu_macs_per_pe MACs each PE retires per cycle in OS mode (default 1)\n"
+             "-n_vpu        number of vector units (default: match -c)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -68,8 +71,12 @@ Arch* StandardParser::make_arch() {
     std::cerr << "Error: -mxu_macs_per_pe must be >= 1, got " << mxu_macs_per_pe << std::endl;
     exit(1);
   }
+  if (n_vpu != -1 && n_vpu < 1) {
+    std::cerr << "Error: -n_vpu must be >= 1 (or omitted to match -c), got " << n_vpu << std::endl;
+    exit(1);
+  }
   buffer_size_bytes = buf_mb * 1024 * 1024;
   mem::setup();
-  arch_config = ArchConfig(cores, sa_sz, vu_sz, ws);
+  arch_config = ArchConfig(cores, sa_sz, vu_sz, ws, n_vpu);
   return new StandardArch;
 }

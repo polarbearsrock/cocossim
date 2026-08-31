@@ -15,5 +15,5 @@ using namespace frontend::standard;
 
 StandardArch::StandardArch() {
   for (int i = 0; i < arch_config.n_cores; ++i) states.push_back(new SystolicArray::SysArrayState(arch_config.sa_sz_allo, arch_config.ws));
-  for (int i = 0; i < arch_config.n_cores; ++i) states.push_back(new VectorUnit::VecUnitState(arch_config.vu_sz_allo));
+  for (int i = 0; i < arch_config.n_vpu; ++i) states.push_back(new VectorUnit::VecUnitState(arch_config.vu_sz_allo));
 }

@@ -405,5 +405,27 @@ else
   bad "V16 cycles=$c1/$c2 eff=$e1/$e2 schema_rc=$sch badval_rc=$r3"
 fi
 
+# V17: -n_vpu decouples vector-unit count from -c (v6e: 2 MXUs, ONE vector
+# unit). -c 2 -n_vpu 1 must build 3 units (3 ACCT lines: 2 SA + 1 VPU) and a
+# 16-job vector workload (Softmax 512 32, the old livelock shape) must fully
+# serialize onto the single VPU and finish. Default (-n_vpu omitted) keeps
+# 1:1 -> 4 ACCT lines at -c 2. -n_vpu 0 rejected (exit 1 + message).
+printf 'Softmax 512 32\n' > "$WORK/v17.txt"
+timeout 120 "$BIN" -c 2 -n_vpu 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v17.txt" -o "$WORK/v17a_s.txt" > "$WORK/v17a.log" 2>&1
+rca=$?
+acct1=$(grep -c '^ACCT' "$WORK/v17a_s.txt" 2>/dev/null)
+nvpu1=$(grep -c '^ACCT VECTOR_UNIT' "$WORK/v17a_s.txt" 2>/dev/null)
+fin1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v17a.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3>0)?1:0}')
+timeout 120 "$BIN" -c 2 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v17.txt" -o "$WORK/v17b_s.txt" > "$WORK/v17b.log" 2>&1
+acct2=$(grep -c '^ACCT' "$WORK/v17b_s.txt" 2>/dev/null)
+"$BIN" -c 2 -n_vpu 0 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v17.txt" -o "$WORK/v17c_s.txt" > "$WORK/v17c.log" 2>&1
+rcc=$?
+if [ "$rca" -eq 0 ] && [ "${acct1:-0}" -eq 3 ] && [ "${nvpu1:-0}" -eq 1 ] && [ "${fin1:-0}" -eq 1 ] \
+   && [ "${acct2:-0}" -eq 4 ] && [ "$rcc" -eq 1 ] && grep -q 'n_vpu' "$WORK/v17c.log"; then
+  ok "V17 -n_vpu 1 builds 2 SA + 1 VPU, serializes 16 VPU jobs; default stays 1:1"
+else
+  bad "V17 rc=$rca acct=$acct1(nvpu=$nvpu1) fin=$fin1 default_acct=$acct2 badval_rc=$rcc"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

@@ -18,7 +18,12 @@ namespace frontend::standard {
     int sa_sz_allo = -1;
     int vu_sz_allo = -1;
     bool ws = false;
-    ArchConfig(int n_cores, int sa_sz_allo, int vu_sz_allo, bool ws): n_cores(n_cores), sa_sz_allo(sa_sz_allo), vu_sz_allo(vu_sz_allo), ws(ws) {}
+    // Vector-unit count; may differ from n_cores (v6e: 2 MXUs share 1 VPU).
+    // -1 = match n_cores, normalized at construction.
+    int n_vpu = -1;
+    ArchConfig(int n_cores, int sa_sz_allo, int vu_sz_allo, bool ws, int n_vpu = -1)
+        : n_cores(n_cores), sa_sz_allo(sa_sz_allo), vu_sz_allo(vu_sz_allo), ws(ws),
+          n_vpu(n_vpu < 0 ? n_cores : n_vpu) {}
     ArchConfig() = default;
   };
 
