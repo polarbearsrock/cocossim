@@ -242,7 +242,7 @@ Identified during implementation review; none block M0/M2, but each is a candida
 mechanism for the calibration loop (§5) and should be weighed against Phase D
 residuals before being dismissed as noise.
 
-- **Decode attention KV-cache reads.** The `Transformer` expansion creates `nh`
+- **Decode attention KV-cache reads (ADDRESSED 2026-08-31, commit bfa9cdb: n_weight_streams = batch on score/AV jobs, GQA groups share a weight_tag; V20 pins both halves).** The `Transformer` expansion creates `nh`
   score/AV jobs per layer, each charging one S×head_dim K/V panel. Hardware reads
   batch×nkv panels (one KV cache per sequence, ideal intra-group reuse). Modeled/true
   factor = nh/(batch·nkv): the model over-charges when batch < nh/nkv and

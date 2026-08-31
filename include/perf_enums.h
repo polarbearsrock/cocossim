@@ -13,7 +13,7 @@
 
 static const int WIDTH_STATE = 3;
 static const int WIDTH_IDLE_FROM_MEMORY = 1;
-static const int WIDTH_JOB_IDX = 8;
+static const int WIDTH_JOB_IDX = 16;// 8 bits wrapped at 256 jobs, garbling VCD job attribution
 static const int WIDTHS[] = {WIDTH_STATE, WIDTH_IDLE_FROM_MEMORY, WIDTH_JOB_IDX};
 
 static const int STAT_STATE = 0;
