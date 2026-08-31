@@ -19,6 +19,7 @@ Arch* StandardParser::make_arch() {
   int ws = 0;
   int buf_mb = 8;
   int n_vpu = -1;
+  int mp_par = 0;
   parse_args({{"-c", &cores},
               {"-sa_sz", &sa_sz},
               {"-vu_sz", &vu_sz},
@@ -30,7 +31,9 @@ Arch* StandardParser::make_arch() {
               {"-mxu_macs_per_pe", &mxu_macs_per_pe},
               {"-n_vpu", &n_vpu},
               {"-vmem_reuse", &vmem_reuse},
-              {"-vmem_headroom", &vmem_headroom_pct}},
+              {"-vmem_headroom", &vmem_headroom_pct},
+              {"-mp", &model_parallelism},
+              {"-mp_par", &mp_par}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -42,7 +45,9 @@ Arch* StandardParser::make_arch() {
              "-mxu_macs_per_pe MACs each PE retires per cycle in OS mode (default 1)\n"
              "-n_vpu        number of vector units (default: match -c)\n"
              "-vmem_reuse   weights stay VMEM-resident across row blocks: 1 on (default), 0 off\n"
-             "-vmem_headroom percent of the per-MXU VMEM share usable for weights (default 100)");
+             "-vmem_headroom percent of the per-MXU VMEM share usable for weights (default 100)\n"
+             "-mp           model-parallel replicas of the input model (default 1)\n"
+             "-mp_par       replicas run concurrently (1) or chained sequentially (0, default)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -87,6 +92,15 @@ Arch* StandardParser::make_arch() {
     std::cerr << "Error: -vmem_headroom must be in [1, 100], got " << vmem_headroom_pct << std::endl;
     exit(1);
   }
+  if (model_parallelism < 1) {
+    std::cerr << "Error: -mp must be >= 1, got " << model_parallelism << std::endl;
+    exit(1);
+  }
+  if (mp_par != 0 && mp_par != 1) {
+    std::cerr << "Error: -mp_par must be 0 or 1, got " << mp_par << std::endl;
+    exit(1);
+  }
+  do_par = mp_par;
   buffer_size_bytes = buf_mb * 1024 * 1024;
   mem::setup();
   arch_config = ArchConfig(cores, sa_sz, vu_sz, ws, n_vpu);

@@ -480,5 +480,30 @@ else
   bad "V18c rc=$r1/$r2 CMDs reuse=$ct1 noreuse=$ct2"
 fi
 
+# V19: model parallelism (ISPASS'25 case study A machinery). -mp N replicates
+# the model N times; -mp_par 0 chains replicas sequentially, -mp_par 1 makes
+# them independent DAG roots that share the hardware. Two replicas must
+# double the job count either way; the parallel schedule must be strictly
+# faster than the sequential chaining (overlap exists), and both must finish
+# every job. -mp 0 rejected.
+printf 'Matmul 512 512 512\nSoftmax 512\n' > "$WORK/v19.txt"
+run_mp() { # mp par out
+  "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -mp "$1" -mp_par "$2" -i "$WORK/v19.txt" -o "$WORK/$3_s.txt" > "$WORK/$3.log" 2>&1
+}
+run_mp 1 0 v19a; run_mp 2 0 v19b; run_mp 2 1 v19c
+j1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19a.log" | tail -1 | sed 's|.*/||')
+j2=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19b.log" | tail -1 | sed 's|.*/||')
+f2=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19b.log" | tail -1 | grep -o '^[^/]*' | grep -o '[0-9]*$')
+j3=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v19c.log" | tail -1 | sed 's|.*/||')
+cseq=$(cycles_of "$WORK/v19b_s.txt"); cpar=$(cycles_of "$WORK/v19c_s.txt")
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -mp 0 -i "$WORK/v19.txt" -o "$WORK/v19d_s.txt" > "$WORK/v19d.log" 2>&1; rz=$?
+if [ "${j2:-0}" -eq $((j1 * 2)) ] && [ "${j3:-0}" -eq $((j1 * 2)) ] \
+   && [ -n "$cseq" ] && [ -n "$cpar" ] && [ "$cpar" -lt "$cseq" ] \
+   && [ "$rz" -eq 1 ] && grep -q 'mp' "$WORK/v19d.log"; then
+  ok "V19 -mp 2 doubles jobs ($j1 -> $j2); parallel beats sequential ($cseq -> $cpar)"
+else
+  bad "V19 jobs=$j1/$j2/$j3 cyc seq=$cseq par=$cpar badval_rc=$rz"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
