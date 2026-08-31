@@ -28,8 +28,8 @@ static int next_weight_tag = 0;
 // it fits its share of VMEM -- the buffer split across the n_slices cores
 // whose slices must co-reside, derated to -vmem_headroom percent. Integer
 // math; int64 because K*N*dtw can approach 2^31 at calibration shapes.
-static bool weightSliceFitsVmem(int K, int n_slice, int n_slices) {
-  return (int64_t) K * n_slice * data_type_width * 100 * n_slices
+static bool weightSliceFitsVmem(int K, int n_slice, int n_slices, int64_t copies = 1) {
+  return (int64_t) K * n_slice * data_type_width * 100 * n_slices * copies
          <= (int64_t) vmem_headroom_pct * buffer_size_bytes;
 }
 
@@ -416,21 +416,33 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     connectJobLists(k.second, rope);
 
     JobList scores, av;
-    // Each head's K/V panel is its own weight tensor: per-job tags let a
-    // multi-row-tile prefill job reuse its own panel across row passes
-    // (within-job residency; cross-head sharing is a different tensor).
+    // KV panels are PER-SEQUENCE state, not shared weights (spec 6.7): in
+    // decode, each of the `batch` sequences owns its KV cache, so score/AV
+    // jobs stream `batch` copies of their panel (n_weight_streams). GQA
+    // sharing: the nh/nkv query heads of one group read the SAME panels, so
+    // they share a weight_tag per group and the residency machinery makes
+    // the siblings' reads free when the panel set fits VMEM. (Prefill models
+    // a single sequence, M = seq_len, so streams stay 1.) Caveat: residency
+    // is per-MXU, so a group split across both MXUs fetches its panels once
+    // per MXU -- bounded 2x over hardware's shared-VMEM single fetch.
+    int kv_streams = (mode == 1) ? batch : 1;
+    int group_sz = nh / nkv;
     for (int h = 0; h < nh; ++h) {
-      auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws);
-      sc->weight_tag = next_weight_tag++;
-      sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores);
+      if (h % group_sz == 0) next_weight_tag++;
+      auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws, kv_streams);
+      sc->weight_tag = next_weight_tag;
+      sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores, kv_streams);
       scores.push_back(sc);
     }
+    next_weight_tag++;
     for (int h = 0; h < nh; ++h) {
-      auto *avj = new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws);
-      avj->weight_tag = next_weight_tag++;
-      avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores);
+      if (h % group_sz == 0) next_weight_tag++;
+      auto *avj = new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws, kv_streams);
+      avj->weight_tag = next_weight_tag;
+      avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores, kv_streams);
       av.push_back(avj);
     }
+    next_weight_tag++;
     connectJobLists(rope, scores);
 
     JobList sm = makeSoftmaxJobs(S, M * nh);

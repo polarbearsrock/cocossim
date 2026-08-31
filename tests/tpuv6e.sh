@@ -505,5 +505,26 @@ else
   bad "V19 jobs=$j1/$j2/$j3 cyc seq=$cseq par=$cpar badval_rc=$rz"
 fi
 
+# V20: decode KV-cache traffic must scale with batch and share within GQA
+# groups (spec 6.7). KV caches are PER-SEQUENCE state, not shared weights:
+# per layer, hardware reads batch x nkv K/V panel pairs; query heads in one
+# GQA group reuse the same pair. Transformer 1 256 8 2 512 1024 1 B at
+# -c 1 -sa_sz 64: head_dim=32, panel = 32*1024*2 = 64 KiB, so per unit of
+# batch the attention reads grow by nkv*(K+V) = 2*128 KiB = 4096 beats.
+# Batch-blind code (pre-fix) shows a near-zero delta between B=1 and B=8.
+# The exact floor/ceiling are re-derived at GREEN per the standing rule.
+printf 'Transformer 1 256 8 2 512 1024 1 1\n' > "$WORK/v20a.txt"
+printf 'Transformer 1 256 8 2 512 1024 1 8\n' > "$WORK/v20b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v20a.txt" -o "$WORK/v20a_s.txt" > "$WORK/v20a.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v20b.txt" -o "$WORK/v20b_s.txt" > "$WORK/v20b.log" 2>&1
+k1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v20a.log" | tail -1 | awk '{print $3}')
+k8=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v20b.log" | tail -1 | awk '{print $3}')
+kd=$((${k8:-0} - ${k1:-0}))
+if [ "$kd" -ge 25000 ] && [ "$kd" -le 45000 ]; then
+  ok "V20 decode KV reads scale with batch (CMDs $k1 -> $k8, delta $kd)"
+else
+  bad "V20 batch-blind KV traffic: B1=$k1 B8=$k8 delta=$kd (want 25000..45000)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

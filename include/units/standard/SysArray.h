@@ -50,8 +50,12 @@ namespace SystolicArray {
   // job. Both modes are bounded by their first pass plus one full sweep of
   // column tiles plus whichever end-of-sweep transfer is larger.
   inline uint64_t sys_job_alloc_bytes(int M, int K, int N, int sz, bool ws,
-                                      bool batched_weights, int beats_per_wb) {
-    const uint64_t weight_beats = demand_beats(weight_panel_bytes(K, N, sz, batched_weights));
+                                      bool batched_weights, int beats_per_wb,
+                                      int64_t n_weight_streams = 1) {
+    // Weight-side reads scale with n_weight_streams (per-sequence KV caches);
+    // the window must cover the scaled walk, mirroring the charging math.
+    const uint64_t weight_beats = std::max<int64_t>(
+        (int64_t) weight_panel_bytes(K, N, sz, batched_weights) * n_weight_streams / bytes_per_tx, 1);
     uint64_t beats;
     if (ws) {
       const int cols = div_ru(N, sz);
@@ -95,8 +99,13 @@ namespace SystolicArray {
     // slice size and how many cores' slices must co-reside.
     int weight_tag = -1;
     bool weights_fit_vmem = false;
+    // Distinct copies of the weight-side operand this job streams (spec 6.7).
+    // 1 for true weights (shared across all rows). Decode attention sets it
+    // to the batch: each sequence has its OWN KV cache, so the "weight" side
+    // is per-row state and must be read once per sequence.
+    int n_weight_streams = 1;
 
-    SysArrayJob(int m, int k, int n, int sz, bool ws);
+    SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams = 1);
 
     [[nodiscard]] std::string get_job_dims_string() const override;
   };

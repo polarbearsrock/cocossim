@@ -143,11 +143,14 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     // (init_row_loop(true) runs BEFORE row_i++, hence the new_row term).
     bool skip_weights = weights_resident ||
                         (weights_stay_resident && (new_row || row_i > 1));
-    n_read_bytes = skip_weights ? 0 : weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
+    // int64: panel * n_weight_streams (one KV cache per sequence) can pass
+    // 2^31 at long-context decode shapes.
+    int64_t rb = skip_weights ? 0
+               : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams;
     if (new_row) {
-      n_read_bytes += activation_panel_bytes(sj->M, sj->K, sz);
+      rb += activation_panel_bytes(sj->M, sj->K, sz);
     }
-    n_read_beats = n_read_bytes > 0 ? demand_beats(n_read_bytes) : 0;
+    n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
   }
   mem_read_left = mem_read_left_unqueued = n_read_beats;
 }
@@ -178,9 +181,10 @@ void SystolicArray::SysArrayState::init() {
     weights_stay_resident = vmem_reuse && sj->weights_fit_vmem;
     resident_weight_tag =
         (weights_stay_resident && sj->weight_tag != -1) ? sj->weight_tag : -1;
-    int n_read_bytes = activation_panel_bytes(sj->M, sj->K, sz)
-                     + (weights_resident ? 0 : weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights));
-    int n_read_beats = demand_beats(n_read_bytes);
+    int64_t rb = (int64_t) activation_panel_bytes(sj->M, sj->K, sz)
+               + (weights_resident ? 0
+                  : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams);
+    int n_read_beats = (int) std::max<int64_t>(rb / bytes_per_tx, 1);
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);
@@ -200,10 +204,11 @@ SystolicArray::SysArrayState::SysArrayState(int sz, bool ws) : State(1), sz(sz),
   beats_per_wb = std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1);
 }
 
-SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws)
+SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams)
     : Job(sys_job_alloc_bytes(m, k, n, sz, ws, /*batched_weights=*/false,
-                              std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1))),
-      M(m), K(k), N(n) {}
+                              std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1),
+                              n_weight_streams)),
+      M(m), K(k), N(n), n_weight_streams(n_weight_streams) {}
 
 
 std::string SystolicArray::SysArrayJob::get_job_dims_string() const {
