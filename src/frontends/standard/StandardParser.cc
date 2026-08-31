@@ -33,7 +33,8 @@ Arch* StandardParser::make_arch() {
               {"-vmem_reuse", &vmem_reuse},
               {"-vmem_headroom", &vmem_headroom_pct},
               {"-mp", &model_parallelism},
-              {"-mp_par", &mp_par}},
+              {"-mp_par", &mp_par},
+              {"-mem_prio", &mem_prio}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -47,7 +48,8 @@ Arch* StandardParser::make_arch() {
              "-vmem_reuse   weights stay VMEM-resident across row blocks: 1 on (default), 0 off\n"
              "-vmem_headroom percent of the per-MXU VMEM share usable for weights (default 100)\n"
              "-mp           model-parallel replicas of the input model (default 1)\n"
-             "-mp_par       replicas run concurrently (1) or chained sequentially (0, default)");
+             "-mp_par       replicas run concurrently (1) or chained sequentially (0, default)\n"
+             "-mem_prio     serve SA memory transactions before VPU ones: 0 FIFO (default), 1 on");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -98,6 +100,10 @@ Arch* StandardParser::make_arch() {
   }
   if (mp_par != 0 && mp_par != 1) {
     std::cerr << "Error: -mp_par must be 0 or 1, got " << mp_par << std::endl;
+    exit(1);
+  }
+  if (mem_prio != 0 && mem_prio != 1) {
+    std::cerr << "Error: -mem_prio must be 0 or 1, got " << mem_prio << std::endl;
     exit(1);
   }
   do_par = mp_par;

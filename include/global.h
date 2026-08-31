@@ -38,6 +38,8 @@ extern int mxu_macs_per_pe;
 // share. vmem_reuse=0 restores per-tile refetch (ablation).
 extern int vmem_reuse;
 extern int vmem_headroom_pct;
+// Serve SA memory transactions ahead of VPU ones (ISPASS'25 case study A fix).
+extern int mem_prio;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

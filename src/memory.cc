@@ -32,7 +32,30 @@ struct PrioritySorter {
 };
 
 bool mem::try_enqueue_tx() {
-    // Try to enqueue memory transactions with priority handling
+    // -mem_prio 1: serve systolic-array transactions (priority 1) ahead of
+    // vector-unit ones (priority 2) within the scan window -- the ISPASS'25
+    // case-study-A fix. PrioritySorter above documents the ordering; a
+    // two-pass scan applies it without reordering the queue. Default (0)
+    // keeps the historical FIFO scan.
+    if (mem_prio) {
+        for (int i = 0; i < to_enqueue.size() && i < 64; ++i) {
+            auto &pair = to_enqueue[i];
+            if (std::get<2>(pair) > 1) continue;
+            if (mem_sys->WillAcceptTransaction(std::get<0>(pair), std::get<1>(pair))) {
+                mem_sys->AddTransaction(std::get<0>(pair), std::get<1>(pair));
+                if (std::get<1>(pair)) {
+                    address_writes_bkwds_lookup[std::get<0>(pair)].push_back(std::get<3>(pair));
+                } else {
+                    address_reads_bkwds_lookup[std::get<0>(pair)].push_back(std::get<3>(pair));
+                }
+                if (i != to_enqueue.size() - 1) {
+                    std::swap(pair, to_enqueue.back());
+                }
+                to_enqueue.pop_back();
+                return true;
+            }
+        }
+    }
     for (int i = 0; i < to_enqueue.size() && i < 64; ++i) {
         auto &pair = to_enqueue[i];
         uint64_t addr = std::get<0>(pair);
