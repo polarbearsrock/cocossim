@@ -312,13 +312,14 @@ else
 fi
 
 # V14: the pinned config runs a decode workload end-to-end on the v6e model.
+# 3 ACCT units = 2 MXUs + 1 shared VPU (Google-documented TensorCore layout).
 printf 'Transformer 2 512 8 4 1024 128 1 8\n' > "$WORK/v14.txt"
 "$REPO/configs/tpuv6e.sh" "$WORK/v14.txt" "$WORK/v14_s.txt" > "$WORK/v14.log" 2>&1
 rc=$?
 fin_eq=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v14.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4)?1:0}')
 n_acct=$(grep -c '^ACCT' "$WORK/v14_s.txt")
-if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ] && [ "${n_acct:-0}" -eq 8 ]; then
-  ok "V14 tpuv6e.sh runs decode workload (8 ACCT units)"
+if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ] && [ "${n_acct:-0}" -eq 3 ]; then
+  ok "V14 tpuv6e.sh runs decode workload (2 MXU + 1 VPU ACCT units)"
 else
   bad "V14 rc=$rc fin_eq=${fin_eq:-?} acct_units=${n_acct:-?}"
 fi
