@@ -262,6 +262,17 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
+- **(added 2026-08-30, measured on the corrected 2-MXU machine) OS weight re-reads
+  ignore VMEM reuse — now the dominant fidelity gap.** Every row tile re-reads the
+  full weight panel, so a `Matmul 4096^3` moves ~6.7x its true bytes and prefill-512
+  moves ~2.4x; with honest MXU throughput (`-mxu_macs_per_pe 2`) this phantom
+  traffic saturates DRAM (~1300 GB/s) and caps modeled GEMM/prefill throughput at
+  ~29-33% of peak where the real chip is compute-bound (e.g. modeled 858 us vs a
+  266 us single-read memory floor on prefill-512). Candidate mechanism: charge the
+  weight panel once per resident set that fits `-buf_mb`, not once per row tile.
+  Until then, prefill/GEMM absolute times are pessimistic; decode (weights read
+  once per token anyway) is unaffected and validates well (343 us vs 266 us floor).
+
 ## 7. Milestones (~10 weeks to mid-November)
 
 - **M0 (wk 1):** commit the 2026-08 fix series; promote the four hardware flags of
