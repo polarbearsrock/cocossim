@@ -137,12 +137,17 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     // bf16 MACs/PE/cycle). systolic_fpu_latency plays no role in OS timing.
     min_stage_cycles = div_ru(sj->K, mxu_macs_per_pe);
     // Weight/KV block for this column tile: K x min(sz, N). Activation panel
-    // (min(sz, M) x K) is re-read only when the row tile advances.
-    n_read_bytes = weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
+    // (min(sz, M) x K) is re-read only when the row tile advances. Weight
+    // charges are skipped while the slice is VMEM-resident: either staged by
+    // an earlier job of the same tag, or by this job's own first row pass
+    // (init_row_loop(true) runs BEFORE row_i++, hence the new_row term).
+    bool skip_weights = weights_resident ||
+                        (weights_stay_resident && (new_row || row_i > 1));
+    n_read_bytes = skip_weights ? 0 : weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
     if (new_row) {
       n_read_bytes += activation_panel_bytes(sj->M, sj->K, sz);
     }
-    n_read_beats = demand_beats(n_read_bytes);
+    n_read_beats = n_read_bytes > 0 ? demand_beats(n_read_bytes) : 0;
   }
   mem_read_left = mem_read_left_unqueued = n_read_beats;
 }
@@ -164,8 +169,17 @@ void SystolicArray::SysArrayState::init() {
   } else {
     UPDATE_STATE(SystolicArray::read);
     min_stage_cycles = div_ru(sj->K * batch_size, mxu_macs_per_pe);
+    // VMEM residency handoff (spec 6.7): a job whose weight_tag is already
+    // staged pays no weight-side HBM traffic; otherwise it fetches, and its
+    // slice stays resident for successors iff it fits the VMEM share. An
+    // untagged job (-1) always fetches and clears residency.
+    weights_resident = vmem_reuse && sj->weight_tag != -1 &&
+                       sj->weight_tag == resident_weight_tag;
+    weights_stay_resident = vmem_reuse && sj->weights_fit_vmem;
+    resident_weight_tag =
+        (weights_stay_resident && sj->weight_tag != -1) ? sj->weight_tag : -1;
     int n_read_bytes = activation_panel_bytes(sj->M, sj->K, sz)
-                     + weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights);
+                     + (weights_resident ? 0 : weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights));
     int n_read_beats = demand_beats(n_read_bytes);
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 

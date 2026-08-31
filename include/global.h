@@ -33,6 +33,11 @@ extern int buffer_size_bytes;
 extern int job_overhead_cycles;
 extern int fuse_epilogue;
 extern int mxu_macs_per_pe;
+// VMEM staging model (spec 6.7): weights stay resident across row-block jobs
+// of the same GEMM when the slice fits headroom_pct% of the per-MXU VMEM
+// share. vmem_reuse=0 restores per-tile refetch (ablation).
+extern int vmem_reuse;
+extern int vmem_headroom_pct;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

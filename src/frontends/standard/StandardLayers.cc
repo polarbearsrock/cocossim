@@ -20,6 +20,19 @@
 
 using namespace frontend::standard;
 
+// One id per weight tensor instance (a GEMM invocation, an attention head's
+// K/V panel). Jobs sharing an id may reuse each other's VMEM-staged weights.
+static int next_weight_tag = 0;
+
+// VMEM fit policy (spec 6.7): a K x N_slice weight slice claims residency iff
+// it fits its share of VMEM -- the buffer split across the n_slices cores
+// whose slices must co-reside, derated to -vmem_headroom percent. Integer
+// math; int64 because K*N*dtw can approach 2^31 at calibration shapes.
+static bool weightSliceFitsVmem(int K, int n_slice, int n_slices) {
+  return (int64_t) K * n_slice * data_type_width * 100 * n_slices
+         <= (int64_t) vmem_headroom_pct * buffer_size_bytes;
+}
+
 // OS-mode job creation. M is the layer's TRUE row count: it is split into
 // ceil(M / sa_sz) row-block jobs, the last carrying the remainder, so job
 // dims preserve under-fill information (spec 3.5). N is split across cores.
@@ -27,6 +40,8 @@ JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
   JobList jobs;
   int core_n = N / n_cores;
   int num_jobs = div_ru(M, sa_sz);
+  int weight_tag = next_weight_tag++;
+  bool fits = weightSliceFitsVmem(K, core_n, n_cores);
   static std::vector<int> core_task_counters(n_cores, 0);
   for (int core = 0; core < n_cores; ++core) {
     for (int job = 0; job < num_jobs; ++job) {
@@ -34,6 +49,10 @@ JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
       auto sys_job = new SystolicArray::SysArrayJob(m, K, core_n, sa_sz, /*ws=*/false);
       sys_job->core_id = core;
       sys_job->task_idx = core_task_counters[core]++;
+      // All row-block jobs of one GEMM read the same weight slice; tags are
+      // compared only within one state, so cores can share the invocation id.
+      sys_job->weight_tag = weight_tag;
+      sys_job->weights_fit_vmem = fits;
       jobs.push_back(sys_job);
     }
   }
@@ -397,8 +416,21 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     connectJobLists(k.second, rope);
 
     JobList scores, av;
-    for (int h = 0; h < nh; ++h) scores.push_back(new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws));
-    for (int h = 0; h < nh; ++h) av.push_back(new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws));
+    // Each head's K/V panel is its own weight tensor: per-job tags let a
+    // multi-row-tile prefill job reuse its own panel across row passes
+    // (within-job residency; cross-head sharing is a different tensor).
+    for (int h = 0; h < nh; ++h) {
+      auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws);
+      sc->weight_tag = next_weight_tag++;
+      sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores);
+      scores.push_back(sc);
+    }
+    for (int h = 0; h < nh; ++h) {
+      auto *avj = new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws);
+      avj->weight_tag = next_weight_tag++;
+      avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores);
+      av.push_back(avj);
+    }
     connectJobLists(rope, scores);
 
     JobList sm = makeSoftmaxJobs(S, M * nh);

@@ -428,5 +428,57 @@ else
   bad "V17 rc=$rca acct=$acct1(nvpu=$nvpu1) fin=$fin1 default_acct=$acct2 badval_rc=$rcc"
 fi
 
+# V18: VMEM weight residency. Matmul 1024 1024 1024 at sz 64, c 1, default
+# 8 MiB buffer: the 2 MiB weight matrix fits VMEM, so the 16 row-block jobs
+# (same weight_tag, consecutive on the one core) fetch it ONCE.
+# Derivation (verified exact against the run): reads = A once (16 jobs x
+# 2048-beat activation panel = 32768) + B once (job 1: 16 col tiles x 2048 =
+# 32768; jobs 2-16 resident: 0) = 65536 beats; writes = 512 (beats_per_wb
+# passes through state_transfer's BYTE argument and is divided by 64 again --
+# pre-existing, mirrored in sys_job_alloc_bytes -- so 2 beats x 256 tiles).
+# Total 66048 -> window [60000, 80000]. With -vmem_reuse 0 the per-job
+# refetch returns: 65536 + 15 x 32768 + 512 = 557568 -> > 500000.
+printf 'Matmul 1024 1024 1024\n' > "$WORK/v18.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v18.txt" -o "$WORK/v18a_s.txt" > "$WORK/v18a.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -vmem_reuse 0 -i "$WORK/v18.txt" -o "$WORK/v18b_s.txt" > "$WORK/v18b.log" 2>&1
+con=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18a.log" | tail -1 | awk '{print $3}')
+coff=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18b.log" | tail -1 | awk '{print $3}')
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -vmem_reuse 2 -i "$WORK/v18.txt" -o "$WORK/v18c_s.txt" > "$WORK/v18c.log" 2>&1; rej=$?
+if [ "${con:-0}" -ge 60000 ] && [ "${con:-0}" -le 80000 ] \
+   && [ "${coff:-0}" -gt 500000 ] && [ "$rej" -eq 1 ] && grep -q 'vmem_reuse' "$WORK/v18c.log"; then
+  ok "V18 VMEM residency: weights fetched once (CMDs $coff -> $con)"
+else
+  bad "V18 CMDs on=$con off=$coff badval_rc=$rej"
+fi
+
+# V18b: -buf_mb gates residency (capacity semantics). Same GEMM with
+# -buf_mb 1: the 2 MiB slice no longer fits, so amplified traffic returns
+# even with reuse enabled. This is the Phase-C-falsifiable crossover.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 1 -i "$WORK/v18.txt" -o "$WORK/v18d_s.txt" > "$WORK/v18d.log" 2>&1
+csmall=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18d.log" | tail -1 | awk '{print $3}')
+if [ "${csmall:-0}" -gt 500000 ]; then
+  ok "V18b -buf_mb 1 defeats residency (CMDs $csmall)"
+else
+  bad "V18b CMDs=$csmall (expected > 500000: slice must not fit a 1 MiB VMEM)"
+fi
+
+# V18c: within-job row-pass reuse (attention shape). Prefill scores/AV jobs
+# have M > sa_sz (direct SysArrayJobs, multiple row tiles per job) and must
+# re-read their K/V panel only on the first row pass when it fits. Tiny
+# transformer with seq 64 at sa_sz 4 -> 16 row tiles per score job; reuse
+# must strictly reduce traffic vs -vmem_reuse 0.
+printf 'Transformer 1 8 2 2 16 64 0 1\n' > "$WORK/v18e.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v18e.txt" -o "$WORK/v18e_s.txt" > "$WORK/v18e.log" 2>&1
+r1=$?
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -vmem_reuse 0 -i "$WORK/v18e.txt" -o "$WORK/v18f_s.txt" > "$WORK/v18f.log" 2>&1
+r2=$?
+ct1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18e.log" | tail -1 | awk '{print $3}')
+ct2=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18f.log" | tail -1 | awk '{print $3}')
+if [ "$r1" -eq 0 ] && [ "$r2" -eq 0 ] && [ "${ct1:-0}" -gt 0 ] && [ "${ct2:-0}" -gt "${ct1:-0}" ]; then
+  ok "V18c within-job row-pass reuse cuts prefill attention traffic ($ct2 -> $ct1)"
+else
+  bad "V18c rc=$r1/$r2 CMDs reuse=$ct1 noreuse=$ct2"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

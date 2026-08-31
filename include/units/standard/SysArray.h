@@ -87,6 +87,15 @@ namespace SystolicArray {
     }
     int M, K, N;
 
+    // VMEM staging identity (spec 6.7). Jobs sharing a weight_tag read the
+    // same weight tensor (e.g. row-block jobs of one GEMM); the executing
+    // state skips their weight-side HBM charges while the tag stays resident.
+    // -1 = untagged: always refetch and clear residency (safe default).
+    // weights_fit_vmem is decided at job creation, where the layer knows the
+    // slice size and how many cores' slices must co-reside.
+    int weight_tag = -1;
+    bool weights_fit_vmem = false;
+
     SysArrayJob(int m, int k, int n, int sz, bool ws);
 
     [[nodiscard]] std::string get_job_dims_string() const override;
@@ -109,6 +118,14 @@ public:
     void init() override;
     int sz;
     ExState state = idle;
+
+    // VMEM residency (spec 6.7): the weight_tag whose slice this MXU's VMEM
+    // share currently stages (-1 = none). Survives across jobs; a job whose
+    // tag matches pays no weight-side HBM traffic. The two bools cache this
+    // job's residency decision at init() so tile advances don't re-derive it.
+    int resident_weight_tag = -1;
+    bool weights_resident = false;
+    bool weights_stay_resident = false;
 
     bool increment(const std::function<void(Job *)> &enqueue_job,
                    int &total_idle,

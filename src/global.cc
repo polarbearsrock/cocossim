@@ -15,6 +15,8 @@ int buffer_size_bytes = 8 * 1024 * 1024;
 int job_overhead_cycles = 0;
 int fuse_epilogue = 0;
 int mxu_macs_per_pe = 1;
+int vmem_reuse = 1;
+int vmem_headroom_pct = 100;
 
 int total_jobs = 0;
 int jobs_finished = 0;

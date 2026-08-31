@@ -28,7 +28,9 @@ Arch* StandardParser::make_arch() {
               {"-job_overhead", &job_overhead_cycles},
               {"-fuse_epilogue", &fuse_epilogue},
               {"-mxu_macs_per_pe", &mxu_macs_per_pe},
-              {"-n_vpu", &n_vpu}},
+              {"-n_vpu", &n_vpu},
+              {"-vmem_reuse", &vmem_reuse},
+              {"-vmem_headroom", &vmem_headroom_pct}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -38,7 +40,9 @@ Arch* StandardParser::make_arch() {
              "-job_overhead fixed dispatch overhead per job in cycles (default 0)\n"
              "-fuse_epilogue residual adds fused into GEMM epilogue: 0 off (default), 1 on\n"
              "-mxu_macs_per_pe MACs each PE retires per cycle in OS mode (default 1)\n"
-             "-n_vpu        number of vector units (default: match -c)");
+             "-n_vpu        number of vector units (default: match -c)\n"
+             "-vmem_reuse   weights stay VMEM-resident across row blocks: 1 on (default), 0 off\n"
+             "-vmem_headroom percent of the per-MXU VMEM share usable for weights (default 100)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -73,6 +77,14 @@ Arch* StandardParser::make_arch() {
   }
   if (n_vpu != -1 && n_vpu < 1) {
     std::cerr << "Error: -n_vpu must be >= 1 (or omitted to match -c), got " << n_vpu << std::endl;
+    exit(1);
+  }
+  if (vmem_reuse != 0 && vmem_reuse != 1) {
+    std::cerr << "Error: -vmem_reuse must be 0 or 1, got " << vmem_reuse << std::endl;
+    exit(1);
+  }
+  if (vmem_headroom_pct < 1 || vmem_headroom_pct > 100) {
+    std::cerr << "Error: -vmem_headroom must be in [1, 100], got " << vmem_headroom_pct << std::endl;
     exit(1);
   }
   buffer_size_bytes = buf_mb * 1024 * 1024;
