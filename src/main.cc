@@ -53,12 +53,14 @@ int main(int argc, char **argv) {
     char nm[64] = {0};
     std::cout << "processing " << line << std::endl;
     
-    // Parse up to 8 dimensions per layer
-    std::vector<int> dims(8);
-    int successes = sscanf(nt_buff, "%s %d %d %d %d %d %d %d %d",
+    // Parse up to 9 dimensions per layer (Transformer's optional vocab is
+    // the 9th; tokens beyond the format string are silently dropped, so the
+    // width here caps every layer grammar).
+    std::vector<int> dims(9);
+    int successes = sscanf(nt_buff, "%s %d %d %d %d %d %d %d %d %d",
                            nm,
                            &dims[0], &dims[1], &dims[2], &dims[3],
-                           &dims[4], &dims[5], &dims[6], &dims[7]);
+                           &dims[4], &dims[5], &dims[6], &dims[7], &dims[8]);
     if (successes < 2) {
       std::cerr << "failed with '" << nt_buff << "'" << std::endl;
       throw std::exception();

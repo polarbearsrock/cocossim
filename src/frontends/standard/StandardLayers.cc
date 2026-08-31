@@ -377,15 +377,16 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows) {
 // jobs' weight-side reads. For layer 0 the residual's block-input parent is
 // approximated by norm1 (the true parent is the external predecessor line).
 JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
-  if (l_config.dimensions.size() != 8) {
-    std::cerr << "Transformer expects 8 dims: n_layers d_model n_heads n_kv_heads d_ff seq_len mode batch" << std::endl;
+  if (l_config.dimensions.size() != 8 && l_config.dimensions.size() != 9) {
+    std::cerr << "Transformer expects 8 or 9 dims: n_layers d_model n_heads n_kv_heads d_ff seq_len mode batch [vocab]" << std::endl;
     throw std::exception();
   }
   const auto &d = l_config.dimensions;
   int n_layers = d[0], d_model = d[1], nh = d[2], nkv = d[3], d_ff = d[4], seq_len = d[5], mode = d[6], batch = d[7];
+  int vocab = l_config.dimensions.size() == 9 ? d[8] : 0;// 0 = no LM head
   if (n_layers < 1 || d_model < 1 || nh < 1 || nkv < 1 || d_ff < 1 || seq_len < 1 || batch < 1 ||
-      (mode != 0 && mode != 1) || d_model % nh != 0 || nh % nkv != 0) {
-    std::cerr << "Transformer: invalid dims (need positive sizes, mode 0|1, nh | d_model, nkv | nh)" << std::endl;
+      (mode != 0 && mode != 1) || d_model % nh != 0 || nh % nkv != 0 || vocab < 0) {
+    std::cerr << "Transformer: invalid dims (need positive sizes, mode 0|1, nh | d_model, nkv | nh, vocab >= 0)" << std::endl;
     throw std::exception();
   }
   int head_dim = d_model / nh;
@@ -492,6 +493,21 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     }
 
     prev_tail = res2;
+  }
+  if (vocab > 0) {
+    // LM head (full-model coverage): final RMSNorm -> unembedding GEMM
+    // (M x d_model x vocab) -> vocabulary softmax. The head weight is the
+    // model's largest tensor (~1 GB at Llama-8B) and can never be
+    // VMEM-resident -- the fit check says so on its own -- so it streams
+    // from HBM every step. The embedding gather at the model's front is
+    // deliberately unmodeled: a few KB per token, no kernel worth a job.
+    JobList final_norm = makeRMSNormJobs(d_model, M);
+    connectJobLists(prev_tail, final_norm);
+    auto head = Matmul(a_config, LayerConfig("Matmul", {M, d_model, vocab}));
+    connectJobLists(final_norm, head.first);
+    JobList logits_sm = makeSoftmaxJobs(vocab, M);
+    connectJobLists(head.second, logits_sm);
+    prev_tail = logits_sm;
   }
   return {model_head, prev_tail};
 }

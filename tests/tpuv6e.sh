@@ -526,5 +526,34 @@ else
   bad "V20 batch-blind KV traffic: B1=$k1 B8=$k8 delta=$kd (want 25000..45000)"
 fi
 
+# V21: LM head via optional 9th Transformer dim (vocab; 0/omitted = off).
+# vocab > 0 appends final RMSNorm -> unembedding GEMM (M x d_model x vocab)
+# -> vocabulary softmax to the stack tail. Transformer 1 256 8 2 512 128 1 4
+# plus vocab 8192 at -c 1 -sa_sz 64 must add exactly 3 jobs (1 norm chunk +
+# 1 head GEMM row-block + 1 softmax chunk at the 8 MiB buffer) and the head
+# weight read: 256*8192*2 B = 4 MiB = 65536 beats (+ softmax/norm streams).
+# Exact floor re-derived at GREEN per the standing rule. A negative vocab
+# must be rejected.
+printf 'Transformer 1 256 8 2 512 128 1 4\n'      > "$WORK/v21a.txt"
+printf 'Transformer 1 256 8 2 512 128 1 4 8192\n' > "$WORK/v21b.txt"
+printf 'Transformer 1 256 8 2 512 128 1 4 -1\n'   > "$WORK/v21c.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v21a.txt" -o "$WORK/v21a_s.txt" > "$WORK/v21a.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v21b.txt" -o "$WORK/v21b_s.txt" > "$WORK/v21b.log" 2>&1
+rb=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v21c.txt" -o "$WORK/v21c_s.txt" > "$WORK/v21c.log" 2>&1
+rc_neg=$?
+ja=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v21a.log" | tail -1 | sed 's|.*/||')
+jb=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v21b.log" | tail -1 | sed 's|.*/||')
+fb=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v21b.log" | tail -1 | sed 's|.*: ||;s|/.*||')
+ca=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v21a.log" | tail -1 | awk '{print $3}')
+cb=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v21b.log" | tail -1 | awk '{print $3}')
+cd=$((${cb:-0} - ${ca:-0}))
+if [ "$rb" -eq 0 ] && [ "${jb:-0}" -eq $((${ja:-0} + 3)) ] && [ "$fb" = "$jb" ] \
+   && [ "$cd" -ge 65000 ] && [ "$cd" -le 80000 ] && [ "$rc_neg" -ne 0 ]; then
+  ok "V21 LM head: +3 jobs, head weights streamed (CMDs $ca -> $cb)"
+else
+  bad "V21 rc=$rb jobs=$ja->$jb(fin=$fb) cmds_delta=$cd negvocab_rc=$rc_neg"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
