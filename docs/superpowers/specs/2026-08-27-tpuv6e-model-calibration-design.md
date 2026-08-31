@@ -262,8 +262,22 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
-- **(added 2026-08-30, measured on the corrected 2-MXU machine) OS weight re-reads
-  ignore VMEM reuse — now the dominant fidelity gap.** Every row tile re-reads the
+- **(added 2026-08-30; ADDRESSED 2026-08-31 by the VMEM residency model — commit
+  `ecddd90`, flags `-vmem_reuse`/`-vmem_headroom`, tests V18/V18b/V18c) OS weight
+  re-reads ignored VMEM reuse — was the dominant fidelity gap.** Weights now stay
+  resident across row-block jobs (and row passes) when the slice fits the per-MXU
+  VMEM share. Measured effect: Matmul 4096³ traffic 672→101 MB (exactly the true
+  working set), 306→646 TF/s (70% of peak, memstall 62%→21%); prefill-512
+  858→659 µs; decode bit-identical (M=1 has nothing to reuse), as required.
+  Residual, deliberately unmodeled: (a) the fetch pass is not double-buffered —
+  the first job of a slice exposes its fetch instead of prefetching under the
+  previous op's compute, leaving GEMMs ~40% above their compute floor; (b)
+  activations are re-read once per MXU (no cross-core sharing, fixed ~2×A);
+  (c) VMEM is a shared capacity *parameter*, not a contended *resource* — each
+  consumer checks fit independently (MXUs against buf/n_cores·headroom, VPU
+  chunkers against the full buffer), so co-residency can be over-committed near
+  the capacity edge; the model is optimistic exactly there. Historical text:
+  OS weight re-reads ignore VMEM reuse — Every row tile re-reads the
   full weight panel, so a `Matmul 4096^3` moves ~6.7x its true bytes and prefill-512
   moves ~2.4x; with honest MXU throughput (`-mxu_macs_per_pe 2`) this phantom
   traffic saturates DRAM (~1300 GB/s) and caps modeled GEMM/prefill throughput at
