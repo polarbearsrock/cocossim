@@ -357,8 +357,10 @@ JobPair Add(const ArchConfig &a_config, const LayerConfig &l_config) {
 }
 
 // n_rows independent softmax rows of length row_len, chunked so each job's
-// working set fits the buffer and no job exceeds 1024 rows.
-static JobList makeSoftmaxJobs(int row_len, int n_rows) {
+// working set fits the buffer and no job exceeds 1024 rows. fused (-fuse_attn):
+// the rows are attention scores living in VMEM between the QK^T and AV jobs,
+// so the jobs run prebuffered and write nothing back -- compute unchanged.
+static JobList makeSoftmaxJobs(int row_len, int n_rows, bool fused = false) {
   int spl = 1;
   int Mp = n_rows;
   if (row_len * n_rows * data_type_width * batch_size > buffer_size_bytes || Mp > 1024) {
@@ -377,7 +379,8 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows) {
   int n_jobs = div_ru(n_rows, Mp);
   JobList softmax_layer;
   for (int i = 0; i < n_jobs; ++i)
-    softmax_layer.push_back(new VectorUnit::VecUnitJob(row_len, Mp, false, softmax_phases));
+    softmax_layer.push_back(new VectorUnit::VecUnitJob(row_len, Mp, /*is_prebuffered=*/fused,
+                                                       softmax_phases, 1, /*fused_out=*/fused));
   return softmax_layer;
 }
 
@@ -441,9 +444,16 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // per MXU -- bounded 2x over hardware's shared-VMEM single fetch.
     int kv_streams = (mode == 1) ? batch : 1;
     int group_sz = nh / nkv;
+    // -fuse_attn (spec 6.7): the score matrix stays in VMEM end to end, as in
+    // the fused flash-attention kernels XLA/vLLM emit -- QK^T writes nothing
+    // back, the softmax runs prebuffered and writes nothing, and the AV jobs'
+    // activation side (the softmaxed scores) is already on-chip. Q/K/V reads
+    // and the O write remain, which is exactly what the fused kernel moves.
+    bool fa = fuse_attn != 0;
     for (int h = 0; h < nh; ++h) {
       if (h % group_sz == 0) next_weight_tag++;
-      auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws, kv_streams);
+      auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws,
+                                                kv_streams, /*fused_out=*/fa);
       sc->weight_tag = next_weight_tag;
       sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores, kv_streams);
       scores.push_back(sc);
@@ -451,7 +461,8 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     next_weight_tag++;
     for (int h = 0; h < nh; ++h) {
       if (h % group_sz == 0) next_weight_tag++;
-      auto *avj = new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws, kv_streams);
+      auto *avj = new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws,
+                                                 kv_streams, /*fused_out=*/false, /*act_resident=*/fa);
       avj->weight_tag = next_weight_tag;
       avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores, kv_streams);
       av.push_back(avj);
@@ -459,7 +470,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     next_weight_tag++;
     connectJobLists(rope, scores);
 
-    JobList sm = makeSoftmaxJobs(S, M * nh);
+    JobList sm = makeSoftmaxJobs(S, M * nh, fa);
     connectJobLists(scores, sm);
     connectJobLists(sm, av);
     connectJobLists(v.second, av);

@@ -31,10 +31,11 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
       if (process_stage()) {
         auto &ph_ar = sj->phases;
         if (ph_ar.empty()) {
-          // All phases completed, write results
+          // All phases completed, write results (nothing when the output is
+          // consumed on-chip by a fused successor)
           state_transfer(VectorUnit::VPUState::write,
                          0,
-                         lin * par * data_type_width * batch_size,
+                         sj->fused_out ? 0 : lin * par * data_type_width * batch_size,
                          0);
         } else if (ph_ar.front().first == VPUPhase::REDUCE) {
           // Reduction phase: compute along linear dimension
@@ -126,24 +127,28 @@ VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
                        bool is_prebuffered,
                        const std::queue<std::pair<VPUPhase, int>> &phases,
-                       int n_read_operands)
-    : Job(vec_job_alloc_bytes(linearizedDimension, parallelDimension, is_prebuffered, n_read_operands)),
+                       int n_read_operands,
+                       bool fused_out)
+    : Job(vec_job_alloc_bytes(linearizedDimension, parallelDimension, is_prebuffered, n_read_operands, fused_out)),
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
       phases(phases),
       is_prebuffered(is_prebuffered),
-      n_read_operands(n_read_operands) {}
+      n_read_operands(n_read_operands),
+      fused_out(fused_out) {}
 
 VecUnitJob::VecUnitJob(int linearizedDimension,
                        int parallelDimension,
                        bool is_prebuffered,
                        const std::vector<std::pair<VPUPhase, int>> &vphases,
-                       int n_read_operands)
-    : Job(vec_job_alloc_bytes(linearizedDimension, parallelDimension, is_prebuffered, n_read_operands)),
+                       int n_read_operands,
+                       bool fused_out)
+    : Job(vec_job_alloc_bytes(linearizedDimension, parallelDimension, is_prebuffered, n_read_operands, fused_out)),
       linearized_dimension(linearizedDimension),
       parallel_dimension(parallelDimension),
       is_prebuffered(is_prebuffered),
-      n_read_operands(n_read_operands) {
+      n_read_operands(n_read_operands),
+      fused_out(fused_out) {
   for (const auto &q: vphases) {
     phases.push(q);
   }

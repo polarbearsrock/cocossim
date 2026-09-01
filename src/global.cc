@@ -19,6 +19,7 @@ int vmem_reuse = 1;
 int vmem_headroom_pct = 100;
 int vmem_resident_rows = 512;
 int mem_prio = 0;
+int fuse_attn = 0;
 
 int total_jobs = 0;
 int jobs_finished = 0;

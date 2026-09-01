@@ -680,5 +680,59 @@ else
   bad "V24 windowed=$cwin unlimited=$cinf badval_rc=$rn"
 fi
 
+# V25a: -fuse_attn keeps the attention score matrix on-chip (flash-attention
+# fusion, spec 6.7): QK^T jobs skip their output write-back, the score softmax
+# runs prebuffered with no output write, and AV jobs skip their activation-
+# panel read (the softmaxed scores). Everything else is charged identically,
+# so the fused/unfused DRAM CMD delta is exactly the suppressed transfers.
+# Transformer 1 256 4 4 512 128 0 1 (head_dim 64, M=S=128, no GQA sharing:
+# nh==nkv so every score/AV job has its own weight_tag and no residency hit
+# can differ between the runs) at -c 1 -sa_sz 256:
+#   scores x4: 1 column tile each; write charge = beats_per_wb bytes =
+#     256*256*2/64 = 2048 B -> 32 beats/job -> 128 beats
+#   softmax x1 (128 x 512 rows fits buffer, one job): read 128*512*2 =
+#     131072 B -> 2048 beats, write same -> 2048; both suppressed -> 4096
+#   av x4: single-tile init read = act(128*128*2=32768) + wgt(64*128*2=16384)
+#     = 768 beats; act part suppressed -> 256 beats; delta 512/job -> 2048
+#   total delta = 128 + 4096 + 2048 = 6272 CMDs
+printf 'Transformer 1 256 4 4 512 128 0 1\n' > "$WORK/v25.txt"
+"$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -i "$WORK/v25.txt" -o "$WORK/v25a_s.txt" > "$WORK/v25a.log" 2>&1
+"$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -i "$WORK/v25.txt" -o "$WORK/v25b_s.txt" > "$WORK/v25b.log" 2>&1
+cunf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25a.log" | tail -1 | awk '{print $3}')
+cfus=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25b.log" | tail -1 | awk '{print $3}')
+if [ -n "$cunf" ] && [ -n "$cfus" ] && [ $((cunf - cfus)) -eq 6272 ]; then
+  ok "V25a -fuse_attn suppresses exactly the score-matrix beats ($cunf -> $cfus)"
+else
+  bad "V25a unfused=$cunf fused=$cfus delta=$((${cunf:-0} - ${cfus:-0})) (want 6272)"
+fi
+
+# V25b: decode invariance. At decode the score matrix is batch x S rows (tiny
+# next to KV-cache streams), so fusion must not move decode timing by more
+# than noise: cycles within 2%, and fused traffic strictly lower.
+printf 'Transformer 2 512 8 4 1024 512 1 4\n' > "$WORK/v25d.txt"
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -i "$WORK/v25d.txt" -o "$WORK/v25c_s.txt" > "$WORK/v25c.log" 2>&1
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -i "$WORK/v25d.txt" -o "$WORK/v25d_s.txt" > "$WORK/v25d.log" 2>&1
+cu=$(cycles_of "$WORK/v25c_s.txt"); cf=$(cycles_of "$WORK/v25d_s.txt")
+du=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25c.log" | tail -1 | awk '{print $3}')
+df=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25d.log" | tail -1 | awk '{print $3}')
+inv_ok=$(awk -v a="${cu:-0}" -v b="${cf:-0}" 'BEGIN{d=(a-b)/a; if(d<0)d=-d; print (a>0 && b>0 && d<=0.02)?1:0}')
+if [ "$inv_ok" -eq 1 ] && [ -n "$du" ] && [ -n "$df" ] && [ "$df" -lt "$du" ]; then
+  ok "V25b decode cycles move <=2% under -fuse_attn ($cu -> $cf, CMDs $du -> $df)"
+else
+  bad "V25b cycles $cu -> $cf, CMDs $du -> $df"
+fi
+
+# V25c: invalid -fuse_attn rejected cleanly.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -fuse_attn 2 -i "$WORK/v25.txt" -o "$WORK/v25e_s.txt" > "$WORK/v25e.log" 2>&1; rv=$?
+if [ "$rv" -eq 1 ] && grep -q 'fuse_attn' "$WORK/v25e.log"; then
+  ok "V25c -fuse_attn 2 rejected"
+else
+  bad "V25c rc=$rv (want 1 + message)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

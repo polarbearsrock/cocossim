@@ -25,4 +25,5 @@ exec ./perf_model \
   -dram_enq 32 \
   -job_overhead 0 \
   -fuse_epilogue 0 \
+  -fuse_attn 1 \
   -i "$LAYERS" -o "$OUT" "$@"

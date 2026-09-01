@@ -277,6 +277,24 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
+- **(added 2026-09-01; ADDRESSED same day, flag `-fuse_attn`, tests V25a–c)
+  Unfused attention was the dominant prefill gap.** The `Transformer` expansion
+  materialized the score matrix S through DRAM four times per layer (QK^T
+  write-back, softmax read + rewrite, AV activation read) — ~0.8–1.1 GB/layer of
+  phantom traffic at seq 2048 that the real chip never emits: the session-3
+  kernel census shows XLA/vLLM always run attention as one fused
+  flash-attention-style kernel, whose HBM traffic is exactly read-Q,K,V +
+  write-O at any sequence length. Post-fix holdout re-score: prefill-2048
+  +87.9% → the fused prediction (see calibration log). `-fuse_attn 1` is pinned
+  in `configs/tpuv6e.sh` as structural truth, not a fitted prior. Suppression
+  is expressed as job-endpoint flags (`SysArrayJob::fused_out`/`act_resident`,
+  `VecUnitJob::fused_out`) — a general on-chip-edge primitive (the same idea as
+  `-fuse_epilogue`) usable for future fusion studies; softmax compute and all
+  dependencies are retained (conservative: no intra-head pipelining credit).
+  This supersedes the 2026-09-01 prefill-2048 diagnosis that blamed residual
+  gap (a) (un-overlapped window refetches): with score traffic removed both
+  machines sit near their memory floors (silicon ~1.1×, sim ~1.3×), so
+  prefetch/double-buffering is second-order, not the +88% mechanism.
 - **(added 2026-08-30; ADDRESSED 2026-08-31 by the VMEM residency model — commit
   `ecddd90`, flags `-vmem_reuse`/`-vmem_headroom`, tests V18/V18b/V18c) OS weight
   re-reads ignored VMEM reuse — was the dominant fidelity gap.** Weights now stay

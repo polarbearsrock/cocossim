@@ -49,9 +49,16 @@ namespace SystolicArray {
   // window only has to cover the widest single row-tile pass, not the whole
   // job. Both modes are bounded by their first pass plus one full sweep of
   // column tiles plus whichever end-of-sweep transfer is larger.
+  // fused_out / act_resident are the fusion flags (-fuse_attn, spec 6.7): a
+  // fused_out job's output stays in VMEM (no write-back beats), an
+  // act_resident job's activation operand is already there (no activation-
+  // panel reads). Both must shrink the window exactly as they shrink the
+  // charges below, or window and walk drift apart (the multi-core livelock).
   inline uint64_t sys_job_alloc_bytes(int M, int K, int N, int sz, bool ws,
                                       bool batched_weights, int beats_per_wb,
-                                      int64_t n_weight_streams = 1) {
+                                      int64_t n_weight_streams = 1,
+                                      bool fused_out = false,
+                                      bool act_resident = false) {
     // Weight-side reads scale with n_weight_streams (per-sequence KV caches);
     // the window must cover the scaled walk, mirroring the charging math.
     const uint64_t weight_beats = std::max<int64_t>(
@@ -65,10 +72,14 @@ namespace SystolicArray {
       const uint64_t array_tile_beats =
           demand_beats(std::min(sz, N) * std::min(sz, K) * data_type_width);
       const uint64_t preload_beats =
-          demand_beats(ws_activation_preload_bytes(M, K, sz) +
+          demand_beats((act_resident ? 0 : ws_activation_preload_bytes(M, K, sz)) +
                        std::min(sz, N) * std::min(sz, K) * data_type_width);
-      const uint64_t out_beats = demand_beats(M * N * data_type_width * batch_size);
-      const uint64_t ws_act_beats = demand_beats(ws_activation_preload_bytes(M, K, sz));
+      // Suppressed transfers are 0 beats outright (state_transfer charges
+      // nothing for 0 bytes), so no demand_beats floor here.
+      const uint64_t out_beats =
+          fused_out ? 0 : demand_beats(M * N * data_type_width * batch_size);
+      const uint64_t ws_act_beats =
+          act_resident ? 0 : demand_beats(ws_activation_preload_bytes(M, K, sz));
       beats = preload_beats + (uint64_t) cols * array_tile_beats +
               std::max(ws_act_beats, out_beats);
     } else {
@@ -90,13 +101,13 @@ namespace SystolicArray {
       // state_transfer's byte argument, so it is divided by bytes_per_tx
       // again -- mirrored here on purpose).
       const int64_t combined_first_tile_bytes =
-          (int64_t) activation_panel_bytes(M, K, sz) +
+          (act_resident ? 0 : (int64_t) activation_panel_bytes(M, K, sz)) +
           (int64_t) weight_panel_bytes(K, N, sz, batched_weights) * n_weight_streams;
       const uint64_t combined_first_tile_beats =
           std::max<int64_t>(combined_first_tile_bytes / bytes_per_tx, 1);
       beats = combined_first_tile_beats +
               (uint64_t) (cols - 1) * weight_beats +
-              (uint64_t) cols * demand_beats(beats_per_wb);
+              (fused_out ? 0 : (uint64_t) cols * demand_beats(beats_per_wb));
     }
     return beats * (uint64_t) bytes_per_tx;
   }
@@ -121,8 +132,18 @@ namespace SystolicArray {
     // to the batch: each sequence has its OWN KV cache, so the "weight" side
     // is per-row state and must be read once per sequence.
     int n_weight_streams = 1;
+    // Fusion flags (-fuse_attn, spec 6.7). Const because the base Job
+    // allocation is sized from them at construction (sys_job_alloc_bytes):
+    // flipping them afterwards would let the walk and the window drift.
+    // fused_out: the output is consumed on-chip, no write-back charges
+    // (QK^T scores feeding the fused softmax). act_resident: the activation
+    // operand is already on-chip, no activation-panel reads (AV jobs whose
+    // A matrix is the softmaxed scores).
+    const bool fused_out;
+    const bool act_resident;
 
-    SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams = 1);
+    SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams = 1,
+                bool fused_out = false, bool act_resident = false);
 
     [[nodiscard]] std::string get_job_dims_string() const override;
   };

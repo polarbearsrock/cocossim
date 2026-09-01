@@ -71,7 +71,12 @@ private:
   // write phase streams one more; sizing the allocation for the reads alone --
   // as this did before -- pushed every job's write pass onto the next job's
   // input range, which livelocks multi-core runs (see Job::alloc_size).
-  inline uint64_t vec_job_alloc_bytes(int lin, int par, bool is_prebuffered, int n_read_operands) {
+  // fused_out (-fuse_attn, spec 6.7): the output is consumed on-chip, so the
+  // write pass charges nothing -- mirrored here so window and walk agree. A
+  // fully fused job (prebuffered + fused_out) moves zero bytes; it still gets
+  // a one-beat window so no job ever owns an empty address range.
+  inline uint64_t vec_job_alloc_bytes(int lin, int par, bool is_prebuffered, int n_read_operands,
+                                      bool fused_out = false) {
     const uint64_t tensor = (uint64_t) lin * par * data_type_width * batch_size;
     // Reads and writes are each quantized to whole bytes_per_tx-byte beats
     // with a 1-beat floor per non-zero transfer -- State::state_transfer's
@@ -94,8 +99,9 @@ private:
     const uint64_t read_beats =
         is_prebuffered ? 0u
                        : std::max<uint64_t>(tensor * (uint64_t) n_read_operands / bytes_per_tx, 1u);
-    const uint64_t write_beats = std::max<uint64_t>(tensor / bytes_per_tx, 1u);
-    return (read_beats + write_beats) * (uint64_t) bytes_per_tx;
+    const uint64_t write_beats =
+        fused_out ? 0u : std::max<uint64_t>(tensor / bytes_per_tx, 1u);
+    return std::max<uint64_t>(read_beats + write_beats, 1u) * (uint64_t) bytes_per_tx;
   }
 
   struct VecUnitJob : public Job {
@@ -110,10 +116,13 @@ private:
     // (see vec_job_alloc_bytes): raising it afterwards would make the job walk
     // past its own address window and into the next job's.
     const int n_read_operands;
+    // Output consumed on-chip (-fuse_attn, spec 6.7): the write pass charges
+    // nothing. Const for the same allocation-sizing reason as above.
+    const bool fused_out;
 
     [[nodiscard]] std::string get_job_dims_string() const override;
-    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::queue<std::pair<VPUPhase, int>> &phases, int n_read_operands = 1);
-    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::vector<std::pair<VPUPhase, int>> &phases, int n_read_operands = 1);
+    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::queue<std::pair<VPUPhase, int>> &phases, int n_read_operands = 1, bool fused_out = false);
+    VecUnitJob(int linearizedDimension, int parallelDimension, bool is_prebuffered, const std::vector<std::pair<VPUPhase, int>> &phases, int n_read_operands = 1, bool fused_out = false);
 
     int get_type() const override;
   };

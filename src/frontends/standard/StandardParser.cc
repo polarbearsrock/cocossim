@@ -35,7 +35,8 @@ Arch* StandardParser::make_arch() {
               {"-mp", &model_parallelism},
               {"-mp_par", &mp_par},
               {"-mem_prio", &mem_prio},
-              {"-vmem_rows", &vmem_resident_rows}},
+              {"-vmem_rows", &vmem_resident_rows},
+              {"-fuse_attn", &fuse_attn}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -51,7 +52,8 @@ Arch* StandardParser::make_arch() {
              "-mp           model-parallel replicas of the input model (default 1)\n"
              "-mp_par       replicas run concurrently (1) or chained sequentially (0, default)\n"
              "-mem_prio     serve SA memory transactions before VPU ones: 0 FIFO (default), 1 on\n"
-             "-vmem_rows    weight-residency row window (default 512; 0 = unlimited)");
+             "-vmem_rows    weight-residency row window (default 512; 0 = unlimited)\n"
+             "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -110,6 +112,10 @@ Arch* StandardParser::make_arch() {
   }
   if (vmem_resident_rows < 0) {
     std::cerr << "Error: -vmem_rows must be >= 0, got " << vmem_resident_rows << std::endl;
+    exit(1);
+  }
+  if (fuse_attn != 0 && fuse_attn != 1) {
+    std::cerr << "Error: -fuse_attn must be 0 or 1, got " << fuse_attn << std::endl;
     exit(1);
   }
   do_par = mp_par;

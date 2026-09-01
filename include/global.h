@@ -44,6 +44,11 @@ extern int vmem_headroom_pct;
 extern int vmem_resident_rows;
 // Serve SA memory transactions ahead of VPU ones (ISPASS'25 case study A fix).
 extern int mem_prio;
+// Flash-attention fusion (spec 6.7): attention score matrices live their whole
+// life in VMEM -- QK^T writes, softmax reads/writes, and AV score reads never
+// touch HBM. Attention traffic becomes read Q,K,V + write O, matching the
+// fused kernels XLA/vLLM always emit. Compute and dependencies are unchanged.
+extern int fuse_attn;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

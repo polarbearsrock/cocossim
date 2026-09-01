@@ -45,8 +45,8 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           // Check if we're at the end of tile computation
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
-              amt_to_write = sj->M * sj->N * data_type_width * batch_size;
-            } else {
+              amt_to_write = sj->fused_out ? 0 : sj->M * sj->N * data_type_width * batch_size;
+            } else if (!sj->act_resident) {
               activation_preload = ws_activation_preload_bytes(sj->M, sj->K, sz);
             }
           }
@@ -84,7 +84,7 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           state_transfer(shift, 0, 0, sz * std::min(systolic_fpu_latency, batch_size));
           break;
         case shift:  // Compute and accumulate outputs
-          state_transfer(write, 0, beats_per_wb, 0);
+          state_transfer(write, 0, sj->fused_out ? 0 : beats_per_wb, 0);
           break;
         case write:  // Write partial sums back to memory
           if (col_i == loop_cols_tiles) {
@@ -147,7 +147,7 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     // 2^31 at long-context decode shapes.
     int64_t rb = skip_weights ? 0
                : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams;
-    if (new_row) {
+    if (new_row && !sj->act_resident) {
       rb += activation_panel_bytes(sj->M, sj->K, sz);
     }
     n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
@@ -165,7 +165,7 @@ void SystolicArray::SysArrayState::init() {
     loop_cols_tiles = div_ru(sj->N, sz);
     loop_row_tiles = div_ru(sj->K, sz);
     int sys_array_preload = std::min(sz, sj->N) * std::min(sz, sj->K) * data_type_width;
-    int activation_preload = ws_activation_preload_bytes(sj->M, sj->K, sz);
+    int activation_preload = sj->act_resident ? 0 : ws_activation_preload_bytes(sj->M, sj->K, sz);
     state_transfer(SystolicArray::prefetch, activation_preload + sys_array_preload, 0, sz);
     row_i = 1;
     col_i = 1;
@@ -194,10 +194,12 @@ void SystolicArray::SysArrayState::init() {
     resident_weight_tag =
         (weights_stay_resident && sj->weight_tag != -1) ? sj->weight_tag : -1;
     resident_rows_used = weights_resident ? resident_rows_used + sj->M : sj->M;
-    int64_t rb = (int64_t) activation_panel_bytes(sj->M, sj->K, sz)
+    int64_t rb = (sj->act_resident ? 0 : (int64_t) activation_panel_bytes(sj->M, sj->K, sz))
                + (weights_resident ? 0
                   : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams);
-    int n_read_beats = (int) std::max<int64_t>(rb / bytes_per_tx, 1);
+    // rb can now be 0 (act_resident + resident weights): charge nothing, like
+    // init_row_loop. For rb > 0 the max(.,1) floor is unchanged.
+    int n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);
@@ -217,11 +219,13 @@ SystolicArray::SysArrayState::SysArrayState(int sz, bool ws) : State(1), sz(sz),
   beats_per_wb = std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1);
 }
 
-SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams)
+SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams,
+                                        bool fused_out, bool act_resident)
     : Job(sys_job_alloc_bytes(m, k, n, sz, ws, /*batched_weights=*/false,
                               std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1),
-                              n_weight_streams)),
-      M(m), K(k), N(n), n_weight_streams(n_weight_streams) {}
+                              n_weight_streams, fused_out, act_resident)),
+      M(m), K(k), N(n), n_weight_streams(n_weight_streams),
+      fused_out(fused_out), act_resident(act_resident) {}
 
 
 std::string SystolicArray::SysArrayJob::get_job_dims_string() const {
