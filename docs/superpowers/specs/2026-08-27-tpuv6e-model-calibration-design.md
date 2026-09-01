@@ -294,6 +294,12 @@ residuals before being dismissed as noise.
   model. This coupling is deliberate: `-vmem_reuse` is the single ablation
   switch for VMEM staging (`global.h`), not two independently toggleable
   mechanisms.
+  AMENDED 2026-09-01 (C5v2 measurement, commit a6e6f82): XLA re-streams
+  weights per ~512-row M-tile even when the slice fits VMEM, so unlimited
+  cross-row-block residency was OPTIMISTIC for prefill; residency is now
+  bounded by `-vmem_rows` (default 512, a fitted parameter; 0 = unlimited).
+  Within-job row passes (prefill attention KV) keep full reuse — a documented
+  bounded optimism. Decode (M <= window) is unaffected.
   Residual, deliberately unmodeled: (a) the fetch pass is not double-buffered —
   the first job of a slice exposes its fetch instead of prefetching under the
   previous op's compute, leaving GEMMs ~40% above their compute floor; (b)
