@@ -726,6 +726,40 @@ else
   bad "V25b cycles $cu -> $cf, CMDs $du -> $df"
 fi
 
+# V26: attention stages wire per-head, not all-to-all (the barrier was a
+# modeling artifact: head h's softmax needs only head h's scores, and only
+# head h's AV consumes it -- all-to-all drained the SA while one VPU chewed
+# every softmax chunk serially). Softmax chunk jobs cover contiguous row
+# ranges of the M*nh row space; head h owns rows [h*M,(h+1)*M); an edge
+# exists iff the ranges overlap.
+# Config A (chunk-aligned): Transformer 1 64 4 4 128 512 0 1 -buf_mb 1:
+#   n_rows=2048, working set 2 MB > 1 MB -> 2 sm chunks of 1024 rows = 2
+#   heads each. scores("512 x 16 x 512")->sm("1024 x 512"): 4 edges (was
+#   4x2=8); sm->av("512 x 512 x 16"): 4 (was 8).
+# Config B (chunk straddles a head): Transformer 1 24 3 3 48 512 0 1:
+#   n_rows=1536 -> 2 chunks of 768 rows = 1.5 heads. scores->sm: chunk0
+#   overlaps heads {0,1}, chunk1 {1,2} -> 4 edges (was 6); sm->av: av1
+#   depends on both chunks -> 4 (was 6).
+edges_between() { # $1 src label, $2 dst label; reads build/jobs.dot
+  awk -v src="$1" -v dst="$2" '
+    /\[label=/ { name=$1; lab=$0; sub(/^[^"]*"/,"",lab); sub(/".*$/,"",lab); L[name]=lab; next }
+    / -> / { a=$1; b=$3; sub(/;$/,"",b); if (L[a]==src && L[b]==dst) n++ }
+    END { print n+0 }' jobs.dot
+}
+printf 'Transformer 1 64 4 4 128 512 0 1\n' > "$WORK/v26a.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 1 -i "$WORK/v26a.txt" -o "$WORK/v26a_s.txt" > "$WORK/v26a.log" 2>&1
+sa=$(edges_between "512 x 16 x 512" "1024 x 512")
+aa=$(edges_between "1024 x 512" "512 x 512 x 16")
+printf 'Transformer 1 24 3 3 48 512 0 1\n' > "$WORK/v26b.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 1 -i "$WORK/v26b.txt" -o "$WORK/v26b_s.txt" > "$WORK/v26b.log" 2>&1
+sb=$(edges_between "512 x 8 x 512" "768 x 512")
+ab=$(edges_between "768 x 512" "512 x 512 x 8")
+if [ "${sa:-0}" -eq 4 ] && [ "${aa:-0}" -eq 4 ] && [ "${sb:-0}" -eq 4 ] && [ "${ab:-0}" -eq 4 ]; then
+  ok "V26 per-head attention wiring (aligned 4/4, straddle 4/4 edges)"
+else
+  bad "V26 aligned scores->sm=$sa sm->av=$aa straddle scores->sm=$sb sm->av=$ab (want 4/4/4/4)"
+fi
+
 # V25c: invalid -fuse_attn rejected cleanly.
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -fuse_attn 2 -i "$WORK/v25.txt" -o "$WORK/v25e_s.txt" > "$WORK/v25e.log" 2>&1; rv=$?
 if [ "$rv" -eq 1 ] && grep -q 'fuse_attn' "$WORK/v25e.log"; then

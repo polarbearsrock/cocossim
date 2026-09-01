@@ -108,6 +108,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   }
 
   int dram_cmds = 0;
+  uint64_t mem_demand_idle = 0;
 
   for (auto state: states) {
     n_idle_units[state->get_ty_idx()] += 1;
@@ -261,6 +262,11 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
       successful_enqueue = mem::try_enqueue_tx();
       dram_cmds += successful_enqueue;
     }
+    // TEMP DIAG: cycles where no unit offers DRAM any work (nothing queued,
+    // nothing in flight) -- the demand-idle time recoverable by prefetch.
+    if (to_enqueue.empty() && mem::address_reads_bkwds_lookup.empty() &&
+        mem::address_writes_bkwds_lookup.empty())
+      mem_demand_idle++;
   }
 
 #ifdef VCD
@@ -287,6 +293,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 #endif
 
   printf("\rPHASE: %d, Cycles: %llu, Time: %fµs Jobs finished: %d/%d, DRAM CMDs: %d", phase_idx, gcycles, double(gcycles) * cycle_adjust / 1000, jobs_finished, total_jobs, dram_cmds);
+  printf("\nMEM demand-idle: %llu / %llu cycles\n", (unsigned long long) mem_demand_idle, (unsigned long long) gcycles);
   mem::mem_sys->PrintStats();
   fflush(stdout);
   write_stats(phase_idx);

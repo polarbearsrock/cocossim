@@ -360,7 +360,8 @@ JobPair Add(const ArchConfig &a_config, const LayerConfig &l_config) {
 // working set fits the buffer and no job exceeds 1024 rows. fused (-fuse_attn):
 // the rows are attention scores living in VMEM between the QK^T and AV jobs,
 // so the jobs run prebuffered and write nothing back -- compute unchanged.
-static JobList makeSoftmaxJobs(int row_len, int n_rows, bool fused = false) {
+static JobList makeSoftmaxJobs(int row_len, int n_rows, bool fused = false,
+                               int *out_rows_per_job = nullptr) {
   int spl = 1;
   int Mp = n_rows;
   if (row_len * n_rows * data_type_width * batch_size > buffer_size_bytes || Mp > 1024) {
@@ -377,6 +378,7 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows, bool fused = false) {
   // vector units the architecture actually has (the scheduler spreads
   // unpinned jobs across idle units of the type at dispatch time).
   int n_jobs = div_ru(n_rows, Mp);
+  if (out_rows_per_job) *out_rows_per_job = Mp;
   JobList softmax_layer;
   for (int i = 0; i < n_jobs; ++i)
     softmax_layer.push_back(new VectorUnit::VecUnitJob(row_len, Mp, /*is_prebuffered=*/fused,
@@ -470,9 +472,21 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     next_weight_tag++;
     connectJobLists(rope, scores);
 
-    JobList sm = makeSoftmaxJobs(S, M * nh, fa);
-    connectJobLists(scores, sm);
-    connectJobLists(sm, av);
+    // Per-head attention wiring: softmax chunk k covers rows
+    // [k*sm_rows, (k+1)*sm_rows) of the M*nh row space and head h owns rows
+    // [h*M, (h+1)*M) -- an edge exists iff the ranges overlap. All-to-all
+    // here was a modeling artifact that drained both MXUs at every softmax
+    // stage (V26); the hardware dependency is per-head.
+    int sm_rows = 0;
+    JobList sm = makeSoftmaxJobs(S, M * nh, fa, &sm_rows);
+    for (int k = 0; k < (int) sm.size(); ++k) {
+      int lo = k * sm_rows;
+      int hi = std::min((k + 1) * sm_rows, M * nh) - 1;// inclusive last row
+      for (int h = lo / M; h <= hi / M; ++h) {
+        scores[h]->add_child(sm[k]);
+        sm[k]->add_child(av[h]);
+      }
+    }
     connectJobLists(v.second, av);
 
     auto o = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_model}));
