@@ -182,9 +182,18 @@ void SystolicArray::SysArrayState::init() {
     // untagged job (-1) always fetches and clears residency.
     weights_resident = vmem_reuse && sj->weight_tag != -1 &&
                        sj->weight_tag == resident_weight_tag;
+    // C5v2 (session 3): the compiler re-streams weights past a ~512-row
+    // window even when the slice fits VMEM. Cross-JOB reuse is bounded by
+    // -vmem_rows; within-job row passes (prefill attention) keep full reuse,
+    // a documented bounded optimism confined to attention KV panels.
+    if (weights_resident && vmem_resident_rows > 0 &&
+        resident_rows_used + sj->M > vmem_resident_rows) {
+      weights_resident = false;
+    }
     weights_stay_resident = vmem_reuse && sj->weights_fit_vmem;
     resident_weight_tag =
         (weights_stay_resident && sj->weight_tag != -1) ? sj->weight_tag : -1;
+    resident_rows_used = weights_resident ? resident_rows_used + sj->M : sj->M;
     int64_t rb = (int64_t) activation_panel_bytes(sj->M, sj->K, sz)
                + (weights_resident ? 0
                   : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams);

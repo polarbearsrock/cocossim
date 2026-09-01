@@ -17,6 +17,7 @@ int fuse_epilogue = 0;
 int mxu_macs_per_pe = 1;
 int vmem_reuse = 1;
 int vmem_headroom_pct = 100;
+int vmem_resident_rows = 512;
 int mem_prio = 0;
 
 int total_jobs = 0;

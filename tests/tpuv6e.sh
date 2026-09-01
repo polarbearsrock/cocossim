@@ -431,20 +431,21 @@ fi
 # V18: VMEM weight residency. Matmul 1024 1024 1024 at sz 64, c 1, default
 # 8 MiB buffer: the 2 MiB weight matrix fits VMEM, so the 16 row-block jobs
 # (same weight_tag, consecutive on the one core) fetch it ONCE.
-# Derivation (verified exact against the run): reads = A once (16 jobs x
-# 2048-beat activation panel = 32768) + B once (job 1: 16 col tiles x 2048 =
-# 32768; jobs 2-16 resident: 0) = 65536 beats; writes = 512 (beats_per_wb
-# passes through state_transfer's BYTE argument and is divided by 64 again --
-# pre-existing, mirrored in sys_job_alloc_bytes -- so 2 beats x 256 tiles).
-# Total 66048 -> window [60000, 80000]. With -vmem_reuse 0 the per-job
-# refetch returns: 65536 + 15 x 32768 + 512 = 557568 -> > 500000.
+# Derivation (verified exact against the run; updated for -vmem_rows 512,
+# the C5v2-measured residency window): 16 row-block jobs of 64 rows = two
+# 512-row windows -> TWO weight fetch passes (jobs 1 and 9, 34816 beats each:
+# combined act+weight first tile + 15 weight tiles) + 14 act-only jobs x 2048
+# + 512 write beats (beats_per_wb passes through state_transfer's BYTE
+# argument and is divided by 64 again -- pre-existing, mirrored in
+# sys_job_alloc_bytes). Total 98816 -> window [90000, 110000]. With
+# -vmem_reuse 0 the per-job refetch returns: 557568 -> > 500000.
 printf 'Matmul 1024 1024 1024\n' > "$WORK/v18.txt"
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v18.txt" -o "$WORK/v18a_s.txt" > "$WORK/v18a.log" 2>&1
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -vmem_reuse 0 -i "$WORK/v18.txt" -o "$WORK/v18b_s.txt" > "$WORK/v18b.log" 2>&1
 con=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18a.log" | tail -1 | awk '{print $3}')
 coff=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18b.log" | tail -1 | awk '{print $3}')
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -vmem_reuse 2 -i "$WORK/v18.txt" -o "$WORK/v18c_s.txt" > "$WORK/v18c.log" 2>&1; rej=$?
-if [ "${con:-0}" -ge 60000 ] && [ "${con:-0}" -le 80000 ] \
+if [ "${con:-0}" -ge 90000 ] && [ "${con:-0}" -le 110000 ] \
    && [ "${coff:-0}" -gt 500000 ] && [ "$rej" -eq 1 ] && grep -q 'vmem_reuse' "$WORK/v18c.log"; then
   ok "V18 VMEM residency: weights fetched once (CMDs $coff -> $con)"
 else
@@ -657,6 +658,26 @@ if [ "$rws" -eq 1 ] && grep -q 'cores' "$WORK/v23a.log" \
   ok "V23 N < n_cores rejected cleanly in WS and OS"
 else
   bad "V23 ws_rc=$rws os_rc=$ros (want clean exit 1 + message; pre-fix: 134/0)"
+fi
+
+# V24: -vmem_rows bounds weight residency to a row window (C5v2 measured
+# XLA re-streaming the full weight matrix per ~512-row M-tile even at 34 MB).
+# Matmul 2048 4096 4096 at -sa_sz 256: 8 row-block jobs, slice 32 MiB fits.
+# Default window 512 rows = 2 jobs -> 4 weight fetches; -vmem_rows 0
+# (unlimited, the pre-fix behavior) -> 1 fetch. Weight fetch = 524288 beats,
+# activations 262144, writes ~4k: ratio (4 fetches)/(1 fetch) ~ 2.99.
+# Negative values rejected.
+printf 'Matmul 2048 4096 4096\n' > "$WORK/v24.txt"
+"$BIN" -c 1 -sa_sz 256 -vu_sz 64 -f 1 -buf_mb 128 -i "$WORK/v24.txt" -o "$WORK/v24a_s.txt" > "$WORK/v24a.log" 2>&1
+"$BIN" -c 1 -sa_sz 256 -vu_sz 64 -f 1 -buf_mb 128 -vmem_rows 0 -i "$WORK/v24.txt" -o "$WORK/v24b_s.txt" > "$WORK/v24b.log" 2>&1
+cwin=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v24a.log" | tail -1 | awk '{print $3}')
+cinf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v24b.log" | tail -1 | awk '{print $3}')
+ratio_ok=$(awk -v a="${cwin:-0}" -v b="${cinf:-1}" 'BEGIN{r=a/b; print (r>=2.4 && r<=3.5)?1:0}')
+"$BIN" -c 1 -sa_sz 256 -vu_sz 64 -f 1 -vmem_rows -1 -i "$WORK/v24.txt" -o "$WORK/v24c_s.txt" > "$WORK/v24c.log" 2>&1; rn=$?
+if [ "$ratio_ok" -eq 1 ] && [ "$rn" -eq 1 ] && grep -q 'vmem_rows' "$WORK/v24c.log"; then
+  ok "V24 -vmem_rows 512 windows residency (CMDs $cinf -> $cwin)"
+else
+  bad "V24 windowed=$cwin unlimited=$cinf badval_rc=$rn"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

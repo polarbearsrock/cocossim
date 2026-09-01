@@ -152,6 +152,8 @@ public:
     int resident_weight_tag = -1;
     bool weights_resident = false;
     bool weights_stay_resident = false;
+    // Rows consumed under the resident tag (C5v2 window, -vmem_rows).
+    int resident_rows_used = 0;
 
     bool increment(const std::function<void(Job *)> &enqueue_job,
                    int &total_idle,
