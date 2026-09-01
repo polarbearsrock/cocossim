@@ -11,6 +11,7 @@
 #include "memory.h"
 #include "perf_enums.h"
 #include "State.h"
+#include <algorithm>
 #include <set>
 #include <unordered_map>
 
@@ -110,6 +111,50 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   int dram_cmds = 0;
   uint64_t mem_demand_idle = 0;
 
+  // ---------------------------------------------------------------------
+  // Cross-op weight prefetch (-dbuf, spec 6.7). XLA streams the NEXT
+  // operator's weights under the current op's compute/barrier tail (B2,
+  // C5v2). Model: the first job of each weight tag -- which can never be
+  // VMEM-resident at dispatch, so its charge is unconditional -- may have
+  // its full weight sweep issued into otherwise-idle DRAM slots ahead of
+  // dispatch. Issued bytes are recorded as the job's prefetch credit and
+  // its charge sites deduct them, so total traffic is exactly invariant.
+  // Eligible entries are the next `dbuf_lookahead` unstarted tags in job
+  // creation order (creation order tracks execution order; the byte cap is
+  // the VMEM-honesty bound). Beats are issued only when the demand queue
+  // left slack this cycle, so demand always goes first.
+  // ---------------------------------------------------------------------
+  struct PrefetchEntry {
+    Job *job;
+    uint64_t next_addr;
+    int64_t beats_left;
+  };
+  std::vector<PrefetchEntry> pf_list;
+  size_t pf_cursor = 0;
+  if (dbuf_lookahead > 0) {
+    std::set<Job *> seen;
+    std::set<int> seen_tags;
+    std::vector<Job *> to_visit;
+    for (auto &phase_jobs: time_enqueues.to_enqueue)
+      for (auto *jb: *phase_jobs) to_visit.push_back(jb);
+    std::vector<Job *> all;
+    while (!to_visit.empty()) {
+      Job *jb = to_visit.back();
+      to_visit.pop_back();
+      if (!seen.insert(jb).second) continue;
+      all.push_back(jb);
+      for (auto *c: jb->children) to_visit.push_back(c);
+    }
+    std::sort(all.begin(), all.end(),
+              [](Job *a, Job *b) { return a->job_idx < b->job_idx; });
+    for (auto *jb: all) {
+      if (jb->prefetchable_weight_bytes() <= 0 || jb->prefetch_tag() == -1) continue;
+      if (!seen_tags.insert(jb->prefetch_tag()).second) continue;// first of tag only
+      int64_t beats = jb->prefetchable_weight_bytes() / bytes_per_tx;
+      if (beats > 0) pf_list.push_back({jb, jb->addr_hold, beats});
+    }
+  }
+
   for (auto state: states) {
     n_idle_units[state->get_ty_idx()] += 1;
     total_idle += 1;
@@ -188,6 +233,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           total_frontier--;
 
           state->j = job;
+          job->started = true;// stops -dbuf prefetch issue for this job
           LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, state->vcd_idx), job->job_idx);
           state->init();
           state->min_stage_cycles += job_overhead_cycles;
@@ -262,11 +308,34 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
       successful_enqueue = mem::try_enqueue_tx();
       dram_cmds += successful_enqueue;
     }
-    // TEMP DIAG: cycles where no unit offers DRAM any work (nothing queued,
-    // nothing in flight) -- the demand-idle time recoverable by prefetch.
+    // Offered-load stat: cycles where no unit gives DRAM any work (nothing
+    // queued, nothing in flight) -- the starvation -dbuf exists to fill.
     if (to_enqueue.empty() && mem::address_reads_bkwds_lookup.empty() &&
         mem::address_writes_bkwds_lookup.empty())
       mem_demand_idle++;
+
+    // -dbuf issue: fill only the slack the demand enqueue left this cycle.
+    if (dbuf_lookahead > 0) {
+      while (pf_cursor < pf_list.size() &&
+             (pf_list[pf_cursor].job->started || pf_list[pf_cursor].beats_left == 0))
+        pf_cursor++;
+      int budget = dram_enq_per_cycle - (int) to_enqueue.size();
+      for (size_t e = pf_cursor;
+           e < pf_list.size() && e < pf_cursor + dbuf_lookahead && budget > 0; ++e) {
+        auto &ent = pf_list[e];
+        if (ent.job->started || ent.beats_left == 0) continue;
+        int n = (int) std::min<int64_t>(budget, ent.beats_left);
+        for (int b = 0; b < n; ++b) {
+          // Priority 3 (behind SA/VPU demand for -mem_prio); no owning state:
+          // completions are absorbed by the null-guard in the DRAM callback.
+          to_enqueue.emplace_back(ent.next_addr, false, 3, nullptr);
+          ent.next_addr += bytes_per_tx;
+        }
+        ent.beats_left -= n;
+        ent.job->prefetch_credit_bytes += (int64_t) n * bytes_per_tx;
+        budget -= n;
+      }
+    }
   }
 
 #ifdef VCD

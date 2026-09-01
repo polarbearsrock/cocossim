@@ -145,8 +145,10 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
                         (weights_stay_resident && (new_row || row_i > 1));
     // int64: panel * n_weight_streams (one KV cache per sequence) can pass
     // 2^31 at long-context decode shapes.
-    int64_t rb = skip_weights ? 0
+    int64_t wb = skip_weights ? 0
                : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams;
+    wb -= j->take_prefetch_credit(wb);// -dbuf: beats already streamed ahead
+    int64_t rb = wb;
     if (new_row && !sj->act_resident) {
       rb += activation_panel_bytes(sj->M, sj->K, sz);
     }
@@ -194,9 +196,10 @@ void SystolicArray::SysArrayState::init() {
     resident_weight_tag =
         (weights_stay_resident && sj->weight_tag != -1) ? sj->weight_tag : -1;
     resident_rows_used = weights_resident ? resident_rows_used + sj->M : sj->M;
-    int64_t rb = (sj->act_resident ? 0 : (int64_t) activation_panel_bytes(sj->M, sj->K, sz))
-               + (weights_resident ? 0
-                  : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams);
+    int64_t wb = weights_resident ? 0
+               : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams;
+    wb -= j->take_prefetch_credit(wb);// -dbuf: beats already streamed ahead
+    int64_t rb = (sj->act_resident ? 0 : (int64_t) activation_panel_bytes(sj->M, sj->K, sz)) + wb;
     // rb can now be 0 (act_resident + resident weights): charge nothing, like
     // init_row_loop. For rb > 0 the max(.,1) floor is unchanged.
     int n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
@@ -225,7 +228,7 @@ SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws, in
                               std::max((sz * sz * data_type_width * batch_size) / bytes_per_tx, 1),
                               n_weight_streams, fused_out, act_resident)),
       M(m), K(k), N(n), n_weight_streams(n_weight_streams),
-      fused_out(fused_out), act_resident(act_resident) {}
+      fused_out(fused_out), act_resident(act_resident), sz_cfg(sz), ws_cfg(ws) {}
 
 
 std::string SystolicArray::SysArrayJob::get_job_dims_string() const {

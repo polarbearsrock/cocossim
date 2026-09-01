@@ -452,12 +452,20 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // activation side (the softmaxed scores) is already on-chip. Q/K/V reads
     // and the O write remain, which is exactly what the fused kernel moves.
     bool fa = fuse_attn != 0;
+    // GQA group siblings are PINNED to one core: hardware fetches a group's
+    // K/V panels once into shared VMEM, and the tag-residency machinery only
+    // reproduces that when the siblings run on the same MXU. Unpinned, the
+    // second fetch happened or not by scheduling luck -- a placement lottery
+    // worth several percent of decode traffic (caught by V27b's invariance
+    // check). Round-robin over cores keeps the per-MXU job count balanced
+    // whenever n_cores divides the group count.
     for (int h = 0; h < nh; ++h) {
       if (h % group_sz == 0) next_weight_tag++;
       auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws,
                                                 kv_streams, /*fused_out=*/fa);
       sc->weight_tag = next_weight_tag;
       sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores, kv_streams);
+      sc->core_id = (h / group_sz) % a_config.n_cores;
       scores.push_back(sc);
     }
     next_weight_tag++;
@@ -467,6 +475,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
                                                  kv_streams, /*fused_out=*/false, /*act_resident=*/fa);
       avj->weight_tag = next_weight_tag;
       avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores, kv_streams);
+      avj->core_id = (h / group_sz) % a_config.n_cores;
       av.push_back(avj);
     }
     next_weight_tag++;

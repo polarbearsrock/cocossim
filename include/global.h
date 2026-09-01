@@ -49,6 +49,11 @@ extern int mem_prio;
 // touch HBM. Attention traffic becomes read Q,K,V + write O, matching the
 // fused kernels XLA/vLLM always emit. Compute and dependencies are unchanged.
 extern int fuse_attn;
+// Cross-op weight prefetch (-dbuf, spec 6.7): the N next unstarted weight
+// tags' first jobs may stream their weight sweep into otherwise-idle DRAM
+// slots ahead of dispatch, modeling XLA's next-operator prefetch (B2/C5v2).
+// 0 = off. Traffic is invariant: prefetched beats replace demand beats 1:1.
+extern int dbuf_lookahead;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

@@ -768,5 +768,56 @@ else
   bad "V25c rc=$rv (want 1 + message)"
 fi
 
+# V27: -dbuf N cross-op weight prefetch (XLA streams the NEXT operator's
+# weights under the current op's compute/barrier tail -- B2/C5v2). Only the
+# FIRST job of each weight_tag is prefetchable: a fresh tag can never be
+# VMEM-resident at dispatch, so every prefetched beat replaces a demand beat
+# 1:1 and total traffic is EXACTLY invariant (the load-bearing assertion).
+# Prefetch fills only otherwise-idle DRAM slots (issues when the demand
+# queue is near-empty), so it can only shift time, not add contention.
+# V27a: prefill Transformer with VPU-serial segments -> cycles drop, CMDs equal.
+printf 'Transformer 1 512 8 8 2048 512 0 1\n' > "$WORK/v27.txt"
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -i "$WORK/v27.txt" -o "$WORK/v27a_s.txt" > "$WORK/v27a.log" 2>&1
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -dbuf 2 -i "$WORK/v27.txt" -o "$WORK/v27b_s.txt" > "$WORK/v27b.log" 2>&1
+c0=$(cycles_of "$WORK/v27a_s.txt"); c1=$(cycles_of "$WORK/v27b_s.txt")
+d0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27a.log" | tail -1 | awk '{print $3}')
+d1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27b.log" | tail -1 | awk '{print $3}')
+if [ -n "$c0" ] && [ -n "$c1" ] && [ "$c1" -lt "$c0" ] && [ "$d0" = "$d1" ]; then
+  ok "V27a -dbuf 2 hides weight streams (cycles $c0 -> $c1, CMDs invariant $d0)"
+else
+  bad "V27a cycles $c0 -> $c1, CMDs $d0 vs $d1 (want fewer cycles, equal CMDs)"
+fi
+
+# V27b: decode gate -- -dbuf must not degrade decode (<= +2% cycles) and
+# traffic must be exactly invariant. Exactness here leans on GQA group
+# pinning: with siblings pinned to one core, residency sequences are
+# deterministic, so prefetch timing shifts cannot flip fetch decisions
+# (unpinned, sibling placement was a scheduling lottery worth several
+# percent of decode traffic -- this assertion is what caught it).
+printf 'Transformer 2 512 8 4 1024 512 1 8\n' > "$WORK/v27d.txt"
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -i "$WORK/v27d.txt" -o "$WORK/v27c_s.txt" > "$WORK/v27c.log" 2>&1
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -dbuf 2 -i "$WORK/v27d.txt" -o "$WORK/v27d_s.txt" > "$WORK/v27d.log" 2>&1
+cu=$(cycles_of "$WORK/v27c_s.txt"); cf=$(cycles_of "$WORK/v27d_s.txt")
+du=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27c.log" | tail -1 | awk '{print $3}')
+df=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27d.log" | tail -1 | awk '{print $3}')
+gate=$(awk -v a="${cu:-0}" -v b="${cf:-0}" 'BEGIN{print (a>0 && b>0 && b<=a*1.02)?1:0}')
+if [ "$gate" -eq 1 ] && [ "$du" = "$df" ]; then
+  ok "V27b decode gate holds under -dbuf ($cu -> $cf, CMDs invariant $du)"
+else
+  bad "V27b cycles $cu -> $cf, CMDs $du vs $df"
+fi
+
+# V27c: invalid -dbuf rejected cleanly.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dbuf -1 -i "$WORK/v27.txt" -o "$WORK/v27e_s.txt" > "$WORK/v27e.log" 2>&1; rv=$?
+if [ "$rv" -eq 1 ] && grep -q 'dbuf' "$WORK/v27e.log"; then
+  ok "V27c -dbuf -1 rejected"
+else
+  bad "V27c rc=$rv (want 1 + message)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

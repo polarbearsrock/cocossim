@@ -141,9 +141,24 @@ namespace SystolicArray {
     // A matrix is the softmaxed scores).
     const bool fused_out;
     const bool act_resident;
+    // Geometry the job was built for, kept for prefetchable_weight_bytes
+    // (the executing state has its own copies; these must match it).
+    const int sz_cfg;
+    const bool ws_cfg;
 
     SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams = 1,
                 bool fused_out = false, bool act_resident = false);
+
+    // Cross-op weight prefetch (-dbuf): one full column-tile sweep of the
+    // weight side -- exactly what init() + init_row_loop() charge for a
+    // no-residency pass, so the credit consumes to zero. OS only.
+    [[nodiscard]] int64_t prefetchable_weight_bytes() const override {
+      if (ws_cfg || weight_tag == -1) return 0;
+      int cols = std::max(N / sz_cfg, 1);
+      return (int64_t) cols *
+             weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
+    }
+    [[nodiscard]] int prefetch_tag() const override { return weight_tag; }
 
     [[nodiscard]] std::string get_job_dims_string() const override;
   };

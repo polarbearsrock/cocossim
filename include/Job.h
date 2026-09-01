@@ -39,6 +39,24 @@ struct Job {
 
   int rem_deps;
   bool is_done = false;
+  // Cross-op weight prefetch (-dbuf, spec 6.7). The prefetcher (Arch.cc)
+  // streams a future job's weight sweep into otherwise-idle DRAM slots and
+  // records the bytes here; the executing state then charges that much less
+  // at its own read sites, so every prefetched beat replaces a demand beat
+  // 1:1 and total traffic is invariant. `started` stops further issue the
+  // moment the job is dispatched.
+  int64_t prefetch_credit_bytes = 0;
+  bool started = false;
+  // How many weight-side bytes of this job the prefetcher may stream ahead
+  // of dispatch (0 = not prefetchable), and the identity used to pick only
+  // the FIRST job of each weight tag -- a fresh tag can never be
+  // VMEM-resident at dispatch, which is what makes the credit exact.
+  [[nodiscard]] virtual int64_t prefetchable_weight_bytes() const { return 0; }
+  [[nodiscard]] virtual int prefetch_tag() const { return -1; }
+  // Consume credit against a charge of `want` bytes, whole beats only
+  // (keeping demand-side beat totals exactly complementary to the issued
+  // prefetch beats; a sub-beat tail stays with the demand charge).
+  int64_t take_prefetch_credit(int64_t want);
   Job(uint64_t alloc_size);
 
   void add_child(Job *j) {

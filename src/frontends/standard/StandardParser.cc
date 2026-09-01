@@ -36,7 +36,8 @@ Arch* StandardParser::make_arch() {
               {"-mp_par", &mp_par},
               {"-mem_prio", &mem_prio},
               {"-vmem_rows", &vmem_resident_rows},
-              {"-fuse_attn", &fuse_attn}},
+              {"-fuse_attn", &fuse_attn},
+              {"-dbuf", &dbuf_lookahead}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -53,7 +54,8 @@ Arch* StandardParser::make_arch() {
              "-mp_par       replicas run concurrently (1) or chained sequentially (0, default)\n"
              "-mem_prio     serve SA memory transactions before VPU ones: 0 FIFO (default), 1 on\n"
              "-vmem_rows    weight-residency row window (default 512; 0 = unlimited)\n"
-             "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on");
+             "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on\n"
+             "-dbuf         cross-op weight prefetch lookahead in weight tags (default 0 = off)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -116,6 +118,10 @@ Arch* StandardParser::make_arch() {
   }
   if (fuse_attn != 0 && fuse_attn != 1) {
     std::cerr << "Error: -fuse_attn must be 0 or 1, got " << fuse_attn << std::endl;
+    exit(1);
+  }
+  if (dbuf_lookahead < 0) {
+    std::cerr << "Error: -dbuf must be >= 0, got " << dbuf_lookahead << std::endl;
     exit(1);
   }
   do_par = mp_par;

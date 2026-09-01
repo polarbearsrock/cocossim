@@ -98,7 +98,9 @@ void mem::setup() {
             if (it->second.empty()) {
                 address_reads_bkwds_lookup.erase(it);
             }
-            q->mem_read_left -= 1;
+            // nullptr = -dbuf prefetch beat (no owning state): the credit was
+            // booked at issue time, nothing waits on the completion.
+            if (q) q->mem_read_left -= 1;
         } else {
             std::cerr << "Error: Address " << std::hex << addr << " not found in address_reads_bkwds_lookup" << std::endl;
         } }, [](uint64_t addr) {
