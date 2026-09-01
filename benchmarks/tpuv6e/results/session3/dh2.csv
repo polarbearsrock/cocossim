@@ -1,0 +1,8 @@
+mode,seq,batch,n_out,wall_s,trace
+prefill,128,1,1,0.017114109999965876,
+prefill,512,1,1,0.01914780000004157,
+prefill,512,8,1,0.10887969899999916,
+prefill,2048,1,1,0.058569089999991775,
+prefill,2048,8,1,0.4529968279999821,
+decode,512,8,64,1.0111440460000267,,wall includes ctx prefill + n_out steps
+decode,2048,32,64,3.233552388000021,,wall includes ctx prefill + n_out steps
