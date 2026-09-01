@@ -154,6 +154,21 @@ written is the kernel that ran. Random weights (timing is weight-value-independe
 no checkpoint logistics. Harness versioned in `benchmarks/tpuv6e/`; raw traces and
 extracted CSVs in `$TMPDIR/isca2027_cocossim/results/`.
 
+**Amendments (2026-09-01, Plan 2 brainstorm + session 0):** Phase D's vehicle
+is **vLLM offline mode (tpu-inference) serving Qwen3-8B**, superseding
+"Llama-3.1-8B-class via MaxText" — vLLM gives production Pallas kernels
+(ragged paged attention) and a two-tier design: offline fixed-shape points
+for the holdout fit, serving-mode sweeps for characterization. Qwen3-8B's
+attention geometry matches the Llama-8B assumptions (4096/32/8); dims are
+pinned from the HF config in the harness. Session 0 validated the pipeline
+on a v6e-1 (~$3): traces are kernel-legible (ragged_paged_attention,
+dot_general, add_rsqrt fusions), the kernel census runs on xprof's own
+converters, and the first census already shows the LM head at 7.3% of decode
+device time (the model's prediction was ~7%). Capacity ruling: on-demand
+only (us-east5; us-east1-d is spot-only and preempted 2x/40min). Harness:
+`benchmarks/tpuv6e/`. Probe (ii)'s "4-unit model" phrasing below is
+superseded by the 2-MXU geometry (§3.1).
+
 - **Phase A — GEMM sweep** (SA fitting set): bf16, M ∈ {1, 2, 4, 8, 16, 32, 64, 128,
   256, 512, 1024, 4096} × K, N ∈ {256 … 16384}, plus awkward sizes (100, 300, 1000,
   5120) to expose padding/tiling. Pins decode-regime (small-M) fidelity.
