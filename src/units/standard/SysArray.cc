@@ -82,11 +82,6 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
       switch (state) {
         case read: {  // Read weights and activations
           const int shift_cycles = sz * std::min(systolic_fpu_latency, batch_size);
-          // The shift stage drains this tile's accumulators into the single
-          // output buffer, so the previous tile's write-back (left in flight
-          // under -dbuf_tile) must land first: re-arm the gate. hold_writes
-          // keeps state_transfer from clobbering its counters.
-          writes_gate = true;
           state_transfer(shift, 0, 0, shift_cycles);
           // -dbuf_tile: double buffering. This tile's reads have all drained
           // (process_stage), so issue the NEXT tile's reads now and let the
@@ -106,19 +101,11 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
         case shift:  // Compute and accumulate outputs
           // Write back this column tile's TRUE output block (spec S4a; the
           // window formula in sys_job_alloc_bytes charges the same helper).
-          // process_stage waited for the previous write-back under the
-          // re-armed gate, so the output buffer is free to take this one.
-          hold_writes = false;
+          // The write stage waits for it to land (no output-side double
+          // buffering: under -dbuf_tile only the next tile's READS are in
+          // flight here, so nothing but those reads and this write-back is
+          // ever outstanding when the row cursor rewinds).
           state_transfer(write, 0, sj->fused_out ? 0 : output_tile_bytes(sj->M, sj->N, sz), 0);
-          // -dbuf_tile, non-last tile (hold_reads is set exactly then): the
-          // write-back streams under the next tile's compute instead of
-          // gating it -- it would otherwise queue behind that tile's
-          // prefetched reads in the DRAM's read-preferring write buffer and
-          // serialize the compute the prefetch exists to overlap (V29a).
-          if (hold_reads) {
-            writes_gate = false;
-            hold_writes = true;
-          }
           break;
         case write:  // Write partial sums back to memory
           if (col_i == loop_cols_tiles) {
@@ -259,12 +246,9 @@ void SystolicArray::SysArrayState::init() {
     int64_t credit_cap = (wb > 0 ? wb / bytes_per_tx : 0) +
                          (sj->act_resident ? 0 : (int64_t) activation_panel_bytes(sj->M, sj->K, sz) / bytes_per_tx);
     if (credit_cap > 0) n_read_beats -= (int) j->take_prefetch_credit_beats(credit_cap);
-    // -dbuf_tile bookkeeping never carries across jobs (a job's last tile
-    // always waits for its write-back under an armed gate).
+    // -dbuf_tile bookkeeping never carries across jobs.
     hold_reads = false;
     reads_gate = true;
-    hold_writes = false;
-    writes_gate = true;
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);

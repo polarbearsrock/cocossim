@@ -917,16 +917,16 @@ fi
 # shift/write run while they stream. Matmul 4096^3 on the pinned config
 # (cross-op prefetch off to isolate): cycles drop, CMDs invariant, and never
 # below the MXU compute floor 2*4096^3 / (2 MXU * 256^2 PE * 2 MAC) = 262144.
-# Output side (S4a follow-up): once write-backs were charged at true bytes
-# (V31a, 2048 beats per 256x256 tile instead of 32) the pre-issued reads of
-# tile i+1 throttled tile i's write-back in DRAMSim3's read-preferring
-# 32-entry write buffer (1849 cycles instead of 93 per fetch-pass tile at
-# -c 1) and the write stage gated tile i+1's compute on it -- serializing
-# what the prefetch existed to overlap, and -dbuf_tile 1 came out SLOWER
-# (399846 vs 362109). A non-last tile's write-back now streams under the
-# next tile's compute through one output buffer (State::writes_gate /
-# hold_writes; the next shift stage waits for it to land); the last tile
-# still waits so nothing carries across jobs.
+# Output side: write-backs are charged at true bytes (V31a, 2048 beats per
+# 256x256 tile instead of 32) and the write stage waits for them to land --
+# there is no output-side double buffering. Known limit, NOT fixed here:
+# with -act_share 0 (both cores fetch their own activation panel at every
+# job start) tile i+1's pre-issued reads throttle tile i's write-back in
+# DRAMSim3's read-preferring 32-entry write buffer and -dbuf_tile 1 comes
+# out SLOWER than 0 on this shape (399846 vs 362109); under the pinned
+# -act_share 1 the ordering below holds (355523 -> 353650). An unflagged
+# output gate (State::writes_gate) once claimed to fix that inversion; it
+# did not (386644 vs 362109 with -act_share 0) and was removed.
 # CMDs (beat-exact, -act_share 1 default): per core, 16 row-block jobs of
 # 8 column tiles; weight tile = min(256,2048)*4096*2 B = 32768 beats, act
 # panel = 256*4096*2 B = 32768 beats, write-back = 256*256*2/64 = 2048.
@@ -935,7 +935,8 @@ fi
 #           -> 1048576
 #   core 1: act_resident (the panel is staged once, S4b): 8 x 32768 weight
 #           tiles on job 1 + 262144 writes -> 524288
-#   total 1572864 (2097152 with -act_share 0; 1839104 before S4a).
+#   total 1572864 (2097152 with -act_share 0; pre-S4 tree, per-MXU panels
+#   and 32-beat writes: 1572864 + 2 x 16 x 8 x 32 = 1581056, measured).
 printf 'Matmul 4096 4096 4096\n' > "$WORK/v29.txt"
 "$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29a_s.txt" -dbuf 0 -dbuf_tile 0 > "$WORK/v29a.log" 2>&1
 "$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29b_s.txt" -dbuf 0 -dbuf_tile 1 > "$WORK/v29b.log" 2>&1

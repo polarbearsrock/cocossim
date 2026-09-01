@@ -294,25 +294,29 @@ residuals before being dismissed as noise.
   (the four suppressed score write-backs are 512 beats each, not 32). V31a
   pins a single `Matmul 256 64 256` at 1024 reads + 2048 writes = 3072.
   Prefetch credit, fusion deltas and the V27/V29/V30 invariance assertions
-  did not move. What DID move: V29a's cycle ordering. With true write
-  volumes, `-dbuf_tile 1` came out slower than 0 (399846 vs 362109 on
-  4096³, `-dbuf 0`) because tile i+1's pre-issued reads throttle tile i's
-  write-back in DRAMSim3's read-preferring 32-entry write buffer (1849
-  cycles instead of 93 per fetch-pass tile at -c 1) while the write stage
-  gated tile i+1's compute on it — a pre-existing gating flaw in
-  `-dbuf_tile` (operand double buffering without result double buffering)
-  that the 1/64 charge had masked. Fixed in the same change: a non-last
-  tile's write-back streams under the next tile's compute through ONE
-  output buffer (`State::writes_gate`/`hold_writes`, symmetric to the read
-  pair; the next shift stage waits for it to land, the last tile still waits
-  outright so nothing carries across jobs). Traffic is untouched. Pinned
-  config after this entry and S4b together (cycles / DRAM CMDs): 4096³
-  329454 → 331538 (+0.6%), 1581056 → 1572864 — the +516096 write beats and
-  S4b's −524288 activation beats nearly cancel, the coincidence the benchmark
-  spec anticipated; one prefill-2048 layer 2629407 → 2608701 (−0.8%), CMDs
-  +3.1%, SA memstall 76941 → 49925; one decode-512×8 layer 480094 → 492196
-  (+2.5%), CMDs −0.07%. The busy/memstall split, not the totals, is what the
-  fidelity matrix judges.
+  did not move. Known timing limit exposed by the true write volume (NOT
+  fixed, documented in V29a): with `-act_share 0` both cores fetch their own
+  activation panel at every job start, tile i+1's pre-issued reads throttle
+  tile i's write-back in DRAMSim3's read-preferring 32-entry write buffer,
+  and `-dbuf_tile 1` comes out slower than 0 on 4096³ (`-dbuf 0`: 399846 vs
+  362109). Under the pinned `-act_share 1` the ordering holds (353650 vs
+  355523). The first version of this fix shipped an unflagged output-side
+  gate (`State::writes_gate`/`hold_writes`: a non-last tile's write-back
+  streamed under the next tile's compute) claiming to cure that inversion;
+  the review showed it did not (386644 vs 362109 with `-act_share 0`), that
+  V29a's ordering is restored by S4b alone, and that it was an unflagged
+  timing mechanism outside the accounting scope — it was removed (fix
+  round 1). Its removal costs cycles on the pinned config (CMDs invariant):
+  4096³ 331538 → 345903 (+4.3%), one Llama-8B prefill layer
+  (`Transformer 1 4096 32 8 14336 2048 0 1`) 2861904 → 3088716 (+7.9%), one
+  decode layer (`... 512 1 8`) 554805 → 551329 (−0.6%). An output-side
+  double buffer is a legitimate mechanism candidate for a separate,
+  flagged, default-off task with its own isolating test. Pinned config for
+  S4a + S4b together, relative to the pre-S4 tree (cycles / DRAM CMDs):
+  4096³ 329454 → 345903 (+5.0%), 1581056 → 1572864 — the +516096 write
+  beats and S4b's −524288 activation beats nearly cancel, the coincidence
+  the benchmark spec anticipated. The busy/memstall split, not the totals,
+  is what the fidelity matrix judges.
 - **(added 2026-09-01; ADDRESSED same day, flag `-act_share` default 1,
   tests V31b + V29a CMD pin; benchmark spec S4b) Activation panels read once
   per MXU instead of once into shared VMEM.** `createSAJobs` splits N across
