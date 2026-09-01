@@ -128,7 +128,9 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   struct PrefetchEntry {
     Job *job;
     uint64_t next_addr;
-    int64_t beats_left;
+    int64_t beats_left;    // weight sweep (streamable any time)
+    int64_t act_beats_left;// first activation panel (streamable once READY)
+    bool done() const { return job->started || (beats_left == 0 && act_beats_left == 0); }
   };
   std::vector<PrefetchEntry> pf_list;
   size_t pf_cursor = 0;
@@ -178,8 +180,9 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
       } else {
         will_fetch = tag != -1 && seen_tags.insert(tag).second;
       }
-      int64_t beats = jb->prefetchable_weight_beats();
-      if (will_fetch && beats > 0) pf_list.push_back({jb, jb->addr_hold, beats});
+      int64_t beats = will_fetch ? jb->prefetchable_weight_beats() : 0;
+      int64_t act = jb->prefetchable_act_beats();
+      if (beats > 0 || act > 0) pf_list.push_back({jb, jb->addr_hold, beats, act});
     }
   }
 
@@ -360,15 +363,19 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     // weights it existed to hide.
     if (dbuf_lookahead > 0) {
       const int64_t pf_cap_beats = ((int64_t) dbuf_lookahead << 20) / bytes_per_tx;
-      while (pf_cursor < pf_list.size() &&
-             (pf_list[pf_cursor].job->started || pf_list[pf_cursor].beats_left == 0))
+      while (pf_cursor < pf_list.size() && pf_list[pf_cursor].done())
         pf_cursor++;
       int budget = dram_enq_per_cycle - (int) to_enqueue.size();
       for (size_t e = pf_cursor;
            e < pf_list.size() && budget > 0 && pf_outstanding_beats < pf_cap_beats; ++e) {
         auto &ent = pf_list[e];
-        if (ent.job->started || ent.beats_left == 0) continue;
-        int n = (int) std::min<int64_t>(std::min<int64_t>(budget, ent.beats_left),
+        if (ent.job->started) continue;
+        // Weights first; the activation panel only once the job is ready.
+        int64_t *avail = ent.beats_left > 0 ? &ent.beats_left
+                       : (ent.act_beats_left > 0 && ent.job->rem_deps == 0) ? &ent.act_beats_left
+                       : nullptr;
+        if (!avail) continue;
+        int n = (int) std::min<int64_t>(std::min<int64_t>(budget, *avail),
                                         pf_cap_beats - pf_outstanding_beats);
         // Same guard the demand paths apply (State::check_in_bounds): a walk
         // past the window is the DRAMSim3 R/W-aliasing livelock class.
@@ -382,7 +389,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           to_enqueue.emplace_back(ent.next_addr, false, 3, nullptr);
           ent.next_addr += bytes_per_tx;
         }
-        ent.beats_left -= n;
+        *avail -= n;
         ent.job->prefetch_credit_beats += n;
         pf_outstanding_beats += n;
         budget -= n;

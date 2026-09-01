@@ -61,6 +61,11 @@ extern int dbuf_lookahead;
 // Issued-but-unconsumed prefetch beats (Arch.cc issues,
 // Job::take_prefetch_credit_beats consumes).
 extern int64_t pf_outstanding_beats;
+// Within-op double buffering (-dbuf_tile, spec 6.7): an OS tile's reads are
+// issued when the previous tile's reads drain, so they stream under the
+// shift/write stages instead of after them. 0 = off (tile transitions and
+// every job-start fetch exposed).
+extern int dbuf_tile;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

@@ -160,6 +160,10 @@ namespace SystolicArray {
       int64_t panel = (int64_t) weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
       return (int64_t) cols * (panel / bytes_per_tx);
     }
+    [[nodiscard]] int64_t prefetchable_act_beats() const override {
+      if (ws_cfg || act_resident) return 0;
+      return (int64_t) activation_panel_bytes(M, K, sz_cfg) / bytes_per_tx;
+    }
     [[nodiscard]] int prefetch_tag() const override { return weight_tag; }
     [[nodiscard]] int prefetch_rows() const override { return M; }
     [[nodiscard]] bool prefetch_fits_vmem() const override { return weights_fit_vmem; }

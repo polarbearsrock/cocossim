@@ -891,5 +891,48 @@ else
   bad "V28 SA0 work=${w0:-?} SA1 work=${w1:-?} (want equal)"
 fi
 
+# V29: within-op double buffering. Silicon streams tile i+1's operands under
+# tile i's compute and stages the next row-block's activation panel ahead;
+# the OS state machine used to declare a tile's reads only when its read
+# stage began, leaving the shift/write stages and every job-start activation
+# fetch exposed (4096^3: sim 213 us vs silicon 168 us device, window off).
+# V29a: -dbuf_tile 1 issues the next tile's reads at read-completion and lets
+# shift/write run while they stream. Matmul 4096^3 on the pinned config
+# (cross-op prefetch off to isolate): cycles drop, CMDs invariant, and never
+# below the MXU compute floor 2*4096^3 / (2 MXU * 256^2 PE * 2 MAC) = 262144.
+printf 'Matmul 4096 4096 4096\n' > "$WORK/v29.txt"
+"$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29a_s.txt" -dbuf 0 -dbuf_tile 0 > "$WORK/v29a.log" 2>&1
+"$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29b_s.txt" -dbuf 0 -dbuf_tile 1 > "$WORK/v29b.log" 2>&1
+t0=$(cycles_of "$WORK/v29a_s.txt"); t1=$(cycles_of "$WORK/v29b_s.txt")
+m0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v29a.log" | tail -1 | awk '{print $3}')
+m1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v29b.log" | tail -1 | awk '{print $3}')
+if [ -n "$t0" ] && [ -n "$t1" ] && [ "$t1" -lt "$t0" ] && [ "$t1" -ge 262144 ] && [ "$m0" = "$m1" ]; then
+  ok "V29a -dbuf_tile hides tile transitions (cycles $t0 -> $t1, CMDs invariant $m0)"
+else
+  bad "V29a cycles $t0 -> $t1 (floor 262144), CMDs $m0 vs $m1"
+fi
+
+# V29b: the cross-op prefetcher also stages a READY job's first activation
+# panel (its producers are done, so the data exists). On a single GEMM the
+# weights are resident after job 1, so before this -dbuf had nothing to
+# stream: cycles must now drop with -dbuf 48 vs 0 (tile buffering off to
+# isolate), CMDs invariant.
+"$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29c_s.txt" -dbuf 48 -dbuf_tile 0 > "$WORK/v29c.log" 2>&1
+t2=$(cycles_of "$WORK/v29c_s.txt")
+m2=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v29c.log" | tail -1 | awk '{print $3}')
+if [ -n "$t0" ] && [ -n "$t2" ] && [ "$t2" -lt "$t0" ] && [ "$m0" = "$m2" ]; then
+  ok "V29b -dbuf stages ready jobs' activation panels (cycles $t0 -> $t2, CMDs invariant)"
+else
+  bad "V29b cycles $t0 -> $t2, CMDs $m0 vs $m2"
+fi
+
+# V29c: invalid -dbuf_tile rejected cleanly.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -dbuf_tile 2 -i "$WORK/v29.txt" -o "$WORK/v29e_s.txt" > "$WORK/v29e.log" 2>&1; rv=$?
+if [ "$rv" -eq 1 ] && grep -q 'dbuf_tile' "$WORK/v29e.log"; then
+  ok "V29c -dbuf_tile 2 rejected"
+else
+  bad "V29c rc=$rv (want 1 + message)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

@@ -54,6 +54,9 @@ struct Job {
   // what the charge sites deduct, and never more than the job's address
   // window covers. 0 = not prefetchable.
   [[nodiscard]] virtual int64_t prefetchable_weight_beats() const { return 0; }
+  // Whole beats of the first activation panel, streamable once the job is
+  // READY (rem_deps == 0: its producers are done, so the data exists).
+  [[nodiscard]] virtual int64_t prefetchable_act_beats() const { return 0; }
   [[nodiscard]] virtual int prefetch_tag() const { return -1; }
   // Inputs the prefetcher's residency replay needs (Arch.cc): the rows this
   // job consumes under its tag's residency window (also the "is an SA job"

@@ -277,6 +277,34 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
+- **(added 2026-09-01; ADDRESSED same day, flag `-dbuf_tile`, tests
+  V29a–c) Within-op double buffering.** The OS state machine declared a
+  tile's reads only when its read stage began, so the shift/write stages
+  and every job-start activation fetch were exposed; silicon streams tile
+  i+1's operands under tile i's compute and stages the next row block's
+  activation panel ahead. Two pieces: (1) `-dbuf_tile 1` issues the next
+  tile's reads the moment the current tile's reads drain and lets the
+  shift/write stages run while they stream (`State::reads_gate` /
+  `hold_reads`; the write→read transition re-arms the gate instead of
+  re-declaring the reads); (2) the cross-op prefetcher also stages a READY
+  job's first activation panel (`prefetchable_act_beats`; producers done,
+  so the data exists), credited exactly like weights. Traffic invariant
+  (V29a/b pin CMDs equal). Device-side GEMM acceptance (pinned config):
+  8192³ 1448 → 1352 µs vs silicon 1409 (−4%); 4096³ 213 → 188 vs 168
+  (+12%, from +27%); 256×8192² 98 vs 96 (+2%). Holdout: prefill-2048
+  66.0 → 63.9 ms (+9.1% vs silicon); MAPE 21.7% → 20.7%.
+  Residual identified by the same runs: GEMMs with only 2–4 row-block jobs
+  (512×8192², 1024×8192²) stay +26–33% because the FIRST row-block job
+  fetches the whole weight slice tile by tile while later jobs run
+  compute-only on the resident copy — a fetch-heavy phase then DRAM-idle
+  phases. Silicon keeps the activations resident, streams each weight tile
+  once and computes all rows against it, spreading one weight stream over
+  the whole op's compute. That is the loop order `createSAJobs` chooses
+  (row-block jobs × all column tiles), not a pipeline gap; inside a layer
+  the cross-op prefetcher pre-stages the first job's weights during the
+  previous op, so the layer-level cost is smaller than the single-op
+  microbenchmark shows. Prefill-2048 DRAM demand-idle is now 77%: the
+  layer is serialization/VPU-bound, not bandwidth-bound.
 - **(added 2026-09-01; ADDRESSED same day, tests V26/V27a–c) DRAM demand
   starvation: the attention barrier, the missing cross-op prefetch, and the
   GQA placement lottery.** After fusion, a new `MEM demand-idle` stat showed

@@ -80,9 +80,24 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
       }
     } else {  // Output Stationary mode
       switch (state) {
-        case read:  // Read weights and activations
-          state_transfer(shift, 0, 0, sz * std::min(systolic_fpu_latency, batch_size));
-          break;
+        case read: {  // Read weights and activations
+          const int shift_cycles = sz * std::min(systolic_fpu_latency, batch_size);
+          state_transfer(shift, 0, 0, shift_cycles);
+          // -dbuf_tile: double buffering. This tile's reads have all drained
+          // (process_stage), so issue the NEXT tile's reads now and let the
+          // shift/write stages run while they stream -- what the hardware's
+          // operand double buffers do. The write->read transition then
+          // re-arms the gate instead of declaring the reads afresh.
+          bool last_tile = (col_i == loop_cols_tiles && row_i == loop_row_tiles);
+          if (dbuf_tile && !last_tile) {
+            bool new_row = (col_i == loop_cols_tiles);
+            if (new_row) j->addr = j->addr_hold;
+            init_row_loop(new_row);          // programs the next tile's read counters
+            min_stage_cycles = shift_cycles;  // init_row_loop set the compute length; restore
+            hold_reads = true;
+            reads_gate = false;
+          }
+        } break;
         case shift:  // Compute and accumulate outputs
           state_transfer(write, 0, sj->fused_out ? 0 : beats_per_wb, 0);
           break;
@@ -95,8 +110,14 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
               TO_IDLE_CLEANUP();
             } else {
               // Move to next row tile
-              init_row_loop(true);
-              j->addr = j->addr_hold;
+              if (hold_reads) {
+                hold_reads = false;
+                reads_gate = true;
+                min_stage_cycles = div_ru(sj->K, mxu_macs_per_pe);
+              } else {
+                init_row_loop(true);
+                j->addr = j->addr_hold;
+              }
               UPDATE_STATE(SystolicArray::read);
               if (is_idle_from_memory) {
                 UPDATE_IDLEMEM(false);
@@ -105,7 +126,13 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
               row_i++;
             }
           } else {
-            init_row_loop(false);
+            if (hold_reads) {
+              hold_reads = false;
+              reads_gate = true;
+              min_stage_cycles = div_ru(sj->K, mxu_macs_per_pe);
+            } else {
+              init_row_loop(false);
+            }
             UPDATE_STATE(SystolicArray::read);
             if (is_idle_from_memory) {
               UPDATE_IDLEMEM(false);
@@ -206,8 +233,16 @@ void SystolicArray::SysArrayState::init() {
     // init_row_loop. For rb > 0 the max(.,1) floor is unchanged.
     int n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
     // -dbuf: prefetched beats come off the full-formula count (see
-    // init_row_loop for the exactness argument).
-    if (wb > 0) n_read_beats -= (int) j->take_prefetch_credit_beats(wb / bytes_per_tx);
+    // init_row_loop for the exactness argument). The first tile may hold
+    // credit for the weight panel AND the activation panel (a ready job's
+    // activations are staged ahead too); the count always contains both
+    // floors, so the deduction stays non-negative.
+    int64_t credit_cap = (wb > 0 ? wb / bytes_per_tx : 0) +
+                         (sj->act_resident ? 0 : (int64_t) activation_panel_bytes(sj->M, sj->K, sz) / bytes_per_tx);
+    if (credit_cap > 0) n_read_beats -= (int) j->take_prefetch_credit_beats(credit_cap);
+    // -dbuf_tile bookkeeping never carries across jobs.
+    hold_reads = false;
+    reads_gate = true;
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);

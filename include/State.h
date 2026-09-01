@@ -96,6 +96,14 @@ struct State {
 
   bool activation_in_buffer = false;// Enable DRAM-to-buffer flow simulation if false
 
+  // Within-op double buffering (-dbuf_tile). A unit may issue its NEXT
+  // tile's reads while the current tile's shift/write stages run: while
+  // hold_reads is set, state_transfer leaves the read counters untouched
+  // (they belong to the tile in flight), and while reads_gate is clear,
+  // process_stage does not wait on them. The next read stage re-arms both.
+  bool reads_gate = true;
+  bool hold_reads = false;
+
   virtual ~State() = default;
   State() = delete;
   State(int memory_priority);
