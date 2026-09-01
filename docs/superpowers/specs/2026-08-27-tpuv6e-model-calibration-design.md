@@ -277,6 +277,63 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
+- **(added 2026-09-01; ADDRESSED same day, accounting fix — no flag — tests
+  V31a + re-derived V18/V18b/V24/V25a/V29a; benchmark spec S4a) OS
+  write-back charged at 1/64 of its bytes.** The OS `shift` stage passed
+  `beats_per_wb` (= sz·sz·dtw/64, a BEAT count) through `state_transfer`'s
+  BYTE argument, so every column tile wrote 1/`bytes_per_tx` of its output
+  block (2 beats instead of 128 at sz 64, 32 instead of 2048 at sz 256), and
+  `sys_job_alloc_bytes` mirrored the double division on purpose (window/walk
+  lockstep). Both sites now charge `output_tile_bytes` =
+  min(sz,M)·min(sz,N)·dtw·batch per column tile (`fused_out` suppression
+  kept; WS mode already wrote the true M×N). Hand re-derivations, all
+  landing beat-exact: V18 66048 → **98304** (writes 512 → 32768 = 16 jobs ×
+  16 tiles × 128 beats; `-vmem_reuse 0` 557568 → 589824, now pinned exactly,
+  V18b likewise), V24 2363392/790528 → **2621440/1048576** (writes 4096 →
+  262144; ratio 2.99 → 2.5, now pinned exactly), V25a delta 6272 → **8192**
+  (the four suppressed score write-backs are 512 beats each, not 32). V31a
+  pins a single `Matmul 256 64 256` at 1024 reads + 2048 writes = 3072.
+  Prefetch credit, fusion deltas and the V27/V29/V30 invariance assertions
+  did not move. What DID move: V29a's cycle ordering. With true write
+  volumes, `-dbuf_tile 1` came out slower than 0 (399846 vs 362109 on
+  4096³, `-dbuf 0`) because tile i+1's pre-issued reads throttle tile i's
+  write-back in DRAMSim3's read-preferring 32-entry write buffer (1849
+  cycles instead of 93 per fetch-pass tile at -c 1) while the write stage
+  gated tile i+1's compute on it — a pre-existing gating flaw in
+  `-dbuf_tile` (operand double buffering without result double buffering)
+  that the 1/64 charge had masked. Fixed in the same change: a non-last
+  tile's write-back streams under the next tile's compute through ONE
+  output buffer (`State::writes_gate`/`hold_writes`, symmetric to the read
+  pair; the next shift stage waits for it to land, the last tile still waits
+  outright so nothing carries across jobs). Traffic is untouched. Pinned
+  config after this entry and S4b together (cycles / DRAM CMDs): 4096³
+  329454 → 331538 (+0.6%), 1581056 → 1572864 — the +516096 write beats and
+  S4b's −524288 activation beats nearly cancel, the coincidence the benchmark
+  spec anticipated; one prefill-2048 layer 2629407 → 2608701 (−0.8%), CMDs
+  +3.1%, SA memstall 76941 → 49925; one decode-512×8 layer 480094 → 492196
+  (+2.5%), CMDs −0.07%. The busy/memstall split, not the totals, is what the
+  fidelity matrix judges.
+- **(added 2026-09-01; ADDRESSED same day, flag `-act_share` default 1,
+  tests V31b + V29a CMD pin; benchmark spec S4b) Activation panels read once
+  per MXU instead of once into shared VMEM.** `createSAJobs` splits N across
+  cores and every core's row-block job charged its own min(sz,M)×K
+  activation panel (at init and at each row advance); hardware stages the
+  tile once and both MXUs consume it — residual (b) of the VMEM-residency
+  entry below, a fixed ~2×A on every 2-core GEMM. Under `-act_share 1` only
+  core 0's row-block job charges the panel; the same row block's jobs on
+  cores ≥ 1 are constructed `act_resident` (the existing fusion endpoint
+  flag: no activation reads at init/row advance, no activation prefetch
+  entry, window formula already mirrored). Exact on traffic; an
+  approximation on timing — core 1 may start computing before core 0's
+  fetch has landed (no cross-core wait is modeled). Attention jobs (per-head
+  Q slices, group-pinned) are untouched. `-act_share 0` restores the
+  per-MXU reads for ablation; `configs/tpuv6e.sh` pins 1. V31b pins
+  `Matmul 256 256 512` at -c 2: 12288 → 10240 CMDs, exactly the one
+  suppressed 2048-beat panel. V29a's total becomes derivable and is pinned:
+  1572864 (core 0 1048576, core 1 524288; 2097152 with `-act_share 0`).
+  Side effect worth knowing: it also removes the lockstep collision of the
+  two cores' job-start panel fetches that dominated the `-dbuf 0` control
+  run in V29a.
 - **(added 2026-09-01; ADDRESSED same day, flag `-fuse_vpu`, tests V30a–d)
   VPU ops fused into GEMM prologues/epilogues.** The silicon kernel census
   puts RMSNorm/RoPE/SiLU/residual at 0.1% of device time: XLA fuses them, so
@@ -426,8 +483,8 @@ residuals before being dismissed as noise.
   Residual, deliberately unmodeled: (a) the fetch pass is not double-buffered —
   the first job of a slice exposes its fetch instead of prefetching under the
   previous op's compute, leaving GEMMs ~40% above their compute floor; (b)
-  activations are re-read once per MXU (no cross-core sharing, fixed ~2×A);
-  (c) VMEM is a shared capacity *parameter*, not a contended *resource* — each
+  activations are re-read once per MXU (no cross-core sharing, fixed ~2×A)
+  — ADDRESSED 2026-09-01 by `-act_share` (entry above); (c) VMEM is a shared capacity *parameter*, not a contended *resource* — each
   consumer checks fit independently (MXUs against buf/n_cores·headroom, VPU
   chunkers against the full buffer), so co-residency can be over-committed near
   the capacity edge; the model is optimistic exactly there. (d) WS mode ignores

@@ -39,7 +39,8 @@ Arch* StandardParser::make_arch() {
               {"-fuse_attn", &fuse_attn},
               {"-dbuf", &dbuf_lookahead},
               {"-dbuf_tile", &dbuf_tile},
-              {"-fuse_vpu", &fuse_vpu}},
+              {"-fuse_vpu", &fuse_vpu},
+              {"-act_share", &act_share}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -59,7 +60,8 @@ Arch* StandardParser::make_arch() {
              "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on\n"
              "-dbuf         cross-op weight prefetch byte budget in MiB (default 0 = off)\n"
              "-dbuf_tile    within-op tile double buffering: 0 off (default), 1 on\n"
-             "-fuse_vpu     norm/rope/silu/residual fused into GEMM epilogues (traffic-free sidecars): 0 off (default), 1 on");
+             "-fuse_vpu     norm/rope/silu/residual fused into GEMM epilogues (traffic-free sidecars): 0 off (default), 1 on\n"
+             "-act_share    GEMM activation panel staged once into shared VMEM across cores: 1 on (default), 0 per-MXU reads");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -134,6 +136,10 @@ Arch* StandardParser::make_arch() {
   }
   if (dbuf_tile != 0 && dbuf_tile != 1) {
     std::cerr << "Error: -dbuf_tile must be 0 or 1, got " << dbuf_tile << std::endl;
+    exit(1);
+  }
+  if (act_share != 0 && act_share != 1) {
+    std::cerr << "Error: -act_share must be 0 or 1, got " << act_share << std::endl;
     exit(1);
   }
   if (ws == 1 && dbuf_lookahead > 0) {

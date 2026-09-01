@@ -70,7 +70,8 @@ bool State::process_stage() {
   // Process current stage: decrement cycle counter and check completion
   if (min_stage_cycles > 0)
     min_stage_cycles--;
-  if (min_stage_cycles == 0 && (mem_read_left == 0 || !reads_gate) && mem_write_left == 0) {
+  if (min_stage_cycles == 0 && (mem_read_left == 0 || !reads_gate) &&
+      (mem_write_left == 0 || !writes_gate)) {
     return true;
   }
   check_idle_from_memory();
@@ -86,7 +87,9 @@ void State::state_transfer(int st, int read_amt_bytes, int write_amt_bytes, int 
   if (!hold_reads) {// -dbuf_tile: the next tile's reads are already in flight
     SET_READS(std::max(rmin, read_amt_bytes / bytes_per_tx));
   }
-  SET_WRITES(std::max(wmin, write_amt_bytes / bytes_per_tx));
+  if (!hold_writes) {// -dbuf_tile: the previous tile's write-back is still draining
+    SET_WRITES(std::max(wmin, write_amt_bytes / bytes_per_tx));
+  }
   if (is_idle_from_memory) {
     UPDATE_IDLEMEM(false);
   }

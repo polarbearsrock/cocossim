@@ -431,38 +431,45 @@ fi
 # V18: VMEM weight residency. Matmul 1024 1024 1024 at sz 64, c 1, default
 # 8 MiB buffer: the 2 MiB weight matrix fits VMEM, so the 16 row-block jobs
 # (same weight_tag, consecutive on the one core) fetch it ONCE.
-# Derivation (verified exact against the run): 16 row-block jobs of 64 rows,
-# default -vmem_rows 0 (unlimited: the C5v2 raw slopes show a VMEM-resident
-# weight streams ONCE -- the earlier 512-row window was mis-derived against
-# host-floor-contaminated C3 throughputs and is retracted) -> ONE weight
-# fetch pass (job 1, 34816 beats: combined act+weight first tile + 15
-# weight tiles) + 15 act-only jobs x 2048 + 512 write beats (beats_per_wb
-# passes through state_transfer's BYTE argument and is divided by 64 again
-# -- pre-existing, mirrored in sys_job_alloc_bytes). Total 66048 -> window
-# [60000, 72000]. With -vmem_reuse 0 the per-job refetch returns: 557568 ->
-# > 500000.
+# Derivation (beat-exact): 16 row-block jobs of 64 rows, 16 column tiles
+# each, default -vmem_rows 0 (unlimited: the C5v2 raw slopes show a
+# VMEM-resident weight streams ONCE -- the earlier 512-row window was
+# mis-derived against host-floor-contaminated C3 throughputs and is
+# retracted).
+#   weight tile  = min(64,1024)*1024*2 B = 131072 B = 2048 beats
+#   act panel    = 64*1024*2 B          = 131072 B = 2048 beats
+#   job 1 (fetch pass): init act+weight 4096 + 15 weight tiles x 2048 = 34816
+#   jobs 2-16 (resident): act panel only              15 x 2048 = 30720
+#   writes: every column tile writes its TRUE 64x64 output block (S4a fix;
+#     it used to pass a beat count through state_transfer's byte argument
+#     and land at 2 beats/tile): 64*64*2/64 = 128 beats x 16 jobs x 16 tiles
+#                                                                 = 32768
+#   total 34816 + 30720 + 32768 = 98304   (pre-S4a: 66048 with 512 writes)
+# With -vmem_reuse 0 every job is a fetch pass: 16 x 34816 + 32768 = 589824
+# (pre-S4a 557568).
 printf 'Matmul 1024 1024 1024\n' > "$WORK/v18.txt"
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v18.txt" -o "$WORK/v18a_s.txt" > "$WORK/v18a.log" 2>&1
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -vmem_reuse 0 -i "$WORK/v18.txt" -o "$WORK/v18b_s.txt" > "$WORK/v18b.log" 2>&1
 con=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18a.log" | tail -1 | awk '{print $3}')
 coff=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18b.log" | tail -1 | awk '{print $3}')
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -vmem_reuse 2 -i "$WORK/v18.txt" -o "$WORK/v18c_s.txt" > "$WORK/v18c.log" 2>&1; rej=$?
-if [ "${con:-0}" -ge 60000 ] && [ "${con:-0}" -le 72000 ] \
-   && [ "${coff:-0}" -gt 500000 ] && [ "$rej" -eq 1 ] && grep -q 'vmem_reuse' "$WORK/v18c.log"; then
+if [ "${con:-0}" -eq 98304 ] \
+   && [ "${coff:-0}" -eq 589824 ] && [ "$rej" -eq 1 ] && grep -q 'vmem_reuse' "$WORK/v18c.log"; then
   ok "V18 VMEM residency: weights fetched once (CMDs $coff -> $con)"
 else
-  bad "V18 CMDs on=$con off=$coff badval_rc=$rej"
+  bad "V18 CMDs on=$con (want 98304) off=$coff (want 589824) badval_rc=$rej"
 fi
 
 # V18b: -buf_mb gates residency (capacity semantics). Same GEMM with
 # -buf_mb 1: the 2 MiB slice no longer fits, so amplified traffic returns
-# even with reuse enabled. This is the Phase-C-falsifiable crossover.
+# even with reuse enabled -- the same 589824 beats as -vmem_reuse 0 (V18).
+# This is the Phase-C-falsifiable crossover.
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -buf_mb 1 -i "$WORK/v18.txt" -o "$WORK/v18d_s.txt" > "$WORK/v18d.log" 2>&1
 csmall=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v18d.log" | tail -1 | awk '{print $3}')
-if [ "${csmall:-0}" -gt 500000 ]; then
+if [ "${csmall:-0}" -eq 589824 ]; then
   ok "V18b -buf_mb 1 defeats residency (CMDs $csmall)"
 else
-  bad "V18b CMDs=$csmall (expected > 500000: slice must not fit a 1 MiB VMEM)"
+  bad "V18b CMDs=$csmall (want 589824: slice must not fit a 1 MiB VMEM)"
 fi
 
 # V18c: within-job row-pass reuse (attention shape). Prefill scores/AV jobs
@@ -671,7 +678,16 @@ fi
 # 4096^3. Default is now 0 (unlimited) and must equal an explicit 0.
 # Matmul 2048 4096 4096 at -sa_sz 256: 8 row-block jobs, slice 32 MiB fits.
 # Explicit -vmem_rows 512 = 2 jobs/window -> 4 weight fetches; 0 -> 1 fetch.
-# Weight fetch = 524288 beats, activations 262144, writes ~4k: ratio ~2.99.
+# Derivation (beat-exact, -c 1, no prefetch):
+#   weight tile = min(256,4096)*4096*2 B = 2 MiB = 32768 beats; 16 tiles
+#   act panel   = 256*4096*2 B           = 2 MiB = 32768 beats
+#   fetch-pass job: init act+weight 65536 + 15 x 32768 = 557056
+#   resident job:   act panel only                     =  32768
+#   writes (S4a true bytes): 256*256*2/64 = 2048 beats x 8 jobs x 16 tiles
+#                                                      = 262144
+#   -vmem_rows 512: 4 x 557056 + 4 x 32768 + 262144   = 2621440
+#   -vmem_rows 0:   1 x 557056 + 7 x 32768 + 262144   = 1048576   (ratio 2.5)
+# (pre-S4a the writes were 32 beats/tile = 4096: 2363392 / 790528.)
 # Negative values rejected.
 printf 'Matmul 2048 4096 4096\n' > "$WORK/v24.txt"
 "$BIN" -c 1 -sa_sz 256 -vu_sz 64 -f 1 -buf_mb 128 -vmem_rows 512 -i "$WORK/v24.txt" -o "$WORK/v24a_s.txt" > "$WORK/v24a.log" 2>&1
@@ -680,12 +696,12 @@ printf 'Matmul 2048 4096 4096\n' > "$WORK/v24.txt"
 cwin=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v24a.log" | tail -1 | awk '{print $3}')
 cinf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v24b.log" | tail -1 | awk '{print $3}')
 cdef=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v24d.log" | tail -1 | awk '{print $3}')
-ratio_ok=$(awk -v a="${cwin:-0}" -v b="${cinf:-1}" 'BEGIN{r=a/b; print (r>=2.4 && r<=3.5)?1:0}')
 "$BIN" -c 1 -sa_sz 256 -vu_sz 64 -f 1 -vmem_rows -1 -i "$WORK/v24.txt" -o "$WORK/v24c_s.txt" > "$WORK/v24c.log" 2>&1; rn=$?
-if [ "$ratio_ok" -eq 1 ] && [ "$rn" -eq 1 ] && grep -q 'vmem_rows' "$WORK/v24c.log" && [ "$cdef" = "$cinf" ]; then
+if [ "${cwin:-0}" -eq 2621440 ] && [ "${cinf:-0}" -eq 1048576 ] && [ "$rn" -eq 1 ] \
+   && grep -q 'vmem_rows' "$WORK/v24c.log" && [ "$cdef" = "$cinf" ]; then
   ok "V24 -vmem_rows ablation (512: $cwin, 0: $cinf) and default == unlimited"
 else
-  bad "V24 windowed=$cwin unlimited=$cinf default=$cdef badval_rc=$rn"
+  bad "V24 windowed=$cwin (want 2621440) unlimited=$cinf (want 1048576) default=$cdef badval_rc=$rn"
 fi
 
 # V25a: -fuse_attn keeps the attention score matrix on-chip (flash-attention
@@ -696,13 +712,14 @@ fi
 # Transformer 1 256 4 4 512 128 0 1 (head_dim 64, M=S=128, no GQA sharing:
 # nh==nkv so every score/AV job has its own weight_tag and no residency hit
 # can differ between the runs) at -c 1 -sa_sz 256:
-#   scores x4: 1 column tile each; write charge = beats_per_wb bytes =
-#     256*256*2/64 = 2048 B -> 32 beats/job -> 128 beats
+#   scores x4 (128 x 64 x 128): 1 column tile each; write charge is the true
+#     output block (S4a) min(256,128)*min(256,128)*2 = 32768 B -> 512
+#     beats/job -> 2048 beats (pre-S4a: 32 beats/job -> 128)
 #   softmax x1 (128 x 512 rows fits buffer, one job): read 128*512*2 =
 #     131072 B -> 2048 beats, write same -> 2048; both suppressed -> 4096
 #   av x4: single-tile init read = act(128*128*2=32768) + wgt(64*128*2=16384)
 #     = 768 beats; act part suppressed -> 256 beats; delta 512/job -> 2048
-#   total delta = 128 + 4096 + 2048 = 6272 CMDs
+#   total delta = 2048 + 4096 + 2048 = 8192 CMDs (pre-S4a 6272)
 printf 'Transformer 1 256 4 4 512 128 0 1\n' > "$WORK/v25.txt"
 "$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
   -i "$WORK/v25.txt" -o "$WORK/v25a_s.txt" > "$WORK/v25a.log" 2>&1
@@ -710,10 +727,10 @@ printf 'Transformer 1 256 4 4 512 128 0 1\n' > "$WORK/v25.txt"
   -fuse_attn 1 -i "$WORK/v25.txt" -o "$WORK/v25b_s.txt" > "$WORK/v25b.log" 2>&1
 cunf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25a.log" | tail -1 | awk '{print $3}')
 cfus=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25b.log" | tail -1 | awk '{print $3}')
-if [ -n "$cunf" ] && [ -n "$cfus" ] && [ $((cunf - cfus)) -eq 6272 ]; then
+if [ -n "$cunf" ] && [ -n "$cfus" ] && [ $((cunf - cfus)) -eq 8192 ]; then
   ok "V25a -fuse_attn suppresses exactly the score-matrix beats ($cunf -> $cfus)"
 else
-  bad "V25a unfused=$cunf fused=$cfus delta=$((${cunf:-0} - ${cfus:-0})) (want 6272)"
+  bad "V25a unfused=$cunf fused=$cfus delta=$((${cunf:-0} - ${cfus:-0})) (want 8192)"
 fi
 
 # V25b: decode invariance. At decode the score matrix is batch x S rows (tiny
@@ -900,16 +917,36 @@ fi
 # shift/write run while they stream. Matmul 4096^3 on the pinned config
 # (cross-op prefetch off to isolate): cycles drop, CMDs invariant, and never
 # below the MXU compute floor 2*4096^3 / (2 MXU * 256^2 PE * 2 MAC) = 262144.
+# Output side (S4a follow-up): once write-backs were charged at true bytes
+# (V31a, 2048 beats per 256x256 tile instead of 32) the pre-issued reads of
+# tile i+1 throttled tile i's write-back in DRAMSim3's read-preferring
+# 32-entry write buffer (1849 cycles instead of 93 per fetch-pass tile at
+# -c 1) and the write stage gated tile i+1's compute on it -- serializing
+# what the prefetch existed to overlap, and -dbuf_tile 1 came out SLOWER
+# (399846 vs 362109). A non-last tile's write-back now streams under the
+# next tile's compute through one output buffer (State::writes_gate /
+# hold_writes; the next shift stage waits for it to land); the last tile
+# still waits so nothing carries across jobs.
+# CMDs (beat-exact, -act_share 1 default): per core, 16 row-block jobs of
+# 8 column tiles; weight tile = min(256,2048)*4096*2 B = 32768 beats, act
+# panel = 256*4096*2 B = 32768 beats, write-back = 256*256*2/64 = 2048.
+#   core 0: job 1 (fetch pass) 32768 + 8 x 32768 = 294912; jobs 2-16 act
+#           panel only 15 x 32768 = 491520; writes 16 x 8 x 2048 = 262144
+#           -> 1048576
+#   core 1: act_resident (the panel is staged once, S4b): 8 x 32768 weight
+#           tiles on job 1 + 262144 writes -> 524288
+#   total 1572864 (2097152 with -act_share 0; 1839104 before S4a).
 printf 'Matmul 4096 4096 4096\n' > "$WORK/v29.txt"
 "$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29a_s.txt" -dbuf 0 -dbuf_tile 0 > "$WORK/v29a.log" 2>&1
 "$REPO/configs/tpuv6e.sh" "$WORK/v29.txt" "$WORK/v29b_s.txt" -dbuf 0 -dbuf_tile 1 > "$WORK/v29b.log" 2>&1
 t0=$(cycles_of "$WORK/v29a_s.txt"); t1=$(cycles_of "$WORK/v29b_s.txt")
 m0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v29a.log" | tail -1 | awk '{print $3}')
 m1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v29b.log" | tail -1 | awk '{print $3}')
-if [ -n "$t0" ] && [ -n "$t1" ] && [ "$t1" -lt "$t0" ] && [ "$t1" -ge 262144 ] && [ "$m0" = "$m1" ]; then
+if [ -n "$t0" ] && [ -n "$t1" ] && [ "$t1" -lt "$t0" ] && [ "$t1" -ge 262144 ] \
+   && [ "$m0" = "$m1" ] && [ "${m0:-0}" -eq 1572864 ]; then
   ok "V29a -dbuf_tile hides tile transitions (cycles $t0 -> $t1, CMDs invariant $m0)"
 else
-  bad "V29a cycles $t0 -> $t1 (floor 262144), CMDs $m0 vs $m1"
+  bad "V29a cycles $t0 -> $t1 (floor 262144), CMDs $m0 vs $m1 (want 1572864)"
 fi
 
 # V29b: the cross-op prefetcher also stages a READY job's first activation
@@ -994,6 +1031,65 @@ if [ "$rv" -eq 1 ] && grep -q 'fuse_vpu' "$WORK/v30e.log"; then
   ok "V30d -fuse_vpu 2 rejected"
 else
   bad "V30d rc=$rv (want 1 + message)"
+fi
+
+# V31a: OS write-back is charged at the TRUE output bytes (spec S4a). The OS
+# 'shift' stage used to pass beats_per_wb (= sz*sz*dtw/64, a BEAT count) as
+# state_transfer's BYTE argument, so every column tile wrote 1/64 of its
+# output block (2 beats instead of 128 at sz 64), and sys_job_alloc_bytes
+# mirrored the double division. Matmul 256 64 256 at -c 1 -sa_sz 64, default
+# 8 MiB VMEM (weight slice 64x256x2 = 32 KiB fits, so jobs 2-4 run on the
+# resident copy), prefetch/tile double buffering off:
+#   4 row-block jobs (256/64) x 4 column tiles (256/64), 1 row tile each
+#   reads: job 1 init = act(64*64*2 = 8192 B) + wgt(min(64,256)*64*2 =
+#          8192 B) = 16384 B -> 256 beats, then 3 weight-only tiles x 128
+#          -> 640; jobs 2-4: resident weights, act panel only -> 128 each
+#          -> 384; reads total 1024
+#   writes: 4 jobs x 4 tiles x (64*64*2/64 = 128 beats) = 2048
+#   total DRAM CMDs = 1024 + 2048 = 3072   (pre-S4a: 1024 + 32 = 1056)
+printf 'Matmul 256 64 256\n' > "$WORK/v31a.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v31a.txt" -o "$WORK/v31a_s.txt" > "$WORK/v31a.log" 2>&1
+ra=$?
+wa=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v31a.log" | tail -1 | awk '{print $3}')
+fa=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v31a.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3==4)?1:0}')
+if [ "$ra" -eq 0 ] && [ "${fa:-0}" -eq 1 ] && [ "${wa:-0}" -eq 3072 ]; then
+  ok "V31a OS write-back charged at true bytes (CMDs $wa = 1024 reads + 2048 writes)"
+else
+  bad "V31a rc=$ra fin=${fa:-?} CMDs=$wa (want 3072)"
+fi
+
+# V31b: activation panels are staged ONCE into the shared VMEM, not once per
+# MXU (spec S4b, flag -act_share, default 1; 0 restores per-MXU reads for
+# ablation). createSAJobs splits N across cores and every core's row-block
+# job used to charge its own min(sz,M) x K activation panel at init and at
+# each row advance; hardware stages the tile once for both MXUs. Matmul
+# 256 256 512 at -c 2 -sa_sz 256: one job per core (M = 256 = one row
+# block, core_n = 256 = one column tile), weight slice 256x256x2 = 128 KiB
+# fits the 4 MiB per-core share, no VPU jobs.
+#   per job: weight tile 256*256*2 = 131072 B = 2048 beats, activation
+#     panel 256*256*2 = 131072 B = 2048 beats (charged together at init:
+#     4096 beats), write-back 256*256*2/64 = 2048 beats
+#   -act_share 0: 2 x (4096 + 2048)                     = 12288
+#   -act_share 1: core 0 4096 + 2048, core 1 (act_resident) 2048 + 2048
+#                                                        = 10240
+#   delta = the one suppressed panel = 2048 beats, exact. -act_share 2 rejected.
+printf 'Matmul 256 256 512\n' > "$WORK/v31b.txt"
+"$BIN" -c 2 -sa_sz 256 -vu_sz 64 -f 1 -act_share 0 -i "$WORK/v31b.txt" -o "$WORK/v31b0_s.txt" > "$WORK/v31b0.log" 2>&1
+r0=$?
+"$BIN" -c 2 -sa_sz 256 -vu_sz 64 -f 1 -act_share 1 -i "$WORK/v31b.txt" -o "$WORK/v31b1_s.txt" > "$WORK/v31b1.log" 2>&1
+r1=$?
+"$BIN" -c 2 -sa_sz 256 -vu_sz 64 -f 1 -i "$WORK/v31b.txt" -o "$WORK/v31b2_s.txt" > "$WORK/v31b2.log" 2>&1
+b0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v31b0.log" | tail -1 | awk '{print $3}')
+b1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v31b1.log" | tail -1 | awk '{print $3}')
+b2=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v31b2.log" | tail -1 | awk '{print $3}')
+f1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v31b1.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3==2)?1:0}')
+"$BIN" -c 2 -sa_sz 256 -vu_sz 64 -f 1 -act_share 2 -i "$WORK/v31b.txt" -o "$WORK/v31b3_s.txt" > "$WORK/v31b3.log" 2>&1; rv=$?
+if [ "$r0" -eq 0 ] && [ "$r1" -eq 0 ] && [ "${f1:-0}" -eq 1 ] \
+   && [ "${b0:-0}" -eq 12288 ] && [ "${b1:-0}" -eq 10240 ] && [ "$b2" = "$b1" ] \
+   && [ "$rv" -eq 1 ] && grep -q 'act_share' "$WORK/v31b3.log"; then
+  ok "V31b -act_share stages the activation panel once (CMDs $b0 -> $b1, default on, 2 rejected)"
+else
+  bad "V31b rc=$r0/$r1 fin=${f1:-?} CMDs share0=$b0 (want 12288) share1=$b1 (want 10240) default=$b2 badval_rc=$rv"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

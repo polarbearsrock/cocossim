@@ -103,6 +103,18 @@ struct State {
   // process_stage does not wait on them. The next read stage re-arms both.
   bool reads_gate = true;
   bool hold_reads = false;
+  // Output side of the same double buffering (S4a follow-up): a finished
+  // tile's write-back may stream under the NEXT tile's compute. While
+  // writes_gate is clear, process_stage does not wait on the write counters,
+  // and while hold_writes is set, state_transfer leaves them untouched (they
+  // belong to the tile draining). One output buffer: the next shift stage
+  // re-arms the gate, so a tile cannot issue its write-back until the
+  // previous one has landed. Without this, a true-byte write-back (V31a)
+  // issued behind the next tile's prefetched reads waits on DRAMSim3's
+  // read-preferring write buffer and serializes the compute it was meant to
+  // overlap (V29a).
+  bool writes_gate = true;
+  bool hold_writes = false;
 
   virtual ~State() = default;
   State() = delete;

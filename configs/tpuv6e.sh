@@ -30,4 +30,5 @@ exec ./perf_model \
   -dbuf 48 \
   -dbuf_tile 1 \
   -vmem_rows 0 \
+  -act_share 1 \
   -i "$LAYERS" -o "$OUT" "$@"

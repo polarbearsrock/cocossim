@@ -23,6 +23,7 @@ int fuse_attn = 0;
 int fuse_vpu = 0;
 int dbuf_lookahead = 0;
 int dbuf_tile = 0;
+int act_share = 1;
 int64_t pf_outstanding_beats = 0;
 
 int total_jobs = 0;

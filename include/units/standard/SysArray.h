@@ -37,6 +37,14 @@ namespace SystolicArray {
   inline int ws_activation_preload_bytes(int M, int K, int sz) {
     return std::min(sz, K) * M * batch_size * data_type_width;
   }
+  // Output block one output-stationary column tile writes back: the
+  // min(sz,M) x min(sz,N) accumulator tile, at true bytes (spec S4a). This
+  // used to be a BEAT count (sz*sz*dtw/bytes_per_tx) passed through
+  // state_transfer's byte argument, i.e. charged at 1/bytes_per_tx of the
+  // truth; V31a pins the corrected total.
+  inline int output_tile_bytes(int M, int N, int sz) {
+    return std::min(sz, M) * std::min(sz, N) * batch_size * data_type_width;
+  }
   // Bytes -> beats, matching the state machine's own rounding (a non-zero
   // demand always costs at least one beat).
   inline int demand_beats(int bytes) {
@@ -55,7 +63,7 @@ namespace SystolicArray {
   // panel reads). Both must shrink the window exactly as they shrink the
   // charges below, or window and walk drift apart (the multi-core livelock).
   inline uint64_t sys_job_alloc_bytes(int M, int K, int N, int sz, bool ws,
-                                      bool batched_weights, int beats_per_wb,
+                                      bool batched_weights,
                                       int64_t n_weight_streams = 1,
                                       bool fused_out = false,
                                       bool act_resident = false) {
@@ -97,9 +105,8 @@ namespace SystolicArray {
       // this window. The remaining (cols-1) column tiles of the pass read
       // weights alone (init_row_loop's non-new_row branch), each floored on
       // its own -- that part was already right. Every column tile writes
-      // back beats_per_wb (which the state machine passes through
-      // state_transfer's byte argument, so it is divided by bytes_per_tx
-      // again -- mirrored here on purpose).
+      // back its true output block (output_tile_bytes, the same helper the
+      // shift stage charges), floored to one beat like state_transfer does.
       const int64_t combined_first_tile_bytes =
           (act_resident ? 0 : (int64_t) activation_panel_bytes(M, K, sz)) +
           (int64_t) weight_panel_bytes(K, N, sz, batched_weights) * n_weight_streams;
@@ -107,7 +114,7 @@ namespace SystolicArray {
           std::max<int64_t>(combined_first_tile_bytes / bytes_per_tx, 1);
       beats = combined_first_tile_beats +
               (uint64_t) (cols - 1) * weight_beats +
-              (fused_out ? 0 : (uint64_t) cols * demand_beats(beats_per_wb));
+              (fused_out ? 0 : (uint64_t) cols * demand_beats(output_tile_bytes(M, N, sz)));
     }
     return beats * (uint64_t) bytes_per_tx;
   }
@@ -224,9 +231,6 @@ public:
       auto *sj = (SysArrayJob *) j;
       return std::min(sz, sj->M) * std::min(sz, sj->N) < sz * sz;
     }
-
-private:
-    int beats_per_wb;
   };
 
 };// namespace SystolicArray

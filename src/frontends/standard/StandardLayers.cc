@@ -52,9 +52,20 @@ JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
   bool fits = weightSliceFitsVmem(K, core_n, n_cores);
   static std::vector<int> core_task_counters(n_cores, 0);
   for (int core = 0; core < n_cores; ++core) {
+    // -act_share (spec S4b): the activation row block is staged ONCE into
+    // the shared VMEM; only core 0's job charges it, its siblings on cores
+    // >= 1 are built act_resident (no activation reads at init or at a row
+    // advance -- the window formula already mirrors that flag). Exact on
+    // traffic; an approximation on timing, since core c's job may start
+    // computing before core 0's fetch has landed (no cross-core wait is
+    // modeled). Attention jobs (per-head Q slices, group-pinned) are built
+    // elsewhere and untouched.
+    bool act_resident = act_share != 0 && n_cores > 1 && core > 0;
     for (int job = 0; job < num_jobs; ++job) {
       int m = std::min(sa_sz, M - job * sa_sz);
-      auto sys_job = new SystolicArray::SysArrayJob(m, K, core_n, sa_sz, /*ws=*/false);
+      auto sys_job = new SystolicArray::SysArrayJob(m, K, core_n, sa_sz, /*ws=*/false,
+                                                    /*n_weight_streams=*/1, /*fused_out=*/false,
+                                                    act_resident);
       sys_job->core_id = core;
       sys_job->task_idx = core_task_counters[core]++;
       // All row-block jobs of one GEMM read the same weight slice; tags are

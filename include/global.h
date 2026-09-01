@@ -72,6 +72,12 @@ extern int64_t pf_outstanding_beats;
 // shift/write stages instead of after them. 0 = off (tile transitions and
 // every job-start fetch exposed).
 extern int dbuf_tile;
+// Shared activation staging (-act_share, spec S4b): when a GEMM's N is split
+// across cores, hardware stages each activation row block ONCE into the
+// shared VMEM and both MXUs consume it. 1 (default): only core 0's row-block
+// job charges the panel, its siblings on cores >= 1 are act_resident.
+// 0: every core reads its own copy (the legacy per-MXU model, ablation).
+extern int act_share;
 
 const int embedding_dim= 768;
 const int n_heads = 6;
