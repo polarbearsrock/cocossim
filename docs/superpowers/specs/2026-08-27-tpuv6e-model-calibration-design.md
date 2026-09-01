@@ -277,6 +277,41 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
+- **(added 2026-09-01; ADDRESSED same day, tests V26/V27a–c) DRAM demand
+  starvation: the attention barrier, the missing cross-op prefetch, and the
+  GQA placement lottery.** After fusion, a new `MEM demand-idle` stat showed
+  DRAM starved of offered work for 42% of prefill-2048 wall time while
+  sustaining 1,388 GB/s when fed (matching C4's silicon 1,371). Three
+  mechanisms, landed in order: (1) attention stages were wired all-to-all
+  (`connectJobLists`), a composite-builder artifact — per-head wiring
+  (softmax chunk ↔ overlapping head row-ranges, V26, unconditional) freed
+  −13.4% on prefill-2048; (2) `-dbuf <MiB>` cross-op weight prefetch models
+  XLA's next-operator streaming (B2/C5v2): first-of-tag jobs (never
+  VMEM-resident at dispatch, so the credit is exact) stream their weight
+  sweeps into otherwise-idle DRAM slots under a byte budget; traffic is
+  exactly invariant (V27a pins CMDs equal; a tag-count window was mis-shaped
+  — tiny attention tags starved it short of the MLP weights); (3) V27b's
+  invariance assertion exposed GQA sibling placement as a scheduling lottery
+  worth several percent of decode traffic — siblings are now pinned
+  round-robin per group, matching hardware's fetch-once-into-shared-VMEM.
+  `configs/tpuv6e.sh` pins `-dbuf 48`. Prefetch coverage was then extended
+  from first-of-tag (~1/8 of weight traffic) to EVERY predicted fetch pass:
+  core pinning makes per-core dispatch order deterministic, so the list
+  build replays the residency automaton per core; V27's CMD-invariance
+  assertions guard the replayed prediction against drift. Post-fix
+  demand-idle: decode 0.17%, prefill-512 8%, prefill-2048 22% (budget
+  sensitivity 48→128 MiB buys only 1978→1910 µs/layer: the remainder is
+  structural — activation-panel and VPU tensor reads at op starts, not
+  weights).
+  Residuals after this set (pure priors, holdout): prefill-2048 +23%
+  (starvation floor above); prefill-512 −16% and decode-512×8 −22%, both
+  exactly ~86–87 µs/layer of missing constant — the per-kernel dispatch
+  overhead B2 measured at 31–35 µs/kernel (`-job_overhead`'s territory);
+  decode-2048×32 −34%, whose extra ~160 µs/layer scales with KV volume —
+  consistent with paged-attention gather achieving lower effective HBM
+  bandwidth than the sim's streaming rate (candidate: per-stream KV derate).
+  All three parameters belong to the Plan-3 fit from A/B/C + D-charac
+  data, never from the holdout points.
 - **(added 2026-09-01; ADDRESSED same day, flag `-fuse_attn`, tests V25a–c)
   Unfused attention was the dominant prefill gap.** The `Transformer` expansion
   materialized the score matrix S through DRAM four times per layer (QK^T

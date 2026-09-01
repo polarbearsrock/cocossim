@@ -26,5 +26,5 @@ exec ./perf_model \
   -job_overhead 0 \
   -fuse_epilogue 0 \
   -fuse_attn 1 \
-  -dbuf 2 \
+  -dbuf 48 \
   -i "$LAYERS" -o "$OUT" "$@"

@@ -55,7 +55,7 @@ Arch* StandardParser::make_arch() {
              "-mem_prio     serve SA memory transactions before VPU ones: 0 FIFO (default), 1 on\n"
              "-vmem_rows    weight-residency row window (default 512; 0 = unlimited)\n"
              "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on\n"
-             "-dbuf         cross-op weight prefetch lookahead in weight tags (default 0 = off)");
+             "-dbuf         cross-op weight prefetch byte budget in MiB (default 0 = off)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);

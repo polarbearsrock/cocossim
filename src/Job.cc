@@ -26,6 +26,7 @@ int64_t Job::take_prefetch_credit(int64_t want) {
   int64_t take = std::min(prefetch_credit_bytes, want);
   take -= take % bytes_per_tx;// whole beats only (see Job.h)
   prefetch_credit_bytes -= take;
+  pf_outstanding_bytes -= take;
   return take;
 }
 

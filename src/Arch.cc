@@ -147,9 +147,33 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     }
     std::sort(all.begin(), all.end(),
               [](Job *a, Job *b) { return a->job_idx < b->job_idx; });
+    // Which jobs WILL fetch weights? Core-pinned jobs dispatch in creation
+    // order on their core, so replay SysArrayState::init's residency
+    // decision (same rules: vmem_reuse, tag match, -vmem_rows window,
+    // stay-resident) per core to predict every fetch pass exactly. Unpinned
+    // jobs (core_id -1) fall back to first-of-tag, which can never be
+    // resident. A wrong prediction cannot corrupt totals silently: a
+    // predicted-fetch that dispatches resident leaves issued beats
+    // unconsumed, and V27's CMD-invariance assertions trip on that.
+    struct ReplayState { int resident_tag = -1; int rows = 0; };
+    std::unordered_map<int, ReplayState> replay;
     for (auto *jb: all) {
       if (jb->prefetchable_weight_bytes() <= 0 || jb->prefetch_tag() == -1) continue;
-      if (!seen_tags.insert(jb->prefetch_tag()).second) continue;// first of tag only
+      bool will_fetch;
+      if (jb->core_id >= 0) {
+        auto &rs = replay[jb->core_id];
+        bool resident = vmem_reuse && jb->prefetch_tag() == rs.resident_tag;
+        if (resident && vmem_resident_rows > 0 &&
+            rs.rows + jb->prefetch_rows() > vmem_resident_rows)
+          resident = false;
+        bool stay = vmem_reuse && jb->prefetch_fits_vmem();
+        rs.resident_tag = stay ? jb->prefetch_tag() : -1;
+        rs.rows = resident ? rs.rows + jb->prefetch_rows() : jb->prefetch_rows();
+        will_fetch = !resident;
+      } else {
+        will_fetch = seen_tags.insert(jb->prefetch_tag()).second;
+      }
+      if (!will_fetch) continue;
       int64_t beats = jb->prefetchable_weight_bytes() / bytes_per_tx;
       if (beats > 0) pf_list.push_back({jb, jb->addr_hold, beats});
     }
@@ -315,16 +339,24 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
       mem_demand_idle++;
 
     // -dbuf issue: fill only the slack the demand enqueue left this cycle.
+    // The lookahead is a BYTE budget (VMEM honesty): keep streaming entries
+    // in list order while issued-but-unconsumed bytes stay under the cap. A
+    // tag-count window proved mis-shaped -- 16 tiny attention-group tags sit
+    // between the big GEMMs, so a 2-tag window stalled on them and never
+    // reached the MLP weights it existed to hide.
     if (dbuf_lookahead > 0) {
+      const int64_t pf_cap = (int64_t) dbuf_lookahead * 1024 * 1024;
       while (pf_cursor < pf_list.size() &&
              (pf_list[pf_cursor].job->started || pf_list[pf_cursor].beats_left == 0))
         pf_cursor++;
       int budget = dram_enq_per_cycle - (int) to_enqueue.size();
       for (size_t e = pf_cursor;
-           e < pf_list.size() && e < pf_cursor + dbuf_lookahead && budget > 0; ++e) {
+           e < pf_list.size() && budget > 0 && pf_outstanding_bytes < pf_cap; ++e) {
         auto &ent = pf_list[e];
         if (ent.job->started || ent.beats_left == 0) continue;
-        int n = (int) std::min<int64_t>(budget, ent.beats_left);
+        int n = (int) std::min<int64_t>(
+            std::min<int64_t>(budget, ent.beats_left),
+            (pf_cap - pf_outstanding_bytes + bytes_per_tx - 1) / bytes_per_tx);
         for (int b = 0; b < n; ++b) {
           // Priority 3 (behind SA/VPU demand for -mem_prio); no owning state:
           // completions are absorbed by the null-guard in the DRAM callback.
@@ -333,6 +365,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
         }
         ent.beats_left -= n;
         ent.job->prefetch_credit_bytes += (int64_t) n * bytes_per_tx;
+        pf_outstanding_bytes += (int64_t) n * bytes_per_tx;
         budget -= n;
       }
     }

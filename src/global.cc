@@ -21,6 +21,7 @@ int vmem_resident_rows = 512;
 int mem_prio = 0;
 int fuse_attn = 0;
 int dbuf_lookahead = 0;
+int64_t pf_outstanding_bytes = 0;
 
 int total_jobs = 0;
 int jobs_finished = 0;

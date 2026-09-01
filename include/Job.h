@@ -53,6 +53,11 @@ struct Job {
   // VMEM-resident at dispatch, which is what makes the credit exact.
   [[nodiscard]] virtual int64_t prefetchable_weight_bytes() const { return 0; }
   [[nodiscard]] virtual int prefetch_tag() const { return -1; }
+  // Inputs the prefetcher's residency replay needs (Arch.cc): the rows this
+  // job consumes under its tag's residency window, and whether its slice
+  // stays resident. Mirror SysArrayState::init's decision inputs.
+  [[nodiscard]] virtual int prefetch_rows() const { return 0; }
+  [[nodiscard]] virtual bool prefetch_fits_vmem() const { return false; }
   // Consume credit against a charge of `want` bytes, whole beats only
   // (keeping demand-side beat totals exactly complementary to the issued
   // prefetch beats; a sub-beat tail stays with the demand charge).

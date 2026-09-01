@@ -159,6 +159,8 @@ namespace SystolicArray {
              weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
     }
     [[nodiscard]] int prefetch_tag() const override { return weight_tag; }
+    [[nodiscard]] int prefetch_rows() const override { return M; }
+    [[nodiscard]] bool prefetch_fits_vmem() const override { return weights_fit_vmem; }
 
     [[nodiscard]] std::string get_job_dims_string() const override;
   };

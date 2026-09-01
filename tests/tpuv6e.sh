@@ -780,12 +780,12 @@ printf 'Transformer 1 512 8 8 2048 512 0 1\n' > "$WORK/v27.txt"
 "$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
   -fuse_attn 1 -i "$WORK/v27.txt" -o "$WORK/v27a_s.txt" > "$WORK/v27a.log" 2>&1
 "$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
-  -fuse_attn 1 -dbuf 2 -i "$WORK/v27.txt" -o "$WORK/v27b_s.txt" > "$WORK/v27b.log" 2>&1
+  -fuse_attn 1 -dbuf 8 -i "$WORK/v27.txt" -o "$WORK/v27b_s.txt" > "$WORK/v27b.log" 2>&1
 c0=$(cycles_of "$WORK/v27a_s.txt"); c1=$(cycles_of "$WORK/v27b_s.txt")
 d0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27a.log" | tail -1 | awk '{print $3}')
 d1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27b.log" | tail -1 | awk '{print $3}')
 if [ -n "$c0" ] && [ -n "$c1" ] && [ "$c1" -lt "$c0" ] && [ "$d0" = "$d1" ]; then
-  ok "V27a -dbuf 2 hides weight streams (cycles $c0 -> $c1, CMDs invariant $d0)"
+  ok "V27a -dbuf hides weight streams (cycles $c0 -> $c1, CMDs invariant $d0)"
 else
   bad "V27a cycles $c0 -> $c1, CMDs $d0 vs $d1 (want fewer cycles, equal CMDs)"
 fi
@@ -800,7 +800,7 @@ printf 'Transformer 2 512 8 4 1024 512 1 8\n' > "$WORK/v27d.txt"
 "$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
   -fuse_attn 1 -i "$WORK/v27d.txt" -o "$WORK/v27c_s.txt" > "$WORK/v27c.log" 2>&1
 "$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
-  -fuse_attn 1 -dbuf 2 -i "$WORK/v27d.txt" -o "$WORK/v27d_s.txt" > "$WORK/v27d.log" 2>&1
+  -fuse_attn 1 -dbuf 8 -i "$WORK/v27d.txt" -o "$WORK/v27d_s.txt" > "$WORK/v27d.log" 2>&1
 cu=$(cycles_of "$WORK/v27c_s.txt"); cf=$(cycles_of "$WORK/v27d_s.txt")
 du=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27c.log" | tail -1 | awk '{print $3}')
 df=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27d.log" | tail -1 | awk '{print $3}')
