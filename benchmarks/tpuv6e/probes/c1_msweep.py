@@ -36,7 +36,8 @@ def main():
             continue
         a = jnp.ones((m, K), dtype=jnp.bfloat16)
         b = jnp.ones((K, N), dtype=jnp.bfloat16)
-        f = jax.jit(lambda a=a, b=b: a @ b)
+        jf = jax.jit(lambda a, b: a @ b)
+        f = lambda: jf(a, b)
         r = time_op(f)
         flops = 2 * m * K * N
         csv_append(args.out, {"M": m, "K": K, "N": N, **r,

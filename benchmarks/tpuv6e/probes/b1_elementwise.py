@@ -28,13 +28,11 @@ def main():
     for n in SIZES:
         x = jnp.ones((n,), dtype=jnp.bfloat16)
         y = jnp.ones((n,), dtype=jnp.bfloat16)
-        ops = {
-            "add": (jax.jit(lambda x=x, y=y: x + y), 3),
-            "mul": (jax.jit(lambda x=x, y=y: x * y), 3),
-            "exp": (jax.jit(lambda x=x: jnp.exp(x)), 2),
-            "rsqrt": (jax.jit(lambda x=x: jax.lax.rsqrt(x)), 2),
-            "silu": (jax.jit(lambda x=x: jax.nn.silu(x)), 2),
-        }
+        j2 = {"add": jax.jit(lambda x, y: x + y), "mul": jax.jit(lambda x, y: x * y)}
+        j1 = {"exp": jax.jit(jnp.exp), "rsqrt": jax.jit(jax.lax.rsqrt),
+              "silu": jax.jit(jax.nn.silu)}
+        ops = {name: ((lambda f=f: f(x, y)), 3) for name, f in j2.items()}
+        ops.update({name: ((lambda f=f: f(x)), 2) for name, f in j1.items()})
         for name, (f, streams) in ops.items():
             if already_done(args.out, {"op": name, "n": n}):
                 continue

@@ -26,9 +26,11 @@ def main():
         n = mb * 1024 * 1024 // 2  # bf16 elements
         x = jnp.ones((n,), dtype=jnp.bfloat16)
         y = jnp.ones((n,), dtype=jnp.bfloat16)
+        jcopy = jax.jit(lambda x: x * jnp.bfloat16(1.5))
+        jtriad = jax.jit(lambda x, y: x * jnp.bfloat16(1.5) + y)
         for kind, f, factor in [
-            ("copy_scale", jax.jit(lambda x=x: x * jnp.bfloat16(1.5)), 2),
-            ("triad", jax.jit(lambda x=x, y=y: x * jnp.bfloat16(1.5) + y), 3),
+            ("copy_scale", lambda: jcopy(x), 2),
+            ("triad", lambda: jtriad(x, y), 3),
         ]:
             r = time_op(f)
             gbs = factor * n * 2 / r["median_s"] / 1e9

@@ -30,7 +30,8 @@ def main():
             continue
         a = jnp.ones((m, k), dtype=jnp.bfloat16)
         b = jnp.ones((k, n), dtype=jnp.bfloat16)
-        f = jax.jit(lambda a=a, b=b: a @ b)
+        jf = jax.jit(lambda a, b: a @ b)
+        f = lambda: jf(a, b)
         r = time_op(f)
         tf = 2 * m * k * n / r["median_s"] / 1e12
         csv_append(args.out, {"M": m, "K": k, "N": n, **r, "tflops": tf,

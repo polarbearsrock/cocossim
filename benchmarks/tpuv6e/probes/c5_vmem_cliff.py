@@ -36,13 +36,13 @@ def main():
         x0 = jnp.ones((M, n), dtype=jnp.bfloat16)
 
         @jax.jit
-        def chain(x0=x0, w=w):
+        def jchain(x0, w):
             def step(x, _):
                 return x @ w, None
             x, _ = jax.lax.scan(step, x0, None, length=CHAIN)
             return x
 
-        r = time_op(chain)
+        r = time_op(lambda: jchain(x0, w))
         per_step = r["median_s"] / CHAIN
         mb = 2 * n * n / 1e6
         csv_append(args.out, {"N": n, "w_mb": mb, "chain": CHAIN, **r,
