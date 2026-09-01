@@ -1,0 +1,7 @@
+mode,seq,batch,n_out,wall_s,trace
+prefill,512,1,1,0.05328126100005193,/home/s2chitni/dh_traces/prefill_512_1
+prefill,512,8,1,0.062205100000028324,/home/s2chitni/dh_traces/prefill_512_8
+prefill,2048,1,1,0.021410480000099597,/home/s2chitni/dh_traces/prefill_2048_1
+prefill,2048,8,1,0.07263854100006029,/home/s2chitni/dh_traces/prefill_2048_8
+decode,512,8,64,0.9815817900000638,/home/s2chitni/dh_traces/decode_512_8,wall includes ctx prefill + n_out steps
+decode,2048,32,64,1.722756416999914,/home/s2chitni/dh_traces/decode_2048_32,wall includes ctx prefill + n_out steps
