@@ -59,8 +59,15 @@ def main():
     from common_holdout import csv_append
 
     max_len = max(s for (_, s, _) in points) + DECODE_TOKENS + 8
-    llm = LLM(model="Qwen/Qwen3-8B", max_model_len=max_len)
+    # enable_prefix_caching=False: identical warmup/timed prompts otherwise HIT
+    # the prefix cache and the timed "prefill" is nearly free (session-3
+    # finding: b1 prefill walls were cache-contaminated and unusable).
+    llm = LLM(model="Qwen/Qwen3-8B", max_model_len=max_len,
+              enable_prefix_caching=False)
     tok_id = 872  # any mid-vocab id; timing is value-independent
+    # Discard point: the first measured point absorbs one-time init (~30 ms
+    # observed in session 3); run a throwaway point before the real list.
+    points = [("prefill", 128, 1)] + points
 
     for (mode, seq, batch) in points:
         ctx = seq if mode == "decode" else seq
