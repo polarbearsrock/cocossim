@@ -277,6 +277,27 @@ residuals before being dismissed as noise.
   the address stream is not bank/row-realistic. Revisit only if bank-level effects
   show up in calibration residuals.
 
+- **(added 2026-09-01; ADDRESSED same day, flag `-fuse_vpu`, tests V30a–d)
+  VPU ops fused into GEMM prologues/epilogues.** The silicon kernel census
+  puts RMSNorm/RoPE/SiLU/residual at 0.1% of device time: XLA fuses them, so
+  they cost no HBM round trip and overlap with the MXU. The model kept them
+  as separate VPU jobs with full traffic (~360 MB/layer at prefill-2048, 16%
+  of the layer) on the dependency chain. Under `-fuse_vpu 1` they remain
+  VPU jobs (attribution intact, VPU busy unchanged) but run traffic-free as
+  SIDECARS off the chain: each waits for its true inputs while the consumer
+  GEMM depends on those inputs' producers directly (q/k/v on the block
+  input, scores on q/k, gate/up on o, down on gate/up, the LM head on the
+  last block). Subsumes `-fuse_epilogue`; `configs/tpuv6e.sh` pins 1. V30a
+  pins the beat-exact traffic delta (20480 on the small prefill config),
+  V30b the chain structure (VPU→GEMM edges 3 → 0), V30c the decode delta
+  (2432) — on that tiny 2-layer config fusion also removes six HBM
+  read→write latency links per layer (−8.5%), <1% at 36 layers. Holdout:
+  prefill-2048 63.9 → 55.0 ms (−6.1% vs silicon), prefill-512 16.1 → 13.6
+  (−29%), decode unchanged; MAPE 20.7% → 23.3%. The headline rises because
+  every point now sits on the SAME side: all four are under-predicted by the
+  unmodeled per-kernel fixed cost, host gaps, `data` ops and paged-KV gather
+  — the "too slow" physics terms are exhausted (prefill-2048 demand-idle 87%,
+  VPU memstall 0), which is the state the Plan-3 fit was designed for.
 - **(added 2026-09-01; ADDRESSED same day, flag `-dbuf_tile`, tests
   V29a–c) Within-op double buffering.** The OS state machine declared a
   tile's reads only when its read stage began, so the shift/write stages

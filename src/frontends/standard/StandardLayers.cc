@@ -315,12 +315,14 @@ JobPair LayerNorm(const ArchConfig &a_config, const LayerConfig &l_config) {
 
 // RMSNorm over par_dim rows of length lin_dim, chunked to the buffer the
 // same way LayerNorm is.
-static JobList makeRMSNormJobs(int lin_dim, int par_dim) {
+static JobList makeRMSNormJobs(int lin_dim, int par_dim, bool fused = false) {
   JobList jl;
   int par_acc = par_dim;
   int dec_amt = buffer_size_bytes / data_type_width / lin_dim;
   while (par_acc > 0) {
-    jl.push_back(new VectorUnit::VecUnitJob(lin_dim, std::min(dec_amt, par_acc), false, rmsnorm_phases));
+    // fused (-fuse_vpu): prologue/epilogue-fused norm -- no HBM round trip.
+    jl.push_back(new VectorUnit::VecUnitJob(lin_dim, std::min(dec_amt, par_acc), /*is_prebuffered=*/fused,
+                                            rmsnorm_phases, 1, /*fused_out=*/fused));
     par_acc -= dec_amt;
   }
   return jl;
@@ -411,26 +413,47 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
   int M = (mode == 0) ? seq_len : batch;// rows through every GEMM
   int S = seq_len;                      // attention context length
 
-  auto mk_binary_ew = [&](int rows, int cols) -> JobList {
-    auto *jb = new VectorUnit::VecUnitJob(cols, rows, false, {{VectorUnit::VPUPhase::BROADCAST, 1}}, 2);
+  auto mk_binary_ew = [&](int rows, int cols, bool fused = false) -> JobList {
+    auto *jb = new VectorUnit::VecUnitJob(cols, rows, fused, {{VectorUnit::VPUPhase::BROADCAST, 1}}, 2, fused);
     return {jb};
   };
 
+  // -fuse_vpu (spec 6.7): RMSNorm, RoPE, SiLU-mul and the residual adds ride
+  // in GEMM prologues/epilogues on silicon (kernel census: 0.1% of device
+  // time). They stay VPU jobs here -- attribution intact -- but run
+  // traffic-free as SIDECARS off the dependency chain: each still waits for
+  // its true inputs, while the consumer GEMM depends on those inputs'
+  // producers directly, the way an epilogue overlaps with the MXU.
+  const bool fv = fuse_vpu != 0;
+
   JobList model_head, prev_tail;
   for (int l = 0; l < n_layers; ++l) {
-    JobList norm1 = makeRMSNormJobs(d_model, M);
-    if (l == 0) model_head = norm1;
-    else connectJobLists(prev_tail, norm1);
-
+    JobList norm1 = makeRMSNormJobs(d_model, M, fv);
     auto q = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_model}));
     auto k = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
     auto v = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
-    connectJobLists(norm1, q.first);
-    connectJobLists(norm1, k.first);
-    connectJobLists(norm1, v.first);
+    if (fv) {
+      // norm1 sidecar: the projections depend on the block input directly.
+      if (l == 0) {
+        model_head = norm1;
+        for (auto *lst: {&q.first, &k.first, &v.first})
+          model_head.insert(model_head.end(), lst->begin(), lst->end());
+      } else {
+        connectJobLists(prev_tail, norm1);
+        connectJobLists(prev_tail, q.first);
+        connectJobLists(prev_tail, k.first);
+        connectJobLists(prev_tail, v.first);
+      }
+    } else {
+      if (l == 0) model_head = norm1;
+      else connectJobLists(prev_tail, norm1);
+      connectJobLists(norm1, q.first);
+      connectJobLists(norm1, k.first);
+      connectJobLists(norm1, v.first);
+    }
 
-    JobList rope = {new VectorUnit::VecUnitJob(1, M * (d_model + nkv * head_dim), false,
-                                               {{VectorUnit::VPUPhase::BROADCAST, 1}})};
+    JobList rope = {new VectorUnit::VecUnitJob(1, M * (d_model + nkv * head_dim), fv,
+                                               {{VectorUnit::VPUPhase::BROADCAST, 1}}, 1, fv)};
     connectJobLists(q.second, rope);
     connectJobLists(k.second, rope);
 
@@ -485,7 +508,12 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       av.push_back(avj);
     }
     next_weight_tag++;
-    connectJobLists(rope, scores);
+    if (fv) {// rope sidecar: scores depend on the q/k projections directly
+      connectJobLists(q.second, scores);
+      connectJobLists(k.second, scores);
+    } else {
+      connectJobLists(rope, scores);
+    }
 
     // Per-head attention wiring: softmax chunk k covers rows
     // [k*sm_rows, (k+1)*sm_rows) of the M*nh row space and head h owns rows
@@ -509,7 +537,15 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
 
     JobList block_in = (l == 0) ? norm1 : prev_tail;
     JobList res1;
-    if (fuse_epilogue) {
+    if (fv) {
+      // Residual add as an epilogue sidecar (waits for both contributors);
+      // downstream depends on the projection: block_in's completion is
+      // implied transitively (o <- ... <- q <- block_in).
+      JobList side = mk_binary_ew(M, d_model, true);
+      connectJobLists(o.second, side);
+      connectJobLists(block_in, side);
+      res1 = o.second;
+    } else if (fuse_epilogue) {
       // Residual absorbed into the projection epilogue: downstream work
       // depends on both contributors directly, no VPU job.
       res1 = o.second;
@@ -520,23 +556,38 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       connectJobLists(block_in, res1);
     }
 
-    JobList norm2 = makeRMSNormJobs(d_model, M);
+    JobList norm2 = makeRMSNormJobs(d_model, M, fv);
     connectJobLists(res1, norm2);
 
     auto gate = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
     auto up = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
-    connectJobLists(norm2, gate.first);
-    connectJobLists(norm2, up.first);
+    if (fv) {// norm2 sidecar
+      connectJobLists(res1, gate.first);
+      connectJobLists(res1, up.first);
+    } else {
+      connectJobLists(norm2, gate.first);
+      connectJobLists(norm2, up.first);
+    }
 
-    JobList silu_mul = mk_binary_ew(M, d_ff);
+    JobList silu_mul = mk_binary_ew(M, d_ff, fv);
     connectJobLists(gate.second, silu_mul);
     connectJobLists(up.second, silu_mul);
 
     auto down = Matmul(a_config, LayerConfig("Matmul", {M, d_ff, d_model}));
-    connectJobLists(silu_mul, down.first);
+    if (fv) {// silu-mul sidecar (gate/up epilogue)
+      connectJobLists(gate.second, down.first);
+      connectJobLists(up.second, down.first);
+    } else {
+      connectJobLists(silu_mul, down.first);
+    }
 
     JobList res2;
-    if (fuse_epilogue) {
+    if (fv) {
+      JobList side = mk_binary_ew(M, d_model, true);
+      connectJobLists(down.second, side);
+      connectJobLists(res1, side);
+      res2 = down.second;
+    } else if (fuse_epilogue) {
       res2 = down.second;
       res2.insert(res2.end(), res1.begin(), res1.end());
     } else {
@@ -559,10 +610,11 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // already; in prefill using M = seq_len would inflate the head ~seq_len/
     // batch-fold vs. real serving - session-3 calibration finding).
     int head_rows = batch;
-    JobList final_norm = makeRMSNormJobs(d_model, head_rows);
+    JobList final_norm = makeRMSNormJobs(d_model, head_rows, fv);
     connectJobLists(prev_tail, final_norm);
     auto head = Matmul(a_config, LayerConfig("Matmul", {head_rows, d_model, vocab}));
-    connectJobLists(final_norm, head.first);
+    if (fv) connectJobLists(prev_tail, head.first);// final norm sidecar
+    else connectJobLists(final_norm, head.first);
     JobList logits_sm = makeSoftmaxJobs(vocab, head_rows);
     connectJobLists(head.second, logits_sm);
     prev_tail = logits_sm;

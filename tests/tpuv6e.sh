@@ -934,5 +934,67 @@ else
   bad "V29c rc=$rv (want 1 + message)"
 fi
 
+# V30: -fuse_vpu. The silicon kernel census puts RMSNorm/RoPE/SiLU/residual at
+# 0.1% of device time: XLA fuses them into GEMM prologues/epilogues, so they
+# cost no HBM round trip and overlap with the MXU. The model keeps them as
+# VPU jobs (attribution intact) but makes them traffic-free SIDECARS off the
+# dependency chain: consumers depend on the op's inputs' producers directly.
+# V30a: traffic delta is exactly the suppressed round trips. Transformer
+# 1 256 4 4 512 128 0 1 at -c 1 (M=128, d_model 256, d_ff 512, fuse_attn off):
+#   norm1, norm2: 128x256x2 B = 1024 beats read + 1024 write -> 2048 each
+#   rope: 128x(256+256)x2 B -> 2048 + 2048 = 4096
+#   res1, res2 (2 operands): 2048 read + 1024 write -> 3072 each
+#   silu_mul (2 operands over 128x512): 4096 read + 2048 write -> 6144
+#   total 20480; job count unchanged (sidecars still run).
+printf 'Transformer 1 256 4 4 512 128 0 1\n' > "$WORK/v30.txt"
+"$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -i "$WORK/v30.txt" -o "$WORK/v30a_s.txt" > "$WORK/v30a.log" 2>&1
+n0=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v30a.log" | tail -1 | sed 's|.*/||')
+e0=$(edges_between "128 x 256" "128 x 256 x 256")
+"$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_vpu 1 -i "$WORK/v30.txt" -o "$WORK/v30b_s.txt" > "$WORK/v30b.log" 2>&1
+n1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v30b.log" | tail -1 | sed 's|.*/||')
+f1=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v30b.log" | tail -1 | grep -o '[0-9]*')
+e1=$(edges_between "128 x 256" "128 x 256 x 256")
+cu=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v30a.log" | tail -1 | awk '{print $3}')
+cf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v30b.log" | tail -1 | awk '{print $3}')
+if [ -n "$cu" ] && [ -n "$cf" ] && [ $((cu - cf)) -eq 20480 ] && [ "$n0" = "$n1" ] && [ "$f1" = "$n1" ]; then
+  ok "V30a -fuse_vpu suppresses exactly the VPU round trips ($cu -> $cf, $n1 jobs, all finish)"
+else
+  bad "V30a CMDs $cu -> $cf delta=$((${cu:-0} - ${cf:-0})) (want 20480), jobs $n0 vs $n1 finished $f1"
+fi
+# V30b: sidecars leave the chain -- norm1/res nodes ("128 x 256") feed q/k/v
+# GEMMs ("128 x 256 x 256") 3 times unfused, never fused.
+if [ "${e0:-0}" -eq 3 ] && [ "${e1:-0}" -eq 0 ]; then
+  ok "V30b fused VPU ops are off the dependency chain (edges $e0 -> $e1)"
+else
+  bad "V30b VPU->GEMM edges unfused=$e0 fused=$e1 (want 3 -> 0)"
+fi
+# V30c: decode. Transformer 2 512 8 4 1024 512 1 4 (M = batch = 4, nkv*hd =
+# 256, d_ff 1024, 2 layers, no head): suppressed round trips per layer are
+# norm1/norm2 64+64 beats each (256), rope 96+96 (192), res1/res2 128+64
+# each (384), silu_mul 256+128 (384) = 1216 -> 2432 over 2 layers, exact.
+# Cycles must not rise (each fused op also drops an HBM read->write latency
+# link from the chain -- large on this tiny config, <1% at 36 layers).
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -i "$WORK/v25d.txt" -o "$WORK/v30c_s.txt" > "$WORK/v30c.log" 2>&1
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -fuse_vpu 1 -i "$WORK/v25d.txt" -o "$WORK/v30d_s.txt" > "$WORK/v30d.log" 2>&1
+du=$(cycles_of "$WORK/v30c_s.txt"); df=$(cycles_of "$WORK/v30d_s.txt")
+mu=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v30c.log" | tail -1 | awk '{print $3}')
+mf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v30d.log" | tail -1 | awk '{print $3}')
+if [ -n "$du" ] && [ -n "$df" ] && [ "$df" -le "$du" ] && [ $((mu - mf)) -eq 2432 ]; then
+  ok "V30c decode: exact round-trip delta 2432, cycles $du -> $df"
+else
+  bad "V30c cycles $du -> $df, CMDs $mu -> $mf delta=$((${mu:-0} - ${mf:-0})) (want 2432)"
+fi
+# V30d: invalid value rejected.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -fuse_vpu 2 -i "$WORK/v30.txt" -o "$WORK/v30e_s.txt" > "$WORK/v30e.log" 2>&1; rv=$?
+if [ "$rv" -eq 1 ] && grep -q 'fuse_vpu' "$WORK/v30e.log"; then
+  ok "V30d -fuse_vpu 2 rejected"
+else
+  bad "V30d rc=$rv (want 1 + message)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

@@ -51,6 +51,12 @@ extern int mem_prio;
 // touch HBM. Attention traffic becomes read Q,K,V + write O, matching the
 // fused kernels XLA/vLLM always emit. Compute and dependencies are unchanged.
 extern int fuse_attn;
+// VPU-op fusion (spec 6.7): RMSNorm, RoPE, SiLU-mul and residual adds ride
+// in GEMM prologues/epilogues on silicon (kernel census: 0.1% of device
+// time). They stay VPU jobs here -- attribution intact -- but run
+// traffic-free as SIDECARS off the dependency chain, so consumers depend
+// on the op's inputs' producers directly. Subsumes -fuse_epilogue.
+extern int fuse_vpu;
 // Cross-op weight prefetch (-dbuf, spec 6.7): upcoming weight tags' first
 // jobs may stream their weight sweeps into otherwise-idle DRAM slots ahead
 // of dispatch, modeling XLA's next-operator prefetch (B2/C5v2). The value

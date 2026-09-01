@@ -38,7 +38,8 @@ Arch* StandardParser::make_arch() {
               {"-vmem_rows", &vmem_resident_rows},
               {"-fuse_attn", &fuse_attn},
               {"-dbuf", &dbuf_lookahead},
-              {"-dbuf_tile", &dbuf_tile}},
+              {"-dbuf_tile", &dbuf_tile},
+              {"-fuse_vpu", &fuse_vpu}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -57,7 +58,8 @@ Arch* StandardParser::make_arch() {
              "-vmem_rows    weight-residency row window for ablation (default 0 = unlimited)\n"
              "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on\n"
              "-dbuf         cross-op weight prefetch byte budget in MiB (default 0 = off)\n"
-             "-dbuf_tile    within-op tile double buffering: 0 off (default), 1 on");
+             "-dbuf_tile    within-op tile double buffering: 0 off (default), 1 on\n"
+             "-fuse_vpu     norm/rope/silu/residual fused into GEMM epilogues (traffic-free sidecars): 0 off (default), 1 on");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -124,6 +126,10 @@ Arch* StandardParser::make_arch() {
   }
   if (dbuf_lookahead < 0) {
     std::cerr << "Error: -dbuf must be >= 0, got " << dbuf_lookahead << std::endl;
+    exit(1);
+  }
+  if (fuse_vpu != 0 && fuse_vpu != 1) {
+    std::cerr << "Error: -fuse_vpu must be 0 or 1, got " << fuse_vpu << std::endl;
     exit(1);
   }
   if (dbuf_tile != 0 && dbuf_tile != 1) {

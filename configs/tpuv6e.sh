@@ -26,6 +26,7 @@ exec ./perf_model \
   -job_overhead 0 \
   -fuse_epilogue 0 \
   -fuse_attn 1 \
+  -fuse_vpu 1 \
   -dbuf 48 \
   -dbuf_tile 1 \
   -vmem_rows 0 \
