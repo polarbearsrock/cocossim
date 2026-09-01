@@ -360,12 +360,20 @@ residuals before being dismissed as noise.
   model. This coupling is deliberate: `-vmem_reuse` is the single ablation
   switch for VMEM staging (`global.h`), not two independently toggleable
   mechanisms.
-  AMENDED 2026-09-01 (C5v2 measurement, commit a6e6f82): XLA re-streams
-  weights per ~512-row M-tile even when the slice fits VMEM, so unlimited
-  cross-row-block residency was OPTIMISTIC for prefill; residency is now
-  bounded by `-vmem_rows` (default 512, a fitted parameter; 0 = unlimited).
-  Within-job row passes (prefill attention KV) keep full reuse — a documented
-  bounded optimism. Decode (M <= window) is unaffected.
+  AMENDED 2026-09-01 (commit a6e6f82) and RETRACTED the same day: the
+  512-row re-stream window was derived by fitting C5v2's slope law against
+  C3's throughputs, which are unchained calls carrying the ~113 µs host
+  dispatch floor (B1). Floor-corrected, 4096³ runs at ~819 TF/s in 168 µs on
+  device, which cannot contain eight 32 MB weight passes; and the raw C5v2
+  slopes (time vs M at fixed footprint) equal pure MXU compute at peak for a
+  VMEM-resident 33.5 MB weight — it streams once — while footprints beyond
+  VMEM show about one overlapped re-stream per ~2048 rows. `-vmem_rows` is
+  kept as an ablation knob, default 0 (`configs/tpuv6e.sh` pins 0
+  explicitly). Not modeled: the ~2048-row overlapped re-stream for weights
+  that do NOT fit the VMEM share (the model's non-fit path refetches per
+  256-row job, an over-count; no Qwen3-8B slice hits it). Rule adopted:
+  only device-side (chained or traced) measurements may calibrate device
+  mechanisms — every unchained number carries the host floor.
   Residual, deliberately unmodeled: (a) the fetch pass is not double-buffered —
   the first job of a slice exposes its fetch instead of prefetching under the
   previous op's compute, leaving GEMMs ~40% above their compute floor; (b)

@@ -38,9 +38,11 @@ extern int mxu_macs_per_pe;
 // share. vmem_reuse=0 restores per-tile refetch (ablation).
 extern int vmem_reuse;
 extern int vmem_headroom_pct;
-// Residency row window (C5v2, session 3): XLA re-streams a GEMM's weights
-// per ~512-row M-tile even when they fit VMEM, so cross-row-block reuse is
-// bounded. 0 = unlimited (the pre-measurement model).
+// Residency row window: cross-row-block weight reuse is cut after this many
+// rows of M. Ablation knob only; default 0 = unlimited. (A 512-row default
+// was once derived from C5v2 by fitting against host-floor-contaminated C3
+// throughputs and is retracted: the raw C5v2 slopes equal pure MXU compute
+// for a VMEM-resident weight, i.e. it streams once.)
 extern int vmem_resident_rows;
 // Serve SA memory transactions ahead of VPU ones (ISPASS'25 case study A fix).
 extern int mem_prio;

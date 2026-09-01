@@ -27,4 +27,5 @@ exec ./perf_model \
   -fuse_epilogue 0 \
   -fuse_attn 1 \
   -dbuf 48 \
+  -vmem_rows 0 \
   -i "$LAYERS" -o "$OUT" "$@"

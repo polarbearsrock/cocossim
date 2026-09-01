@@ -53,7 +53,7 @@ Arch* StandardParser::make_arch() {
              "-mp           model-parallel replicas of the input model (default 1)\n"
              "-mp_par       replicas run concurrently (1) or chained sequentially (0, default)\n"
              "-mem_prio     serve SA memory transactions before VPU ones: 0 FIFO (default), 1 on\n"
-             "-vmem_rows    weight-residency row window (default 512; 0 = unlimited)\n"
+             "-vmem_rows    weight-residency row window for ablation (default 0 = unlimited)\n"
              "-fuse_attn    attention scores stay on-chip (flash-attention fusion): 0 off (default), 1 on\n"
              "-dbuf         cross-op weight prefetch byte budget in MiB (default 0 = off)");
   if (cores < 1) {
