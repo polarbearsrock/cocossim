@@ -150,13 +150,15 @@ namespace SystolicArray {
                 bool fused_out = false, bool act_resident = false);
 
     // Cross-op weight prefetch (-dbuf): one full column-tile sweep of the
-    // weight side -- exactly what init() + init_row_loop() charge for a
-    // no-residency pass, so the credit consumes to zero. OS only.
-    [[nodiscard]] int64_t prefetchable_weight_bytes() const override {
+    // weight side in whole beats per tile -- exactly what init() +
+    // init_row_loop() deduct over a no-residency pass, so the credit
+    // consumes to zero, and never more than sys_job_alloc_bytes reserves
+    // (each tile's window term is >= floor(panel / bytes_per_tx)). OS only.
+    [[nodiscard]] int64_t prefetchable_weight_beats() const override {
       if (ws_cfg || weight_tag == -1) return 0;
       int cols = std::max(N / sz_cfg, 1);
-      return (int64_t) cols *
-             weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
+      int64_t panel = (int64_t) weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
+      return (int64_t) cols * (panel / bytes_per_tx);
     }
     [[nodiscard]] int prefetch_tag() const override { return weight_tag; }
     [[nodiscard]] int prefetch_rows() const override { return M; }

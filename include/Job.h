@@ -41,27 +41,28 @@ struct Job {
   bool is_done = false;
   // Cross-op weight prefetch (-dbuf, spec 6.7). The prefetcher (Arch.cc)
   // streams a future job's weight sweep into otherwise-idle DRAM slots and
-  // records the bytes here; the executing state then charges that much less
-  // at its own read sites, so every prefetched beat replaces a demand beat
-  // 1:1 and total traffic is invariant. `started` stops further issue the
-  // moment the job is dispatched.
-  int64_t prefetch_credit_bytes = 0;
+  // records the BEATS here; the executing state deducts them from its own
+  // full-formula read charge, so every prefetched beat replaces a demand
+  // beat 1:1 and total traffic is invariant for any byte remainder (the
+  // credit is bounded by floor(weight_bytes / bytes_per_tx) per tile, which
+  // the full-formula count always contains). `started` stops further issue
+  // the moment the job is dispatched.
+  int64_t prefetch_credit_beats = 0;
   bool started = false;
-  // How many weight-side bytes of this job the prefetcher may stream ahead
-  // of dispatch (0 = not prefetchable), and the identity used to pick only
-  // the FIRST job of each weight tag -- a fresh tag can never be
-  // VMEM-resident at dispatch, which is what makes the credit exact.
-  [[nodiscard]] virtual int64_t prefetchable_weight_bytes() const { return 0; }
+  // Whole beats of weight-side traffic the prefetcher may stream ahead of
+  // dispatch: per column tile floor(panel / bytes_per_tx), summed -- exactly
+  // what the charge sites deduct, and never more than the job's address
+  // window covers. 0 = not prefetchable.
+  [[nodiscard]] virtual int64_t prefetchable_weight_beats() const { return 0; }
   [[nodiscard]] virtual int prefetch_tag() const { return -1; }
   // Inputs the prefetcher's residency replay needs (Arch.cc): the rows this
-  // job consumes under its tag's residency window, and whether its slice
-  // stays resident. Mirror SysArrayState::init's decision inputs.
+  // job consumes under its tag's residency window (also the "is an SA job"
+  // predicate: > 0), and whether its slice stays resident. Mirror
+  // SysArrayState::init's decision inputs.
   [[nodiscard]] virtual int prefetch_rows() const { return 0; }
   [[nodiscard]] virtual bool prefetch_fits_vmem() const { return false; }
-  // Consume credit against a charge of `want` bytes, whole beats only
-  // (keeping demand-side beat totals exactly complementary to the issued
-  // prefetch beats; a sub-beat tail stays with the demand charge).
-  int64_t take_prefetch_credit(int64_t want);
+  // Consume up to `want` beats of credit; returns the beats consumed.
+  int64_t take_prefetch_credit_beats(int64_t want);
   Job(uint64_t alloc_size);
 
   void add_child(Job *j) {

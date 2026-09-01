@@ -789,6 +789,16 @@ if [ -n "$c0" ] && [ -n "$c1" ] && [ "$c1" -lt "$c0" ] && [ "$d0" = "$d1" ]; the
 else
   bad "V27a cycles $c0 -> $c1, CMDs $d0 vs $d1 (want fewer cycles, equal CMDs)"
 fi
+# V27a2: the offered-load stat must count DEMAND only (prefetch beats used to
+# hide the very starvation the stat measures). Both numbers are printed; the
+# all-traffic idle can only be <= the demand-only idle.
+di=$(grep -ao 'MEM demand-idle: [0-9]*' "$WORK/v27b.log" | grep -o '[0-9]*$')
+ti=$(grep -ao 'idle incl. prefetch: [0-9]*' "$WORK/v27b.log" | grep -o '[0-9]*$')
+if [ -n "$di" ] && [ -n "$ti" ] && [ "$ti" -le "$di" ]; then
+  ok "V27a2 demand-only idle stat ($di demand-idle, $ti incl. prefetch)"
+else
+  bad "V27a2 demand-idle=${di:-?} idle-incl-prefetch=${ti:-?}"
+fi
 
 # V27b: decode gate -- -dbuf must not degrade decode (<= +2% cycles) and
 # traffic must be exactly invariant. Exactness here leans on GQA group
@@ -817,6 +827,60 @@ if [ "$rv" -eq 1 ] && grep -q 'dbuf' "$WORK/v27e.log"; then
   ok "V27c -dbuf -1 rejected"
 else
   bad "V27c rc=$rv (want 1 + message)"
+fi
+
+# V27d: -dbuf traffic invariance at shapes whose weight panels are NOT whole
+# beats (review finding): credit must be issued and consumed in whole beats
+# per tile and deducted from the full-formula charge -- otherwise a sub-beat
+# remainder costs an extra beat per tile and the credit leaks. (a) head_dim 4
+# at sz 4: panel 32 B < one 64 B beat. (b) tiny fused head (head_dim 1, batch
+# 9, S 32): the old floor-of-sum issue count also overran the job's address
+# window here (+23% traffic).
+printf 'Transformer 1 8 2 2 16 8 0 1\n' > "$WORK/v27f.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -dbuf 0 -i "$WORK/v27f.txt" -o "$WORK/v27f0_s.txt" > "$WORK/v27f0.log" 2>&1
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -dbuf 8 -i "$WORK/v27f.txt" -o "$WORK/v27f8_s.txt" > "$WORK/v27f8.log" 2>&1
+fa=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27f0.log" | tail -1 | awk '{print $3}')
+fb=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27f8.log" | tail -1 | awk '{print $3}')
+printf 'Transformer 1 3 3 3 6 32 1 9\n' > "$WORK/v27g.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_attn 1 -dbuf 0 -i "$WORK/v27g.txt" -o "$WORK/v27g0_s.txt" > "$WORK/v27g0.log" 2>&1
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_attn 1 -dbuf 8 -i "$WORK/v27g.txt" -o "$WORK/v27g8_s.txt" > "$WORK/v27g8.log" 2>&1
+ga=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27g0.log" | tail -1 | awk '{print $3}')
+gb=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27g8.log" | tail -1 | awk '{print $3}')
+if [ -n "$fa" ] && [ "$fa" = "$fb" ] && [ -n "$ga" ] && [ "$ga" = "$gb" ]; then
+  ok "V27d -dbuf invariant at sub-beat panels ($fa) and tiny fused heads ($ga)"
+else
+  bad "V27d sub-beat $fa vs $fb, tiny-fused $ga vs $gb (want equal pairs)"
+fi
+
+# V27e: WS mode never consumes prefetch credit (and MatmulAct/ActMatmul
+# build OS-flagged jobs that the WS state machine executes), so -dbuf must
+# be forced off with a note: traffic invariant and the note names the flag.
+# (MatmulAct itself crashes under -ws 1 today -- OS-sized window, WS walk --
+# a pre-existing bug outside this test's scope; plain Matmul is the vehicle.)
+printf 'Matmul 64 64 128\n' > "$WORK/v27h.txt"
+"$BIN" -c 1 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -dbuf 0 -i "$WORK/v27h.txt" -o "$WORK/v27h0_s.txt" > "$WORK/v27h0.log" 2>&1
+"$BIN" -c 1 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -dbuf 8 -i "$WORK/v27h.txt" -o "$WORK/v27h8_s.txt" > "$WORK/v27h8.log" 2>&1
+ha=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27h0.log" | tail -1 | awk '{print $3}')
+hb=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v27h8.log" | tail -1 | awk '{print $3}')
+if [ -n "$ha" ] && [ "$ha" = "$hb" ] && grep -q 'dbuf' "$WORK/v27h8.log"; then
+  ok "V27e -dbuf forced off in WS mode (CMDs invariant $ha, note printed)"
+else
+  bad "V27e CMDs $ha vs $hb, note=$(grep -c dbuf "$WORK/v27h8.log")"
+fi
+
+# V28: GQA group pinning must not idle an MXU when nkv < n_cores (MQA, nkv=1):
+# group-indexed pinning sent every score/AV job to core 0. Pin by head in
+# that regime (deterministic; the documented 2x KV refetch applies). The
+# V12 decode shape is symmetric across 2 cores, so both SA units must
+# report identical ACCT work.
+printf 'Transformer 1 8 2 1 16 32 1 4\n' > "$WORK/v28.txt"
+"$BIN" -c 2 -n_vpu 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v28.txt" -o "$WORK/v28_s.txt" > "$WORK/v28.log" 2>&1
+w0=$(awk '$1=="ACCT" && $2=="SYSTOLIC_ARRAY" && $3==0 {for(i=1;i<=NF;i++) if($i=="work") print $(i+1)}' "$WORK/v28_s.txt")
+w1=$(awk '$1=="ACCT" && $2=="SYSTOLIC_ARRAY" && $3==1 {for(i=1;i<=NF;i++) if($i=="work") print $(i+1)}' "$WORK/v28_s.txt")
+if [ -n "$w0" ] && [ "$w0" = "$w1" ]; then
+  ok "V28 MQA attention balanced across MXUs (work $w0 == $w1)"
+else
+  bad "V28 SA0 work=${w0:-?} SA1 work=${w1:-?} (want equal)"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

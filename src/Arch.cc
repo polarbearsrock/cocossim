@@ -110,6 +110,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 
   int dram_cmds = 0;
   uint64_t mem_demand_idle = 0;
+  uint64_t mem_idle_all = 0;
 
   // ---------------------------------------------------------------------
   // Cross-op weight prefetch (-dbuf, spec 6.7). XLA streams the NEXT
@@ -158,24 +159,27 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     struct ReplayState { int resident_tag = -1; int rows = 0; };
     std::unordered_map<int, ReplayState> replay;
     for (auto *jb: all) {
-      if (jb->prefetchable_weight_bytes() <= 0 || jb->prefetch_tag() == -1) continue;
+      if (jb->prefetch_rows() <= 0) continue;// not a systolic-array job
+      const int tag = jb->prefetch_tag();
       bool will_fetch;
       if (jb->core_id >= 0) {
+        // Every SA job on the core advances the replay, untagged ones
+        // included (init() clears residency for them), so the predicted
+        // sequence is the executed one.
         auto &rs = replay[jb->core_id];
-        bool resident = vmem_reuse && jb->prefetch_tag() == rs.resident_tag;
+        bool resident = vmem_reuse && tag != -1 && tag == rs.resident_tag;
         if (resident && vmem_resident_rows > 0 &&
             rs.rows + jb->prefetch_rows() > vmem_resident_rows)
           resident = false;
         bool stay = vmem_reuse && jb->prefetch_fits_vmem();
-        rs.resident_tag = stay ? jb->prefetch_tag() : -1;
+        rs.resident_tag = (stay && tag != -1) ? tag : -1;
         rs.rows = resident ? rs.rows + jb->prefetch_rows() : jb->prefetch_rows();
         will_fetch = !resident;
       } else {
-        will_fetch = seen_tags.insert(jb->prefetch_tag()).second;
+        will_fetch = tag != -1 && seen_tags.insert(tag).second;
       }
-      if (!will_fetch) continue;
-      int64_t beats = jb->prefetchable_weight_bytes() / bytes_per_tx;
-      if (beats > 0) pf_list.push_back({jb, jb->addr_hold, beats});
+      int64_t beats = jb->prefetchable_weight_beats();
+      if (will_fetch && beats > 0) pf_list.push_back({jb, jb->addr_hold, beats});
     }
   }
 
@@ -332,31 +336,46 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
       successful_enqueue = mem::try_enqueue_tx();
       dram_cmds += successful_enqueue;
     }
-    // Offered-load stat: cycles where no unit gives DRAM any work (nothing
-    // queued, nothing in flight) -- the starvation -dbuf exists to fill.
-    if (to_enqueue.empty() && mem::address_reads_bkwds_lookup.empty() &&
-        mem::address_writes_bkwds_lookup.empty())
-      mem_demand_idle++;
+    // Offered-load stats. demand-idle: cycles where no UNIT has any read or
+    // write outstanding (the starvation -dbuf exists to fill -- counted from
+    // the states' own pending counters so prefetch traffic cannot mask it).
+    // idle incl. prefetch: nothing queued or in flight at all.
+    {
+      bool demand_pending = false;
+      for (auto *s: states)
+        if (s->mem_read_left > 0 || s->mem_write_left > 0) { demand_pending = true; break; }
+      if (!demand_pending) mem_demand_idle++;
+      if (to_enqueue.empty() && mem::address_reads_bkwds_lookup.empty() &&
+          mem::address_writes_bkwds_lookup.empty())
+        mem_idle_all++;
+    }
 
-    // -dbuf issue: fill only the slack the demand enqueue left this cycle.
-    // The lookahead is a BYTE budget (VMEM honesty): keep streaming entries
-    // in list order while issued-but-unconsumed bytes stay under the cap. A
-    // tag-count window proved mis-shaped -- 16 tiny attention-group tags sit
-    // between the big GEMMs, so a 2-tag window stalled on them and never
-    // reached the MLP weights it existed to hide.
+    // -dbuf issue: fill only the slack the demand enqueue left this cycle
+    // (at -mem_prio 0 a beat issued here can still precede demand pushed
+    // NEXT cycle by one FIFO slot -- a one-cycle effect). The lookahead is a
+    // BYTE budget (VMEM honesty): keep streaming entries in list order while
+    // issued-but-unconsumed beats stay under the cap. A tag-count window
+    // proved mis-shaped -- 16 tiny attention-group tags sit between the big
+    // GEMMs, so a 2-tag window stalled on them and never reached the MLP
+    // weights it existed to hide.
     if (dbuf_lookahead > 0) {
-      const int64_t pf_cap = (int64_t) dbuf_lookahead * 1024 * 1024;
+      const int64_t pf_cap_beats = ((int64_t) dbuf_lookahead << 20) / bytes_per_tx;
       while (pf_cursor < pf_list.size() &&
              (pf_list[pf_cursor].job->started || pf_list[pf_cursor].beats_left == 0))
         pf_cursor++;
       int budget = dram_enq_per_cycle - (int) to_enqueue.size();
       for (size_t e = pf_cursor;
-           e < pf_list.size() && budget > 0 && pf_outstanding_bytes < pf_cap; ++e) {
+           e < pf_list.size() && budget > 0 && pf_outstanding_beats < pf_cap_beats; ++e) {
         auto &ent = pf_list[e];
         if (ent.job->started || ent.beats_left == 0) continue;
-        int n = (int) std::min<int64_t>(
-            std::min<int64_t>(budget, ent.beats_left),
-            (pf_cap - pf_outstanding_bytes + bytes_per_tx - 1) / bytes_per_tx);
+        int n = (int) std::min<int64_t>(std::min<int64_t>(budget, ent.beats_left),
+                                        pf_cap_beats - pf_outstanding_beats);
+        // Same guard the demand paths apply (State::check_in_bounds): a walk
+        // past the window is the DRAMSim3 R/W-aliasing livelock class.
+        if (ent.next_addr + (uint64_t) n * bytes_per_tx >
+            ent.job->addr_hold + ent.job->alloc_size)
+          throw std::runtime_error("prefetch for job " + std::to_string(ent.job->job_idx) +
+                                   " would walk past its allocation");
         for (int b = 0; b < n; ++b) {
           // Priority 3 (behind SA/VPU demand for -mem_prio); no owning state:
           // completions are absorbed by the null-guard in the DRAM callback.
@@ -364,8 +383,8 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           ent.next_addr += bytes_per_tx;
         }
         ent.beats_left -= n;
-        ent.job->prefetch_credit_bytes += (int64_t) n * bytes_per_tx;
-        pf_outstanding_bytes += (int64_t) n * bytes_per_tx;
+        ent.job->prefetch_credit_beats += n;
+        pf_outstanding_beats += n;
         budget -= n;
       }
     }
@@ -395,7 +414,9 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
 #endif
 
   printf("\rPHASE: %d, Cycles: %llu, Time: %fµs Jobs finished: %d/%d, DRAM CMDs: %d", phase_idx, gcycles, double(gcycles) * cycle_adjust / 1000, jobs_finished, total_jobs, dram_cmds);
-  printf("\nMEM demand-idle: %llu / %llu cycles\n", (unsigned long long) mem_demand_idle, (unsigned long long) gcycles);
+  printf("\nMEM demand-idle: %llu / %llu cycles (idle incl. prefetch: %llu)\n",
+         (unsigned long long) mem_demand_idle, (unsigned long long) gcycles,
+         (unsigned long long) mem_idle_all);
   mem::mem_sys->PrintStats();
   fflush(stdout);
   write_stats(phase_idx);

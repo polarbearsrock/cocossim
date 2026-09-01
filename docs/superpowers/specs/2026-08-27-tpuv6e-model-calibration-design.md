@@ -312,6 +312,19 @@ residuals before being dismissed as noise.
   bandwidth than the sim's streaming rate (candidate: per-stream KV derate).
   All three parameters belong to the Plan-3 fit from A/B/C + D-charac
   data, never from the holdout points.
+  Review pass (same day, independent reviewer, all verified and fixed;
+  tests V27a2/V27d/V27e/V28): prefetch credit is now issued and deducted in
+  whole BEATS per tile from the full-formula charge (exact for any byte
+  remainder -- the byte version broke invariance at sub-beat panels and its
+  floor-of-sum issue count could overrun a fused job's window); the prefetch
+  walk carries the same bounds guard as the demand paths; `-dbuf` is forced
+  off in WS mode (WS charge sites never consume credit); `MEM demand-idle`
+  counts demand only, with the all-traffic idle printed beside it; GQA
+  pinning falls back to per-head pinning when nkv < n_cores (MQA) so no MXU
+  idles. Calibration shapes are bit-identical before and after. Found in
+  passing, out of scope: `MatmulAct`/`ActMatmul` crash under `-ws 1`
+  (OS-sized windows walked by the WS state machine) -- pre-existing, filed
+  separately.
 - **(added 2026-09-01; ADDRESSED same day, flag `-fuse_attn`, tests V25a–c)
   Unfused attention was the dominant prefill gap.** The `Transformer` expansion
   materialized the score matrix S through DRAM four times per layer (QK^T

@@ -147,12 +147,15 @@ void SystolicArray::SysArrayState::init_row_loop(bool new_row) {
     // 2^31 at long-context decode shapes.
     int64_t wb = skip_weights ? 0
                : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams;
-    wb -= j->take_prefetch_credit(wb);// -dbuf: beats already streamed ahead
     int64_t rb = wb;
     if (new_row && !sj->act_resident) {
       rb += activation_panel_bytes(sj->M, sj->K, sz);
     }
     n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
+    // -dbuf: beats already streamed ahead come off the full-formula count,
+    // which always contains floor(wb / bytes_per_tx) -- exact for any
+    // byte remainder, never negative.
+    if (wb > 0) n_read_beats -= (int) j->take_prefetch_credit_beats(wb / bytes_per_tx);
   }
   mem_read_left = mem_read_left_unqueued = n_read_beats;
 }
@@ -198,11 +201,13 @@ void SystolicArray::SysArrayState::init() {
     resident_rows_used = weights_resident ? resident_rows_used + sj->M : sj->M;
     int64_t wb = weights_resident ? 0
                : (int64_t) weight_panel_bytes(sj->K, sj->N, sz, j->batched_weights) * sj->n_weight_streams;
-    wb -= j->take_prefetch_credit(wb);// -dbuf: beats already streamed ahead
     int64_t rb = (sj->act_resident ? 0 : (int64_t) activation_panel_bytes(sj->M, sj->K, sz)) + wb;
     // rb can now be 0 (act_resident + resident weights): charge nothing, like
     // init_row_loop. For rb > 0 the max(.,1) floor is unchanged.
     int n_read_beats = rb > 0 ? (int) std::max<int64_t>(rb / bytes_per_tx, 1) : 0;
+    // -dbuf: prefetched beats come off the full-formula count (see
+    // init_row_loop for the exactness argument).
+    if (wb > 0) n_read_beats -= (int) j->take_prefetch_credit_beats(wb / bytes_per_tx);
     mem_read_left = mem_read_left_unqueued = n_read_beats;
 
     loop_cols_tiles = std::max(sj->N / sz, 1);

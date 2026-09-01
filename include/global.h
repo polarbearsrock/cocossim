@@ -56,9 +56,9 @@ extern int fuse_attn;
 // exceed it (VMEM honesty). 0 = off. Traffic is invariant: prefetched
 // beats replace demand beats 1:1.
 extern int dbuf_lookahead;
-// Issued-but-unconsumed prefetch bytes (Arch.cc issues, Job::take_prefetch_
-// credit consumes).
-extern int64_t pf_outstanding_bytes;
+// Issued-but-unconsumed prefetch beats (Arch.cc issues,
+// Job::take_prefetch_credit_beats consumes).
+extern int64_t pf_outstanding_beats;
 
 const int embedding_dim= 768;
 const int n_heads = 6;
