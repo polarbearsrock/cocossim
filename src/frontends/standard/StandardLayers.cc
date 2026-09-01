@@ -514,11 +514,16 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // VMEM-resident -- the fit check says so on its own -- so it streams
     // from HBM every step. The embedding gather at the model's front is
     // deliberately unmodeled: a few KB per token, no kernel worth a job.
-    JobList final_norm = makeRMSNormJobs(d_model, M);
+    // Serving computes logits for the LAST token of each sequence only, so
+    // the head chain carries batch rows in BOTH modes (in decode M == batch
+    // already; in prefill using M = seq_len would inflate the head ~seq_len/
+    // batch-fold vs. real serving - session-3 calibration finding).
+    int head_rows = batch;
+    JobList final_norm = makeRMSNormJobs(d_model, head_rows);
     connectJobLists(prev_tail, final_norm);
-    auto head = Matmul(a_config, LayerConfig("Matmul", {M, d_model, vocab}));
+    auto head = Matmul(a_config, LayerConfig("Matmul", {head_rows, d_model, vocab}));
     connectJobLists(final_norm, head.first);
-    JobList logits_sm = makeSoftmaxJobs(vocab, M);
+    JobList logits_sm = makeSoftmaxJobs(vocab, head_rows);
     connectJobLists(head.second, logits_sm);
     prev_tail = logits_sm;
   }

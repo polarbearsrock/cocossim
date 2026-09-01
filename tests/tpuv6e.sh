@@ -579,11 +579,18 @@ fb=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v21b.log" | tail -1 | sed 's|
 ca=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v21a.log" | tail -1 | awk '{print $3}')
 cb=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v21b.log" | tail -1 | awk '{print $3}')
 cd=$((${cb:-0} - ${ca:-0}))
+# Serving semantics: prefill computes logits for the LAST token per sequence
+# only, so the head GEMM carries M = batch (4), never M = seq (128).
+printf 'Transformer 1 256 8 2 512 128 0 4 8192\n' > "$WORK/v21d.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v21d.txt" -o "$WORK/v21d_s.txt" > "$WORK/v21d.log" 2>&1
+rd=$?
 if [ "$rb" -eq 0 ] && [ "${jb:-0}" -eq $((${ja:-0} + 3)) ] && [ "$fb" = "$jb" ] \
-   && [ "$cd" -ge 65000 ] && [ "$cd" -le 80000 ] && [ "$rc_neg" -ne 0 ]; then
-  ok "V21 LM head: +3 jobs, head weights streamed (CMDs $ca -> $cb)"
+   && [ "$cd" -ge 65000 ] && [ "$cd" -le 80000 ] && [ "$rc_neg" -ne 0 ] \
+   && [ "$rd" -eq 0 ] && grep -q 'label="4 x 256 x 8192"' jobs.dot \
+   && ! grep -q 'label="128 x 256 x 8192"' jobs.dot; then
+  ok "V21 LM head: +3 jobs, weights streamed (CMDs $ca -> $cb), prefill head is last-token"
 else
-  bad "V21 rc=$rb jobs=$ja->$jb(fin=$fb) cmds_delta=$cd negvocab_rc=$rc_neg"
+  bad "V21 rc=$rb jobs=$ja->$jb(fin=$fb) cmds_delta=$cd negvocab_rc=$rc_neg prefill_head_rc=$rd"
 fi
 
 # V22: address-window sizing bugs that aborted these three inputs with
