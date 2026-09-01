@@ -39,6 +39,14 @@ static bool weightSliceFitsVmem(int K, int n_slice, int n_slices, int64_t copies
 JobList createSAJobs(int M, int K, int N, int sa_sz, int n_cores = 1) {
   JobList jobs;
   int core_n = N / n_cores;
+  // A zero-column split would either silently drop the layer's work (OS,
+  // masked by max(N/sz, 1)) or trip the WS loop_cols_tiles guard downstream.
+  // Reject the input cleanly instead; remainder distribution is not modeled.
+  if (core_n < 1) {
+    std::cerr << "Error: cannot split N=" << N << " output columns across "
+              << n_cores << " cores (need N >= n_cores)" << std::endl;
+    exit(1);
+  }
   int num_jobs = div_ru(M, sa_sz);
   int weight_tag = next_weight_tag++;
   bool fits = weightSliceFitsVmem(K, core_n, n_cores);
@@ -67,6 +75,11 @@ static JobList createWSJobs(const ArchConfig &a_config, int M, int K, int N, con
   JobList jl;
 
   int core_n = N / a_config.n_cores;
+  if (core_n < 1) {
+    std::cerr << "Error: cannot split N=" << N << " output columns across "
+              << a_config.n_cores << " cores (need N >= n_cores)" << std::endl;
+    exit(1);
+  }
   std::cout << label << " N-splitting: " << N << " output channels across " << a_config.n_cores << " cores" << std::endl;
 
   static std::vector<int> core_task_counters(a_config.n_cores, 0);

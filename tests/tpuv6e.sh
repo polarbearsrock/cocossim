@@ -635,5 +635,22 @@ else
   bad "V22 rc=$ra/$rb/$rc3 fin=${fa:-?}/${fb:-?}/${fc:-?} overran=${overran:-?} (walked-past-allocation regression)"
 fi
 
+# V23: a layer narrower than the core count must be rejected cleanly (exit 1
+# naming the split), in BOTH dataflows. Pre-fix: the WS path built an N=0 job
+# and died on the loop_cols_tiles==0 guard (SIGABRT, initial-commit-era bug);
+# the OS path silently dropped the layer's work via max(N/sz, 1) and
+# "completed". Matmul 64 64 2 at -c 4: 2 columns across 4 cores.
+printf 'Matmul 64 64 2\n' > "$WORK/v23.txt"
+"$BIN" -c 4 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v23.txt" -o "$WORK/v23a_s.txt" > "$WORK/v23a.log" 2>&1
+rws=$?
+"$BIN" -c 4 -ws 0 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v23.txt" -o "$WORK/v23b_s.txt" > "$WORK/v23b.log" 2>&1
+ros=$?
+if [ "$rws" -eq 1 ] && grep -q 'cores' "$WORK/v23a.log" \
+   && [ "$ros" -eq 1 ] && grep -q 'cores' "$WORK/v23b.log"; then
+  ok "V23 N < n_cores rejected cleanly in WS and OS"
+else
+  bad "V23 ws_rc=$rws os_rc=$ros (want clean exit 1 + message; pre-fix: 134/0)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
