@@ -62,11 +62,17 @@ namespace SystolicArray {
   // act_resident job's activation operand is already there (no activation-
   // panel reads). Both must shrink the window exactly as they shrink the
   // charges below, or window and walk drift apart (the multi-core livelock).
+  // tile_dbuf (-dbuf_tile, OS only): the read stage of a row's last column
+  // tile rewinds the cursor and pre-issues the next row's reads BEFORE that
+  // tile's write-back is issued, so one output tile of every row but the
+  // last lands in the FOLLOWING row's epoch -- the last epoch is then one
+  // output tile wider than the first pass (V31c derives the epochs).
   inline uint64_t sys_job_alloc_bytes(int M, int K, int N, int sz, bool ws,
                                       bool batched_weights,
                                       int64_t n_weight_streams = 1,
                                       bool fused_out = false,
-                                      bool act_resident = false) {
+                                      bool act_resident = false,
+                                      bool tile_dbuf = false) {
     // Weight-side reads scale with n_weight_streams (per-sequence KV caches);
     // the window must cover the scaled walk, mirroring the charging math.
     const uint64_t weight_beats = std::max<int64_t>(
@@ -107,14 +113,25 @@ namespace SystolicArray {
       // its own -- that part was already right. Every column tile writes
       // back its true output block (output_tile_bytes, the same helper the
       // shift stage charges), floored to one beat like state_transfer does.
+      // Under -dbuf_tile a multi-row job's last epoch also carries the
+      // previous row's last write-back (see tile_dbuf above): reserve one
+      // more output tile then. Epochs, R rows > 1, C cols, W = out_beats:
+      //   1:      combined + (C-1) wgt + (C-1) W
+      //   2..R-1: act(+wgt) + W + (C-1) wgt + (C-1) W  <= first pass
+      //   R:      act(+wgt) + W + (C-1) wgt + C W      <= first pass + W
+      // -dbuf_tile 0 and fused_out reserve nothing extra (bit-identical
+      // address layout for the baseline).
+      const int rows = std::max(M / sz, 1);
       const int64_t combined_first_tile_bytes =
           (act_resident ? 0 : (int64_t) activation_panel_bytes(M, K, sz)) +
           (int64_t) weight_panel_bytes(K, N, sz, batched_weights) * n_weight_streams;
       const uint64_t combined_first_tile_beats =
           std::max<int64_t>(combined_first_tile_bytes / bytes_per_tx, 1);
+      const uint64_t out_beats = fused_out ? 0 : demand_beats(output_tile_bytes(M, N, sz));
       beats = combined_first_tile_beats +
               (uint64_t) (cols - 1) * weight_beats +
-              (fused_out ? 0 : (uint64_t) cols * demand_beats(output_tile_bytes(M, N, sz)));
+              (uint64_t) cols * out_beats +
+              ((tile_dbuf && rows > 1) ? out_beats : 0);
     }
     return beats * (uint64_t) bytes_per_tx;
   }

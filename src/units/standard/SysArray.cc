@@ -91,6 +91,10 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           bool last_tile = (col_i == loop_cols_tiles && row_i == loop_row_tiles);
           if (dbuf_tile && !last_tile) {
             bool new_row = (col_i == loop_cols_tiles);
+            // Rewinding here puts THIS tile's write-back (issued at the
+            // shift->write transition below) into the next row's epoch;
+            // sys_job_alloc_bytes reserves that extra output tile for
+            // multi-row jobs under -dbuf_tile (V31c).
             if (new_row) j->addr = j->addr_hold;
             init_row_loop(new_row);          // programs the next tile's read counters
             min_stage_cycles = shift_cycles;  // init_row_loop set the compute length; restore
@@ -270,7 +274,8 @@ SystolicArray::SysArrayState::SysArrayState(int sz, bool ws) : State(1), sz(sz),
 SystolicArray::SysArrayJob::SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams,
                                         bool fused_out, bool act_resident)
     : Job(sys_job_alloc_bytes(m, k, n, sz, ws, /*batched_weights=*/false,
-                              n_weight_streams, fused_out, act_resident)),
+                              n_weight_streams, fused_out, act_resident,
+                              /*tile_dbuf=*/dbuf_tile != 0)),
       M(m), K(k), N(n), n_weight_streams(n_weight_streams),
       fused_out(fused_out), act_resident(act_resident), sz_cfg(sz), ws_cfg(ws) {}
 

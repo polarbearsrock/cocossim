@@ -317,6 +317,37 @@ residuals before being dismissed as noise.
   beats and S4b's −524288 activation beats nearly cancel, the coincidence
   the benchmark spec anticipated. The busy/memstall split, not the totals,
   is what the fidelity matrix judges.
+- **(added 2026-09-01, S4 fix round 1; ADDRESSED same day, window-formula
+  fix — no flag — test V31c) Multi-row OS jobs walked past their address
+  window under `-dbuf_tile 1`.** The `-dbuf_tile` read stage of a row's
+  last column tile rewinds the cursor to `addr_hold` and pre-issues the next
+  row's reads BEFORE that tile's write-back is issued, so one output tile of
+  every row but the last lands in the following row's epoch. The last epoch
+  is therefore act (+weights if not resident) + W + (C−1) weight tiles +
+  C·W = first pass + W, one output tile wider than `sys_job_alloc_bytes`
+  reserved (epochs 1..R−1 stay ≤ the first pass). Pre-existing since
+  `-dbuf_tile` (the parent aborts on `Transformer 1 512 4 4 1024 8192 0 1`
+  at `-buf_mb 1`), but the 1/64 write charge hid it behind the
+  resident-weight slack for every shape whose weights fit VMEM; at true
+  bytes the pinned config with `-fuse_attn 0` aborted (S=768/1024, "walked
+  past its allocation on writes") or hung in the DRAMSim3 read/write
+  deadlock (S=512, the overrun aliasing a neighbour's window). Only prefill
+  attention jobs have several row tiles (every `createSAJobs` job has one),
+  and `-fuse_attn 1` makes the scores jobs write nothing, which is why V18c/
+  V25/V29 never saw it. Fix: `sys_job_alloc_bytes` takes `tile_dbuf` and
+  reserves one extra output tile for OS jobs with R > 1 (not for
+  `fused_out`, not for `-dbuf_tile 0`: the baseline address layout is
+  bit-identical); the walk is unchanged. V31c pins, beat-exact, `Transformer
+  1 256 4 4 512 1024 0 1` at -c 1 (`-fuse_attn 0 -fuse_vpu 1`) at 716800
+  CMDs for `-dbuf_tile` 0 and 1, and the S=512 layer at 237568 on the
+  pinned config (`-fuse_attn 0`, both `-dbuf_tile` values) and at -c 1 — the
+  2-core total equals the 1-core total because `-act_share 1` charges each
+  activation row block once, as one core does. Also verified complete and
+  `-dbuf_tile`-invariant: S=768 (444416), S=2048 (2461696), and the 8192
+  `-buf_mb 1` shape (47136768, 764/764 jobs). Pinned-config effect (CMDs
+  invariant): 4096³ and decode unchanged (single-row jobs); the Llama-8B
+  prefill-2048 layer 3088716 → 3037359 (−1.7%, the AV jobs' wider windows
+  shift the address layout DRAMSim3 sees).
 - **(added 2026-09-01; ADDRESSED same day, flag `-act_share` default 1,
   tests V31b + V29a CMD pin; benchmark spec S4b) Activation panels read once
   per MXU instead of once into shared VMEM.** `createSAJobs` splits N across

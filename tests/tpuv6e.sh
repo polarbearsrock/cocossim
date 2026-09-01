@@ -1093,5 +1093,99 @@ else
   bad "V31b rc=$r0/$r1 fin=${f1:-?} CMDs share0=$b0 (want 12288) share1=$b1 (want 10240) default=$b2 badval_rc=$rv"
 fi
 
+# V31c: multi-row-tile OS jobs under -dbuf_tile 1 (S4a review finding).
+# Every createSAJobs row-block job has ONE row tile; only prefill attention
+# jobs have several (scores M x hd x S and AV M x S x hd with M > sz), and
+# under -fuse_attn 1 the scores jobs write nothing -- so the write-back that
+# CROSSES the row rewind was never exercised at true bytes. Under -dbuf_tile
+# the read stage of a row's last column tile rewinds the cursor to addr_hold
+# and pre-issues the next row's reads BEFORE that tile's write-back is
+# issued, so the write-back lands in the next row's epoch. With 32-beat
+# writes the resident-weight slack hid it; at true bytes the LAST epoch
+# exceeds the window by up to one output tile W: abort ("walked past its
+# allocation") or, when the overrun aliases a neighbouring job's window,
+# the DRAMSim3 read/write deadlock (Job.h). sys_job_alloc_bytes now reserves
+# that tile for multi-row OS jobs when -dbuf_tile is on -- the walk is
+# unchanged. Epochs (rows R > 1, cols C, weights resident from row 2 or
+# not): epoch 1 = combined + (C-1) wgt + (C-1) W; epochs 2..R-1 = act
+# (+wgt) + W(prev) + (C-1) wgt + (C-1) W <= first pass; epoch R = act
+# (+wgt) + W(prev) + (C-1) wgt + C W <= first pass + W. -dbuf_tile 0 and
+# fused_out (0-beat writes) reserve nothing extra, so the baseline layout
+# is bit-identical.
+# Run 1: Transformer 1 256 4 4 512 1024 0 1 at -c 1 -sa_sz 256 -vu_sz 512
+# -fuse_attn 0 -fuse_vpu 1 (VPU sidecars traffic-free; softmax remains),
+# 128 MiB VMEM (every weight slice is resident after its first row/job),
+# prefetch off. All 46 jobs finish and CMDs are identical for -dbuf_tile
+# 0/1 and equal the hand total (beats; dtw 2, 64 B/beat):
+#   q,k,v,o 1024x256x256: 4 row-block jobs of 256x256x256, 1 col tile;
+#     weight 256*256*2/64 = 2048, act 2048: job 1 4096, jobs 2-4 2048 each
+#     -> 10240 reads + 4 x 2048 writes = 18432 each, x4 = 73728
+#   gate,up 1024x256x512: 4 jobs of 256x256x512, 2 tiles: job 1 4096 +
+#     2048, jobs 2-4 2048 -> 12288 reads + 8 x 2048 writes = 28672 each
+#     -> 57344
+#   down 1024x512x256: 4 jobs of 256x512x256, 1 tile: weight 4096, act
+#     4096: job 1 8192, jobs 2-4 4096 -> 20480 reads + 4 x 2048 = 28672
+#   scores 1024x64x1024 per head (4 rows x 4 cols, one K tag per head,
+#     64x1024x2 = 128 KiB fits): weight tile 256*64*2/64 = 512, act 512.
+#     Row 1: 1024 + 3 x 512 = 2560; rows 2-4 act only 512 -> 4096 reads;
+#     writes 16 x 2048 = 32768 -> 36864 per head, x4 = 147456
+#   AV 1024x1024x64 per head (4 rows x 1 col): weight 64*1024*2/64 = 2048,
+#     act 256*1024*2/64 = 8192. Row 1: 10240; rows 2-4 8192 -> 34816 reads;
+#     writes 4 x (256*64*2/64 = 512) = 2048 -> 36864 per head, x4 = 147456
+#   softmax 4096 rows x 1024 (4 jobs of 1024 rows, 2 MiB each): 4 x 32768
+#     read + 4 x 32768 write = 262144
+#   total 73728 + 57344 + 28672 + 147456 + 147456 + 262144 = 716800
+# Run 2: the pinned config with only -fuse_attn 0 flipped, S = 512 (the
+# run that HUNG at 14/44 jobs). -c 2, -act_share 1, -dbuf 48 (prefetch is
+# traffic-invariant), -dbuf_tile 0 and 1 must both finish 44/44 at:
+#   q,k,v,o 512x256x256, core_n 128: 2 jobs/core of 256x256x128; weight
+#     128*256*2/64 = 1024, act 2048. Core 0: 3072 + 2048; core 1
+#     (act_resident): 1024 + 0; writes 4 x 1024 -> 10240 each, x4 = 40960
+#   gate,up 512x256x512, core_n 256: 2 jobs/core of 256x256x256; core 0
+#     4096 + 2048, core 1 2048; writes 4 x 2048 -> 16384 each, 32768
+#   down 512x512x256, core_n 128: 2 jobs/core of 256x512x128; weight
+#     128*512*2/64 = 2048, act 4096. Core 0: 6144 + 4096, core 1 2048;
+#     writes 4 x 1024 -> 16384
+#   scores 512x64x512 per head (2 x 2 tiles, heads alternate cores): row 1
+#     1024 + 512, row 2 512 -> 2048 reads; writes 4 x 2048 -> 10240, 40960
+#   AV 512x512x64 per head (2 rows x 1 col): weight 1024, act 4096: 5120 +
+#     4096 = 9216 reads; writes 2 x 512 -> 10240, 40960
+#   softmax 2048 rows x 512 (2 jobs of 1024): 32768 read + 32768 write
+#     = 65536
+#   total 40960 + 32768 + 16384 + 40960 + 40960 + 65536 = 237568
+# Run 3: the same S = 512 layer at -c 1 (Run 1's flags), -dbuf_tile 1: the
+# 512x64x512 scores job aborted here too (window 1024 + 512 + 2 x 2048 =
+# 5632 beats; last epoch 512 + 2048 + 2 x 2048 = 6656). 30 jobs (two
+# row-block jobs per GEMM), and the same 237568: each 2-core GEMM above
+# splits the weight panel in half per core (same total) and -act_share 1
+# charges the activation panel once per row block, exactly as one core
+# does -- q,k,v,o 6144 + 4096 = 10240 each; gate,up (4096 + 2048) + 2048 +
+# 8192 = 16384 each; down 8192 + 4096 + 4096 = 16384; scores, AV and
+# softmax are core-count independent. (Run 1's S = 1024 scores jobs fit
+# their window by coincidence: the resident-weight savings after row 1,
+# 3 x 512 + 512 = 2048, equal W; they pin the 4 x 4-tile walk regardless.)
+finished_all() { grep -o 'Jobs finished: [0-9]*/[0-9]*' "$1" | tail -1 | awk -F'[:/ ]+' -v n="$2" '{print ($3==$4 && $3==n)?1:0}'; }
+cmds_of() { grep -o 'DRAM CMDs: [0-9]*' "$1" | tail -1 | awk '{print $3}'; }
+printf 'Transformer 1 256 4 4 512 1024 0 1\n' > "$WORK/v31c.txt"
+printf 'Transformer 1 256 4 4 512 512 0 1\n' > "$WORK/v31c2.txt"
+C1="-c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 -fuse_attn 0 -fuse_vpu 1"
+timeout 120 "$BIN" $C1 -dbuf_tile 0 -i "$WORK/v31c.txt" -o "$WORK/v31c0_s.txt" > "$WORK/v31c0.log" 2>&1; rc0=$?
+timeout 120 "$BIN" $C1 -dbuf_tile 1 -i "$WORK/v31c.txt" -o "$WORK/v31c1_s.txt" > "$WORK/v31c1.log" 2>&1; rc1=$?
+timeout 120 "$REPO/configs/tpuv6e.sh" "$WORK/v31c2.txt" "$WORK/v31c2_s.txt" -fuse_attn 0 -dbuf_tile 0 > "$WORK/v31c2.log" 2>&1; rc2=$?
+timeout 120 "$REPO/configs/tpuv6e.sh" "$WORK/v31c2.txt" "$WORK/v31c3_s.txt" -fuse_attn 0 > "$WORK/v31c3.log" 2>&1; rc3=$?
+timeout 120 "$BIN" $C1 -dbuf_tile 1 -i "$WORK/v31c2.txt" -o "$WORK/v31c4_s.txt" > "$WORK/v31c4.log" 2>&1; rc4=$?
+c0=$(cmds_of "$WORK/v31c0.log"); c1=$(cmds_of "$WORK/v31c1.log")
+c2=$(cmds_of "$WORK/v31c2.log"); c3=$(cmds_of "$WORK/v31c3.log"); c4=$(cmds_of "$WORK/v31c4.log")
+if [ "$rc0$rc1$rc2$rc3$rc4" = "00000" ] \
+   && [ "$(finished_all "$WORK/v31c0.log" 46)" = 1 ] && [ "$(finished_all "$WORK/v31c1.log" 46)" = 1 ] \
+   && [ "$(finished_all "$WORK/v31c2.log" 44)" = 1 ] && [ "$(finished_all "$WORK/v31c3.log" 44)" = 1 ] \
+   && [ "$(finished_all "$WORK/v31c4.log" 30)" = 1 ] \
+   && [ "${c0:-0}" -eq 716800 ] && [ "$c1" = "$c0" ] && [ "${c2:-0}" -eq 237568 ] && [ "$c3" = "$c2" ] \
+   && [ "$c4" = "$c2" ]; then
+  ok "V31c multi-row OS jobs complete under -dbuf_tile 1 (CMDs -c 1 S=1024: $c0, S=512 pinned/-c 1: $c2, invariant)"
+else
+  bad "V31c rc=$rc0/$rc1/$rc2/$rc3/$rc4 CMDs -c 1 S=1024: $c0/$c1 (want 716800) S=512 pinned: $c2/$c3 -c 1: $c4 (want 237568)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"
