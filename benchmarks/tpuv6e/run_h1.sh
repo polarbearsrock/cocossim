@@ -14,7 +14,13 @@ mkdir -p "$OUT"
 date +"H1 start: %F %H:%M (%s)" | tee -a "$RESULTS_DIR/cost.log"
 
 SKIP_MODEL=1 ./provision.sh --if-needed
+# Fresh remote probe dir every time: `scp --recurse dir host:~/probes` NESTS
+# into ~/probes/probes when the target already exists (a reused VM then runs
+# the stale copies), and the probes resume from their CSVs, so a leftover
+# CSV from a bad run would make them skip every point. Wipe both.
+tpu_ssh "rm -rf ~/probes"
 tpu_scp ./probes "$TPU_NAME":~/probes
+tpu_ssh "grep -q 'row-sums of y' ~/probes/g_sweep.py && grep -q 'CARRY IS THE' ~/probes/e1_chained.py && echo PROBES_DEPLOYED"
 tpu_ssh "source ~/venv/bin/activate && cd ~/probes && mkdir -p traces && \
   python g_sweep.py --cells G1,G2,G3 --out g_sweep.csv --trace traces && \
   python e1_chained.py --out e1_chained.csv --trace traces && echo H1_PROBES_OK"
