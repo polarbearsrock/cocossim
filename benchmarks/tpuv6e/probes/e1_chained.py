@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """E1: elementwise streaming, chained (device-side) edition of B1. Each timed
-call runs CHAIN elementwise ops inside one jit (lax.scan) with a data
-dependence through the carry, so the host-dispatch floor is amortized and
-per-step time reflects HBM streaming plus any device-side per-kernel cost.
+call runs CHAIN elementwise ops inside one jit (lax.scan) whose CARRY IS THE
+FULL OUTPUT ARRAY, so every step must read its input(s) and write its whole
+result (nothing can be sliced away: the next step consumes the entire
+array). The host-dispatch floor is amortized; per-step time reflects HBM
+streaming plus any device-side per-kernel cost.
 
-Ops: add (two inputs, one output: 3 arrays moved) and exp (one input, one
-output: 2 arrays moved), bf16, n in 2^15 .. 2^28 elements. Per point: per-step
-us and GB/s moved. With --trace DIR one XProf trace per point.
+Ops: add (carry + b: two inputs, one output = 3 arrays moved) and exp
+(exp(-|carry|): one input, one output = 2 arrays moved; values stay in
+(0, 1] so nothing overflows), bf16, n in 2^15 .. 2^28 elements. Per point:
+per-step us and GB/s moved. With --trace DIR one XProf trace per point.
 
 Usage: e1_chained.py [--dry-run] [--out e1_chained.csv] [--trace DIR]
 """
@@ -16,6 +19,7 @@ import os
 CHAIN = 16
 SIZES = [1 << p for p in range(15, 29)]
 OPS = ("add", "exp")
+PLATE_GBS = 1638.0
 
 
 def main():
@@ -36,20 +40,18 @@ def main():
     from common import time_op, csv_append, already_done
 
     @jax.jit
-    def add_chain(a, b):
-        def step(carry, _):
-            y = (a + carry.astype(a.dtype)) + b
-            return y[0].astype(jnp.float32), None
-        acc, _ = jax.lax.scan(step, jnp.float32(0), None, length=CHAIN)
-        return acc
+    def add_chain(a0, b):
+        def step(a, _):
+            return a + b, None
+        af, _ = jax.lax.scan(step, a0, None, length=CHAIN)
+        return jnp.sum(af.astype(jnp.float32))
 
     @jax.jit
-    def exp_chain(a):
-        def step(carry, _):
-            y = jnp.exp(a + carry.astype(a.dtype))
-            return y[0].astype(jnp.float32), None
-        acc, _ = jax.lax.scan(step, jnp.float32(0), None, length=CHAIN)
-        return acc
+    def exp_chain(a0):
+        def step(a, _):
+            return jnp.exp(-jnp.abs(a)), None
+        af, _ = jax.lax.scan(step, a0, None, length=CHAIN)
+        return jnp.sum(af.astype(jnp.float32))
 
     for op in OPS:
         for n in SIZES:
@@ -57,7 +59,7 @@ def main():
                 continue
             a = jnp.full((n,), 0.5, dtype=jnp.bfloat16)
             if op == "add":
-                b = jnp.full((n,), 0.25, dtype=jnp.bfloat16)
+                b = jnp.full((n,), 0.001, dtype=jnp.bfloat16)
                 fn = lambda: add_chain(a, b)
                 moved = 3 * n * 2
             else:
@@ -65,10 +67,14 @@ def main():
                 moved = 2 * n * 2
             r = time_op(fn)
             per_step = r["median_s"] / CHAIN
+            gbs = moved / per_step / 1e9
             row = {"op": op, "n": n, "bytes_moved": moved, "chain": CHAIN, **r,
-                   "per_step_us": per_step * 1e6, "gbs": moved / per_step / 1e9}
+                   "per_step_us": per_step * 1e6, "gbs": gbs}
+            if gbs > PLATE_GBS * 1.05:
+                print(f"SANITY FAIL: {gbs:.0f} GB/s exceeds plate -- XLA elided work; row NOT written", flush=True)
+                continue
             csv_append(args.out, row)
-            print(f"{op:4s} n={n:10d}  {row['per_step_us']:9.2f} us/step  {row['gbs']:7.0f} GB/s", flush=True)
+            print(f"{op:4s} n={n:10d}  {row['per_step_us']:9.2f} us/step  {gbs:7.0f} GB/s", flush=True)
             if args.trace:
                 d = os.path.join(args.trace, f"E1_{op}_{n}")
                 os.makedirs(d, exist_ok=True)

@@ -5,10 +5,13 @@ device-side only: every timed call runs CHAIN GEMMs inside one jit
 (lax.scan) so the ~113 us host-dispatch floor is amortized to <1 us/step.
 
 Shapes are NOT square in general (G3 uses the real Qwen3-8B / Mistral-7B
-projection shapes), so the chain cannot feed y back as x. Each step instead
-perturbs x by the scalar carry before the GEMM (x + acc, acc = y[0,0]); the
-data dependence keeps XLA from hoisting a loop-invariant x @ w out of the
-scan, and the M x K add is negligible next to the weight stream.
+projection shapes), so the chain cannot feed y back as x. The carry is x
+itself: each step adds the row-sums of y = x @ w (over ALL N columns) back
+into every row of x, and the jit returns the full-array sum of the final x.
+Every element of every y is therefore live and every row of the next x
+depends on the previous step -- nothing can be sliced or hoisted. (A first
+version returned y[0,0]; XLA reduced the whole GEMM to one K-length dot
+product and reported 100 PFLOP/s. Never reduce to a slice.)
 
 Per point: per-step us, TF/s, weight+activation bytes per step, effective
 GB/s. With --trace DIR one XProf trace per point (a single chained call) is
@@ -30,6 +33,7 @@ G3_SHAPES = {  # (K, N): label
 }
 G3 = [(m, k, n) for (k, n) in G3_SHAPES for m in (1, 4, 8, 16, 32, 64, 128, 256)]
 CELLS = {"G1": G1, "G2": G2, "G3": G3}
+PEAK_TFLOPS = 918.0
 
 
 def label_of(cell, k, n):
@@ -56,30 +60,36 @@ def main():
     from common import time_op, csv_append, already_done
 
     @jax.jit
-    def jchain(x, w):
-        def step(acc, _):
-            y = (x + acc.astype(x.dtype)) @ w
-            return y[0, 0].astype(jnp.float32), None
-        acc, _ = jax.lax.scan(step, jnp.float32(0), None, length=CHAIN)
-        return acc
+    def jchain(x0, w):
+        def step(x, _):
+            y = x @ w                                            # M x N, bf16
+            r = jnp.sum(y, axis=1, dtype=jnp.float32)            # every column of every row
+            x_next = x + (r * 1e-3).astype(x.dtype)[:, None]     # every row of next x depends on y
+            return x_next, None
+        xf, _ = jax.lax.scan(step, x0, None, length=CHAIN)
+        return jnp.sum(xf.astype(jnp.float32))
 
     for (c, m, k, n) in points:
         if already_done(args.out, {"cell": c, "M": m, "K": k, "N": n}):
             continue
-        w = jnp.ones((k, n), dtype=jnp.bfloat16) * jnp.bfloat16(1e-3)
+        w = jnp.full((k, n), 1e-3, dtype=jnp.bfloat16)
         x = jnp.ones((m, k), dtype=jnp.bfloat16)
         r = time_op(lambda: jchain(x, w))
         per_step = r["median_s"] / CHAIN
         flops = 2.0 * m * k * n
         wbytes = k * n * 2
         abytes = (m * k + m * n) * 2
+        tflops = flops / per_step / 1e12
         row = {"cell": c, "label": label_of(c, k, n), "M": m, "K": k, "N": n, "chain": CHAIN, **r,
-               "per_step_us": per_step * 1e6, "tflops": flops / per_step / 1e12,
+               "per_step_us": per_step * 1e6, "tflops": tflops, "mfu": tflops / PEAK_TFLOPS,
                "weight_mb": wbytes / 1e6, "act_mb": abytes / 1e6,
                "eff_gbs": (wbytes + abytes) / per_step / 1e9}
+        if tflops > PEAK_TFLOPS * 1.05:
+            print(f"SANITY FAIL: {tflops:.0f} TF/s exceeds peak -- XLA elided work; row NOT written", flush=True)
+            continue
         csv_append(args.out, row)
         print(f"{c} M={m:5d} K={k:6d} N={n:6d}  {row['per_step_us']:9.2f} us/step  "
-              f"{row['tflops']:7.1f} TF/s  {row['eff_gbs']:7.0f} GB/s", flush=True)
+              f"{tflops:7.1f} TF/s  {row['eff_gbs']:7.0f} GB/s", flush=True)
         if args.trace:
             d = os.path.join(args.trace, f"{c}_{m}x{k}x{n}")
             os.makedirs(d, exist_ok=True)
