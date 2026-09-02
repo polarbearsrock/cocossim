@@ -270,6 +270,38 @@ into `configs/tpuv6e_fitted.sh`, then score tier 2 once. If a tier-2 miss
 exceeds 25% with no mechanism in the error budget, that is a finding (new
 mechanism), not a reason to refit.
 
+### 6.1 First fit (2026-09-01 evening, tier 1 only)
+
+`fidelity/fit_tier1.sh` scanned `-dram_enq` ∈ {32, 15} × `-op_overhead` ∈
+{0, 12250, 15750} against the 84 non-VMEM H1 cells (objective = mean
+|ln(sim/silicon)|):
+
+| combo | objective | PASS | G1 | G2 | G3 | E1 |
+|---|---|---|---|---|---|---|
+| priors (32, 0) | 0.190 | 39/84 | 0.218 | 0.134 | 0.186 | 0.303 |
+| 15, 0 | 0.194 | 47 | 0.220 | 0.104 | 0.196 | 0.298 |
+| 32, 12250 | 0.116 | 39 | 0.153 | 0.187 | 0.087 | 0.283 |
+| **15, 12250** | **0.104** | **54** | 0.144 | 0.126 | 0.082 | 0.279 |
+| 15, 15750 | 0.116 | 50 | 0.181 | 0.149 | 0.092 | 0.274 |
+
+Frozen as `configs/tpuv6e_fitted.sh`. `-dram_enq 15` (the plate width)
+buys G2 exactly as §6's note predicted; `-op_overhead 12250` (7 µs) is the
+t₀ compromise between GEMM (~9 µs) and elementwise (~7 µs); E1 stays at
+~0.28 because the write-path gap is not a knob.
+
+Holdout scored with the fitted file untouched (six points): prefill 512
+b1 −18.2%, 2048 b1 +0.6%, 512 b8 −20.6%, 2048 b8 −4.8%, decode 512×8
+−15.7%, decode 2048×32 −27.7%; **MAPE 14.6%** (priors 17.4%). Still all
+under-predicted: the per-op term recovers ~0.7 ms/step at decode (7 µs ×
+~100 boundaries per core) of a 2.2–7 ms gap, so the remainder is the
+paged-KV derate (H2, `-kv_bw_pct`), the `data` ops (tier-2 F,
+`-data_overhead`), and whatever the small-M GEMM cells still hide at layer
+composition. Note for the fit: op stalls in the sim overlap with `-dbuf`
+prefetch streaming (the DRAM stays busy during a launch gap, as XLA's
+async copies would), so a stall costs less at layer level than in a
+single-op microbenchmark; the tier-1 t₀ may therefore be a lower bound on
+the whole-model value.
+
 ## 7. Verdicts and go/no-go
 
 Per cell and metric:
