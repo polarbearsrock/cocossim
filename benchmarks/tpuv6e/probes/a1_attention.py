@@ -874,7 +874,7 @@ def main():
     import jax
     import jax.numpy as jnp
     from jax.experimental.pallas.ops.tpu import flash_attention as fa
-    from common import time_op, csv_append, already_done
+    from common import time_chain_slope, csv_append, already_done
 
     print(f"jax {jax.__version__} backend {jax.default_backend()} devices {jax.devices()}", flush=True)
     print(f"carry {args.carry}; chain {args.chain}; chain_form {args.chain_form}; "
@@ -916,39 +916,57 @@ def main():
                         "page_size": cfg["page_size"], "ppcb": cfg["ppcb"]}
         cfg_cols.update(chain_form=form, q_dtype=cfg["q_dtype"])
 
-        def timed(fn):
+        # SLOPE METHOD (common.time_chain_slope, spec 6.2): the chain is timed
+        # at C and 2C and per_step = (t_2C - t_C) / C, so the per-call launch +
+        # completion cost (~113 us) cancels instead of leaking floor/C into
+        # every point (a chain of 8 leaks ~14 us/step -- review finding).
+        # make_fn(C) builds the C-step chain; the builders take C statically.
+        def make_fn_for(use_xla):
+            def make_fn(C):
+                if mode == "prefill":
+                    jc = make_prefill_chain(C, bs, sm, tag + ("_xla" if use_xla else ""), carry=args.carry,
+                                            use_xla=use_xla, chain_form=form)
+                    return lambda: jc(q, k, v)
+                jc = make_decode_chain(C, cfg["ppcb"], args.megacore, tag + ("_xla" if use_xla else ""),
+                                       carry=args.carry, use_xla=use_xla, chain_form=form)
+                return lambda: jc(q, k_pages, v_pages, lengths, page_indices)
+            return make_fn
+
+        def timed(make_fn):
             # One extra (compiling) call whose value is checked: the chain
             # result must be finite, otherwise the carry drifted and the
             # kernel may have been fed NaN/inf (still timed, but meaningless).
-            val = float(jax.block_until_ready(fn()))
+            val = float(jax.block_until_ready(make_fn(args.chain)()))
             if not math.isfinite(val):
                 raise FloatingPointError(f"chain result is {val}: carry '{args.carry}' drifted to non-finite values")
-            return time_op(fn, reps=args.reps)
+            return time_chain_slope(make_fn, args.chain, reps=args.reps)
 
         try:
-            r = timed(fn)
+            r = timed(make_fn_for(False))
         except Exception as e:  # noqa: BLE001
             print(f"KERNEL FAILURE at {name} ({kernel}):\n{traceback.format_exc()}", flush=True)
             if not args.fallback_xla:
                 print("no fallback enabled (--fallback-xla); aborting", flush=True)
                 raise
             print(f"--fallback-xla: retrying {name} with the XLA attention", flush=True)
-            mk, kernel = fb
-            jchain = mk()
-            if mode == "prefill":
-                fn = lambda: jchain(q, k, v)  # noqa: E731
-            else:
-                fn = lambda: jchain(q, k_pages, v_pages, lengths, page_indices)  # noqa: E731
-            r = timed(fn)
+            _, kernel = fb
+            r = timed(make_fn_for(True))
+        # the trace below is taken on a chain of the length the slope used
+        fn = make_fn_for(kernel.endswith("xla") if isinstance(kernel, str) else False)(2 * r["chain"])
 
-        per_step = r["median_s"] / args.chain
+        per_step = r["per_step_s"]
         gbs = bud["bytes"] / per_step / 1e9              # on the algorithmic minimum (sim counterpart)
         hbm_gbs = bud["hbm_bytes"] / per_step / 1e9      # on what the kernel actually moves
         tflops = bud["flops_done"] / per_step / 1e12
-        fits_vmem = bud["bytes"] < VMEM_BYTES            # working set (q, k, v, out | KV, q, out)
-        over = tflops > PEAK_TFLOPS * 1.05 or hbm_gbs > PLATE_GBS * 1.05
+        # Gate on the ALGORITHMIC-MINIMUM bytes (gbs), not the modelled K/V
+        # re-fetch bytes (hbm_gbs, 1.6-4.7x larger): a kernel that re-fetches
+        # less than the model assumes must not be refused as 'elided work'
+        # (review finding). Working sets within 30% of VMEM are treated as
+        # possibly resident rather than refused (prefill 512x8 is 134 MB).
+        fits_vmem = bud["bytes"] < VMEM_BYTES * 1.3          # working set (q, k, v, out | KV, q, out)
+        over = tflops > PEAK_TFLOPS * 1.05 or gbs > PLATE_GBS * 1.05
         vmem = int(over and fits_vmem)
-        row = {"mode": mode, "S": S, "B": B, "nh": NH, "nkv": nkv, "hd": HD, "chain": args.chain,
+        row = {"mode": mode, "S": S, "B": B, "nh": NH, "nkv": nkv, "hd": HD, "chain": r["chain"],
                "kernel": kernel, **r, "per_step_us": per_step * 1e6,
                "kv_mb": bud["kv_bytes"] / 1e6, "bytes_mb": bud["bytes"] / 1e6, "gbs": gbs,
                "tflops": tflops, "mfu": tflops / PEAK_TFLOPS, "vmem_resident": vmem,
@@ -969,7 +987,7 @@ def main():
             jax.block_until_ready(fn())
             jax.profiler.stop_trace()
             try:
-                stats, err = trace_kernel_time(trace_dir, args.chain)
+                stats, err = trace_kernel_time(trace_dir, 2 * r["chain"])  # the trace is the 2C call
             except Exception as e:  # noqa: BLE001 - annotation must never abort a session
                 stats, err = None, f"trace_kernel_time raised {type(e).__name__}: {e}"
             annotate_from_traces(stats, name, err)
