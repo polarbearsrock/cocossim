@@ -24,5 +24,5 @@ fi
 # Bootstrap: uv + python 3.12 venv + vllm-tpu (system pip on the VM's 3.10
 # cannot build vllm-tpu - session-1 finding). Idempotent.
 tpu_scp ./setup_vm.sh "$TPU_NAME":~/
-tpu_ssh "bash setup_vm.sh"
+tpu_ssh "SKIP_MODEL=${SKIP_MODEL:-0} bash setup_vm.sh"
 echo "provisioned. Remember: ./teardown.sh when the session ends."

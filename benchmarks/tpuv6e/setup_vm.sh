@@ -17,10 +17,13 @@ assert d and d[0].platform == "tpu", f"no TPU visible: {d}"
 print("TPU OK:", d[0].device_kind, "x", len(d))
 EOF
 # Prefetch the Phase-D model so measurement runs never pay download time.
+# SKIP_MODEL=1 (tier-1 microbenchmark sessions) skips the ~16 GB download.
 export HF_HOME="$HOME/hf"
+if [ "${SKIP_MODEL:-0}" != "1" ]; then
 python - <<'EOF'
 from huggingface_hub import snapshot_download
 snapshot_download("Qwen/Qwen3-8B", allow_patterns=["*.safetensors", "*.json", "*.txt"])
 print("model cached")
 EOF
+fi
 echo SETUP_OK
