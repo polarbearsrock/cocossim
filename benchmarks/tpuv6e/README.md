@@ -17,7 +17,21 @@ census → teardown, ~$3.
   `a1_attention.py` (A1: Pallas `flash_attention` prefill, MHA nh=nkv=32,
   and Pallas `paged_attention` decode, GQA 32/8, page 16, sequential pages;
   `--probe-api` prints the resolved kernel signatures and a CPU shape smoke
-  test; `--fallback-xla` is the only fallback and is off by default).
+  test; `--fallback-xla` is the only fallback and is off by default). Its
+  scan carry is the kernel output itself (`--carry out`; `--carry sum` is the
+  first version's reduce+broadcast glue, which streams 3 full arrays per
+  step outside the kernel and is kept only for comparison). Two byte
+  columns: `bytes_mb` is the algorithmic minimum (q+k+v+out, the simulator
+  counterpart) and `hbm_bytes_mb` is what the kernel moves --
+  `flash_attention`'s kv-innermost grid re-fetches K/V `kv_fetch_factor`
+  times per head (2.25x at S=2048, 8.44x at S=8192 at block 512), so
+  `hbm_gbs`, the plate gate and the dry-run `exp_us` use it. With `--trace`
+  each point's directory carries the kernel config
+  (`A1_prefill_S2048_B1_bq512_bk512`) and, when `xprof` is importable, the
+  row gets `kernel_us` / `glue_us` / `kernel_gbs` / `kernel_tflops` from the
+  trace's `pallas_call` rows; otherwise `--annotate --out CSV --trace DIR`
+  fills them offline into `<out>.kernel.csv`. Rows refused by the sanity
+  gate go to `<out>.rejected.csv` with a reason.
 - `holdout/dh_offline.py` — fixed-shape Qwen3-8B points via vLLM offline
   mode; maps 1:1 onto simulator `Transformer` runs. `--trace-dir` captures an
   xplane per point.
