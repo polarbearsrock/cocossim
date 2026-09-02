@@ -437,12 +437,23 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
   // producers directly, the way an epilogue overlaps with the MXU.
   const bool fv = fuse_vpu != 0;
 
+  // Per-op-class accounting (benchmark spec S1): tag every job at creation
+  // so the ACCTC split matches XProf's per-op view. Matmul returns the same
+  // list as head and tail, so tagging .first covers the GEMM.
+  auto tag = [](const JobList &jl, int cls) {
+    for (auto *jb: jl) jb->op_class = cls;
+  };
+
   JobList model_head, prev_tail;
   for (int l = 0; l < n_layers; ++l) {
     JobList norm1 = makeRMSNormJobs(d_model, M, fv);
     auto q = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_model}));
     auto k = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
     auto v = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
+    tag(norm1, OP_VPU_NORM);
+    tag(q.first, OP_QKV);
+    tag(k.first, OP_QKV);
+    tag(v.first, OP_QKV);
     if (fv) {
       // norm1 sidecar: the projections depend on the block input directly.
       if (l == 0) {
@@ -465,6 +476,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
 
     JobList rope = {new VectorUnit::VecUnitJob(1, M * (d_model + nkv * head_dim), fv,
                                                {{VectorUnit::VPUPhase::BROADCAST, 1}}, 1, fv)};
+    tag(rope, OP_VPU_EW);
     connectJobLists(q.second, rope);
     connectJobLists(k.second, rope);
 
@@ -506,6 +518,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       sc->weight_tag = next_weight_tag;
       sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores, kv_streams);
       sc->core_id = attn_core(h);
+      sc->op_class = OP_ATTN;
       scores.push_back(sc);
     }
     next_weight_tag++;
@@ -516,6 +529,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       avj->weight_tag = next_weight_tag;
       avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores, kv_streams);
       avj->core_id = attn_core(h);
+      avj->op_class = OP_ATTN;
       av.push_back(avj);
     }
     next_weight_tag++;
@@ -533,6 +547,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // stage (V26); the hardware dependency is per-head.
     int sm_rows = 0;
     JobList sm = makeSoftmaxJobs(S, M * nh, fa, &sm_rows);
+    tag(sm, OP_ATTN);
     for (int k = 0; k < (int) sm.size(); ++k) {
       int lo = k * sm_rows;
       int hi = std::min((k + 1) * sm_rows, M * nh) - 1;// inclusive last row
@@ -544,6 +559,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     connectJobLists(v.second, av);
 
     auto o = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_model}));
+    tag(o.first, OP_O);
     connectJobLists(av, o.first);
 
     JobList block_in = (l == 0) ? norm1 : prev_tail;
@@ -553,6 +569,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       // downstream depends on the projection: block_in's completion is
       // implied transitively (o <- ... <- q <- block_in).
       JobList side = mk_binary_ew(M, d_model, true);
+      tag(side, OP_VPU_EW);
       connectJobLists(o.second, side);
       connectJobLists(block_in, side);
       res1 = o.second;
@@ -563,15 +580,19 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       res1.insert(res1.end(), block_in.begin(), block_in.end());
     } else {
       res1 = mk_binary_ew(M, d_model);
+      tag(res1, OP_VPU_EW);
       connectJobLists(o.second, res1);
       connectJobLists(block_in, res1);
     }
 
     JobList norm2 = makeRMSNormJobs(d_model, M, fv);
+    tag(norm2, OP_VPU_NORM);
     connectJobLists(res1, norm2);
 
     auto gate = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
     auto up = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
+    tag(gate.first, OP_GATE_UP);
+    tag(up.first, OP_GATE_UP);
     if (fv) {// norm2 sidecar
       connectJobLists(res1, gate.first);
       connectJobLists(res1, up.first);
@@ -581,10 +602,12 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     }
 
     JobList silu_mul = mk_binary_ew(M, d_ff, fv);
+    tag(silu_mul, OP_VPU_EW);
     connectJobLists(gate.second, silu_mul);
     connectJobLists(up.second, silu_mul);
 
     auto down = Matmul(a_config, LayerConfig("Matmul", {M, d_ff, d_model}));
+    tag(down.first, OP_DOWN);
     if (fv) {// silu-mul sidecar (gate/up epilogue)
       connectJobLists(gate.second, down.first);
       connectJobLists(up.second, down.first);
@@ -595,6 +618,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     JobList res2;
     if (fv) {
       JobList side = mk_binary_ew(M, d_model, true);
+      tag(side, OP_VPU_EW);
       connectJobLists(down.second, side);
       connectJobLists(res1, side);
       res2 = down.second;
@@ -603,6 +627,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       res2.insert(res2.end(), res1.begin(), res1.end());
     } else {
       res2 = mk_binary_ew(M, d_model);
+      tag(res2, OP_VPU_EW);
       connectJobLists(down.second, res2);
       connectJobLists(res1, res2);
     }
@@ -622,11 +647,14 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // batch-fold vs. real serving - session-3 calibration finding).
     int head_rows = batch;
     JobList final_norm = makeRMSNormJobs(d_model, head_rows, fv);
+    tag(final_norm, OP_VPU_NORM);
     connectJobLists(prev_tail, final_norm);
     auto head = Matmul(a_config, LayerConfig("Matmul", {head_rows, d_model, vocab}));
+    tag(head.first, OP_HEAD);
     if (fv) connectJobLists(prev_tail, head.first);// final norm sidecar
     else connectJobLists(final_norm, head.first);
     JobList logits_sm = makeSoftmaxJobs(vocab, head_rows);
+    tag(logits_sm, OP_VPU_EW);
     connectJobLists(head.second, logits_sm);
     prev_tail = logits_sm;
   }

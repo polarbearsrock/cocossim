@@ -113,7 +113,8 @@ vpu-norm, vpu-elementwise, other.
 - S1 **Per-op accounting.** ACCT counters attributed per op class (job → class
   from its origin in the composite: tag it at creation), printed beside the
   per-unit totals; the VCD timeline as cross-check. Test: class shares sum to
-  the unit totals exactly.
+  the unit totals exactly. (DONE 2026-09-01: `Job::op_class` + `ACCTC` lines,
+  stats `SCHEMA 3`, tests V32a–c; class map in the calibration spec §6.7.)
 - S2 **`-op_overhead`** cycles charged once per op boundary per core (a new
   weight tag or op class on that core), replacing `-job_overhead` as the fit
   parameter; `-job_overhead` kept for legacy. Test: cycles rise by exactly

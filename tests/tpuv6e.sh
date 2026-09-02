@@ -154,7 +154,8 @@ printf 'Activation 50000000\n' > "$WORK/v7.txt"
 "$BIN" -c 1 -sa_sz 64 -vu_sz 1024 -f 1 -i "$WORK/v7.txt" -o "$WORK/v7_stats.txt" > "$WORK/v7.log" 2>&1
 printf 'Matmul 1 256 256\n' > "$WORK/v7b.txt"
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v7b.txt" -o "$WORK/v7b_stats.txt" > "$WORK/v7b.log" 2>&1
-inv=$(awk '/^Cycles/{c=$2} /^ACCT/{ if ($5+$7+$9+$11 != c) print "bad:" $0 }' "$WORK/v7_stats.txt" "$WORK/v7b_stats.txt")
+# ('^ACCT ' with the space: SCHEMA 3 files also carry per-class ACCTC lines, V32.)
+inv=$(awk '/^Cycles/{c=$2} /^ACCT /{ if ($5+$7+$9+$11 != c) print "bad:" $0 }' "$WORK/v7_stats.txt" "$WORK/v7b_stats.txt")
 ms=$(awk '/^ACCT VECTOR_UNIT/{print $9; exit}' "$WORK/v7_stats.txt")
 uf=$(awk '/^ACCT SYSTOLIC_ARRAY/{print $7; exit}' "$WORK/v7b_stats.txt")
 if [ -z "$inv" ] && [ "${ms:-0}" -gt 0 ] && [ "${uf:-0}" -gt 0 ]; then
@@ -317,7 +318,7 @@ printf 'Transformer 2 512 8 4 1024 128 1 8\n' > "$WORK/v14.txt"
 "$REPO/configs/tpuv6e.sh" "$WORK/v14.txt" "$WORK/v14_s.txt" > "$WORK/v14.log" 2>&1
 rc=$?
 fin_eq=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v14.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4)?1:0}')
-n_acct=$(grep -c '^ACCT' "$WORK/v14_s.txt")
+n_acct=$(grep -c '^ACCT ' "$WORK/v14_s.txt")
 if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ] && [ "${n_acct:-0}" -eq 3 ]; then
   ok "V14 tpuv6e.sh runs decode workload (2 MXU + 1 VPU ACCT units)"
 else
@@ -397,11 +398,11 @@ e1=$(awk '/^ACCT SYSTOLIC_ARRAY/{print $15; exit}' "$WORK/v16a_s.txt")
 e2=$(awk '/^ACCT SYSTOLIC_ARRAY/{print $15; exit}' "$WORK/v16b_s.txt")
 ratio_ok=$(awk -v a="${c1:-0}" -v b="${c2:-1}" 'BEGIN{r=a/b; print (r>=1.7 && r<=2.05)?1:0}')
 eff_ok=$(awk -v x="${e1:-0}" -v y="${e2:-0}" 'BEGIN{print (x>0.85 && y>0 && y<=1.0)?1:0}')
-head -1 "$WORK/v16a_s.txt" | grep -q '^SCHEMA 2$'; sch=$?
+head -1 "$WORK/v16a_s.txt" | grep -q '^SCHEMA 3$'; sch=$?  # 2 -> 3 when ACCTC lines were added (V32c)
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -mxu_macs_per_pe 0 -i "$WORK/v16.txt" -o "$WORK/v16c_s.txt" > "$WORK/v16c.log" 2>&1; r3=$?
 if [ "$ratio_ok" -eq 1 ] && [ "$eff_ok" -eq 1 ] && [ "$sch" -eq 0 ] \
    && [ "$r3" -eq 1 ] && grep -q 'mxu_macs_per_pe' "$WORK/v16c.log"; then
-  ok "V16 -mxu_macs_per_pe 2 ~halves compute cycles ($c1 -> $c2), capacity scaled (eff $e1 -> $e2 <= 1), SCHEMA 2"
+  ok "V16 -mxu_macs_per_pe 2 ~halves compute cycles ($c1 -> $c2), capacity scaled (eff $e1 -> $e2 <= 1), SCHEMA 3"
 else
   bad "V16 cycles=$c1/$c2 eff=$e1/$e2 schema_rc=$sch badval_rc=$r3"
 fi
@@ -414,11 +415,11 @@ fi
 printf 'Softmax 512 32\n' > "$WORK/v17.txt"
 timeout 120 "$BIN" -c 2 -n_vpu 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v17.txt" -o "$WORK/v17a_s.txt" > "$WORK/v17a.log" 2>&1
 rca=$?
-acct1=$(grep -c '^ACCT' "$WORK/v17a_s.txt" 2>/dev/null)
+acct1=$(grep -c '^ACCT ' "$WORK/v17a_s.txt" 2>/dev/null)
 nvpu1=$(grep -c '^ACCT VECTOR_UNIT' "$WORK/v17a_s.txt" 2>/dev/null)
 fin1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v17a.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4 && $3>0)?1:0}')
 timeout 120 "$BIN" -c 2 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v17.txt" -o "$WORK/v17b_s.txt" > "$WORK/v17b.log" 2>&1
-acct2=$(grep -c '^ACCT' "$WORK/v17b_s.txt" 2>/dev/null)
+acct2=$(grep -c '^ACCT ' "$WORK/v17b_s.txt" 2>/dev/null)
 "$BIN" -c 2 -n_vpu 0 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v17.txt" -o "$WORK/v17c_s.txt" > "$WORK/v17c.log" 2>&1
 rcc=$?
 if [ "$rca" -eq 0 ] && [ "${acct1:-0}" -eq 3 ] && [ "${nvpu1:-0}" -eq 1 ] && [ "${fin1:-0}" -eq 1 ] \
@@ -1241,6 +1242,108 @@ if [ "$rA$rB$rC$rD$rE" = "00000" ] \
   ok "V31d write-back waits for unlanded prefetch reads (S=512 -act_share 0: $dA, -c 1 S=1024 -dbuf 48: $dC, S=640: $dD, all -dbuf-invariant)"
 else
   bad "V31d rc=$rA/$rB/$rC/$rD/$rE CMDs S=512: $dA/$dB (want 270336) -c 1 S=1024: $dC (want 716800) S=640: $dD/$dE"
+fi
+
+# V32: per-op-class accounting (benchmark spec S1). Every Transformer job is
+# tagged with an OpClass at creation (Job::op_class: QKV, O, GATE_UP, DOWN,
+# HEAD, ATTN = scores + softmax chunks + AV, VPU_NORM = norm1/norm2/
+# final_norm, VPU_EW = rope/silu_mul/residual/logits softmax; everything
+# else OTHER), and Arch's per-cycle classifier increments a per-(unit,
+# class) copy of busy/underfilled/memstall beside the per-unit totals. The
+# stats file (SCHEMA 3) prints one 'ACCTC <type> <idx> <class> busy <n>
+# underfilled <n> memstall <n>' line per class with a nonzero counter after
+# each unit's ACCT line, so XProf's per-op utilization has a counterpart.
+# V32a: Transformer 1 512 8 8 1024 512 0 1 1024 on the pinned config (-c 2
+# -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2, M = S = 512, head_dim 64, nkv =
+# nh = 8 so heads alternate MXUs). For every unit the class sums equal the
+# ACCT totals EXACTLY (idle is per-unit, not per class), no OTHER line
+# appears (every Transformer job is classified) and no class appears on the
+# wrong unit type. The busy/underfilled columns are pinned BEAT-EXACT;
+# memstall is DRAM timing and is covered by the sum invariant only.
+# Job count: norm1 1 + q/k/v 3 x (2 row blocks x 2 cores = 4) + rope 1 +
+# scores 8 + AV 8 + softmax 4 + o 4 + res1 1 + norm2 1 + gate/up 2 x 4 +
+# silu_mul 1 + down 4 + res2 1 + final_norm 1 + head (1 row block x 2
+# cores) 2 + logits softmax 1 = 58.
+# SA cycle model (OS, SysArray.cc): per tile the read stage is programmed
+# ceil(K / macs) cycles and the shift stage sz * min(fpu_latency, batch) =
+# 256; both are non-memstall (a stall can register only once the stage
+# counter has run out). The write stage has no compute: its cycles are
+# memstall until the write-back lands (none at all when fused_out), and
+# the increment that leaves it lands in the NEXT tile's read state (+1
+# non-memstall cycle per intra-job tile transition) or in idle (not
+# counted). Per job: tiles x (ceil(K/2) + 256) + (tiles - 1). Busy vs
+# underfilled: min(sz,M) * min(sz,N) < sz^2, N per core (createSAJobs
+# splits N over the 2 cores). Per MXU:
+#   QKV     3 GEMMs x 2 jobs 256x512x256 (1 tile): 256+256 = 512 x 6 = 3072 busy
+#   O       2 jobs 256x512x256:                          512 x 2 = 1024 busy
+#   GATE_UP 2 GEMMs x 2 jobs 256x512x512 (2 tiles): 2x512+1 = 1025 x 4 = 4100 busy
+#   DOWN    2 jobs 256x1024x256 (1 tile, K 1024): 512+256 = 768 x 2 = 1536 busy
+#   HEAD    1 job 1x512x512 (M 1 -> underfilled; 2 tiles): 2x512+1 = 1025 underfilled
+#   ATTN    4 scores 512x64x512 (2x2 tiles, K 64: 32+256 = 288; fused_out):
+#             4x288+3 = 1155 x 4 = 4620 busy
+#           4 AV 512x512x64 (N 64 -> underfilled; 2 row tiles): 2x512+1
+#             = 1025 x 4 = 4100 underfilled
+# VPU cycle model (VectorUnit.cc): init programs the first phase directly,
+# REDUCE n costs lin * n * ceil(par / vu_sz), BROADCAST n costs
+# ceil(lin * par * n / vu_sz), the write stage is memstall-or-nothing, so
+# busy + underfilled = the phase sum exactly; underfilled iff par < 512.
+# softmax phases {B1, R1, B1}, rmsnorm {R2, B1}:
+#   ATTN     4 softmax chunks (lin 512, par 1024, prebuffered): 1024 + 512x2
+#              + 1024 = 3072 x 4 = 12288 busy
+#   VPU_NORM norm1, norm2 (lin 512, par 512): 512x2 + 512 = 1536 x 2 = 3072
+#              busy; final_norm (par 1): 512x2x1 + ceil(512/512) = 1025 underfilled
+#   VPU_EW   rope (lin 1, par 512 x (512+512)): 524288/512 = 1024; silu_mul
+#              (lin 1024, par 512): 1024; res1, res2 (512 x 512): 512 each
+#              -> 3072 busy; logits softmax (lin 1024, par 1): 2 + 1024 + 2
+#              = 1028 underfilled
+printf 'Transformer 1 512 8 8 1024 512 0 1 1024\n' > "$WORK/v32a.txt"
+timeout 300 "$REPO/configs/tpuv6e.sh" "$WORK/v32a.txt" "$WORK/v32a_s.txt" > "$WORK/v32a.log" 2>&1; r32=$?
+acctc_sum_ok() { # prints the number of ACCT units whose class sums mismatch (want 0)
+  awk '$1=="ACCT"{k=$2" "$3; b[k]=$5; u[k]=$7; m[k]=$9}
+       $1=="ACCTC"{k=$2" "$3; cb[k]+=$6; cu[k]+=$8; cm[k]+=$10}
+       END{n=0; for(k in b) if (b[k]!=cb[k]+0 || u[k]!=cu[k]+0 || m[k]!=cm[k]+0) n++; print n}' "$1"
+}
+mism=$(acctc_sum_ok "$WORK/v32a_s.txt")
+n_units=$(grep -c '^ACCT ' "$WORK/v32a_s.txt")
+cat > "$WORK/v32a_want.txt" <<'EOW'
+SYSTOLIC_ARRAY 0 ATTN 4620 4100
+SYSTOLIC_ARRAY 0 DOWN 1536 0
+SYSTOLIC_ARRAY 0 GATE_UP 4100 0
+SYSTOLIC_ARRAY 0 HEAD 0 1025
+SYSTOLIC_ARRAY 0 O 1024 0
+SYSTOLIC_ARRAY 0 QKV 3072 0
+SYSTOLIC_ARRAY 1 ATTN 4620 4100
+SYSTOLIC_ARRAY 1 DOWN 1536 0
+SYSTOLIC_ARRAY 1 GATE_UP 4100 0
+SYSTOLIC_ARRAY 1 HEAD 0 1025
+SYSTOLIC_ARRAY 1 O 1024 0
+SYSTOLIC_ARRAY 1 QKV 3072 0
+VECTOR_UNIT 2 ATTN 12288 0
+VECTOR_UNIT 2 VPU_EW 3072 1028
+VECTOR_UNIT 2 VPU_NORM 3072 1025
+EOW
+awk '$1=="ACCTC"{print $2, $3, $4, $6, $8}' "$WORK/v32a_s.txt" | sort > "$WORK/v32a_got.txt"
+if [ "$r32" -eq 0 ] && [ "$(finished_all "$WORK/v32a.log" 58)" = 1 ] && [ "$n_units" -eq 3 ] \
+   && [ "$mism" = 0 ] && cmp -s "$WORK/v32a_want.txt" "$WORK/v32a_got.txt"; then
+  ok "V32a ACCTC class busy/underfilled pinned per unit and class sums equal ACCT totals on all $n_units units"
+else
+  bad "V32a rc=$r32 fin=$(finished_all "$WORK/v32a.log" 58) units=$n_units mismatched=$mism diff: $(diff "$WORK/v32a_want.txt" "$WORK/v32a_got.txt" | tr '\n' ' ')"
+fi
+# V32b: a plain Matmul line is not a Transformer op: its SA cycles all land
+# in OTHER (the only ACCTC class present) and the sum invariant still holds.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v31a.txt" -o "$WORK/v32b_s.txt" > "$WORK/v32b.log" 2>&1; rb=$?
+mism_b=$(acctc_sum_ok "$WORK/v32b_s.txt")
+cls_b=$(awk '$1=="ACCTC"{print $4}' "$WORK/v32b_s.txt" | sort -u | tr '\n' ' ')
+if [ "$rb" -eq 0 ] && [ "$mism_b" = 0 ] && [ "$cls_b" = "OTHER " ]; then
+  ok "V32b plain Matmul reports only class OTHER"
+else
+  bad "V32b rc=$rb mismatched=$mism_b classes='$cls_b' (want 'OTHER ')"
+fi
+# V32c: the stats header declares SCHEMA 3 (ACCTC lines present).
+if head -1 "$WORK/v32a_s.txt" | grep -q '^SCHEMA 3$' && head -1 "$WORK/v32b_s.txt" | grep -q '^SCHEMA 3$'; then
+  ok "V32c stats files declare SCHEMA 3"
+else
+  bad "V32c header: $(head -1 "$WORK/v32a_s.txt") / $(head -1 "$WORK/v32b_s.txt") (want SCHEMA 3)"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

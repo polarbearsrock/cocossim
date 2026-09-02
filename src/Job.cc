@@ -15,6 +15,9 @@
 uint64_t alloc_addr = 0;
 static int job_identifier = 0;
 
+const char *const OP_CLASS_NAMES[N_OP_CLASSES] = {
+    "OTHER", "QKV", "O", "GATE_UP", "DOWN", "HEAD", "ATTN", "VPU_NORM", "VPU_EW"};
+
 Job::Job(uint64_t alloc_sz) : addr(alloc_addr), addr_hold(alloc_addr), alloc_size(alloc_sz), rem_deps(0) {
   alloc_addr += alloc_sz;
   total_jobs++;

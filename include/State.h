@@ -84,6 +84,12 @@ struct State {
   uint64_t acct_busy = 0;
   uint64_t acct_underfilled = 0;
   uint64_t acct_memstall = 0;
+  // The same three counters split by the running job's op class (Job.h
+  // OpClass; benchmark spec S1): acctc[ACCTC_BUSY|UNDERFILLED|MEMSTALL][class].
+  // Incremented at the same site with the same precedence, so each row sums
+  // to the per-unit counter above exactly. Idle has no job and stays per-unit.
+  enum { ACCTC_BUSY = 0, ACCTC_UNDERFILLED = 1, ACCTC_MEMSTALL = 2, N_ACCTC_KINDS = 3 };
+  uint64_t acctc[N_ACCTC_KINDS][N_OP_CLASSES] = {};
   uint64_t total_work = 0;// SA: MACs, accumulated at job completion. VPU: lane-ops,
                            // summed across all phase passes (not just once per job).
   virtual bool is_underfilled() const { return false; }

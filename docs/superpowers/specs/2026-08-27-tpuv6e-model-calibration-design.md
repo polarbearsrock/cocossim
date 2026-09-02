@@ -82,7 +82,9 @@ of K·systolic_fpu_latency, so DEFAULT OS timing is ~2× faster than the origina
 (the old 2-cycle K-step modeled no real machine; `systolic_fpu_latency` is demoted to
 WS fill/drain only). Stats files declare `SCHEMA 2`: SA eff_util capacity is
 macs·sz² and full tiles read ~1.0, vs the schema-1 ceiling of ~0.5 — numbers are not
-comparable across schemas.
+comparable across schemas. `SCHEMA 3` (2026-09-01, benchmark spec S1) keeps the
+ACCT semantics and adds per-op-class `ACCTC` lines after each unit's ACCT line
+(§6.7 entry).
 
 ### 3.3 HBM model
 
@@ -390,6 +392,30 @@ residuals before being dismissed as noise.
   flags the prefetched beats had all but always landed before the job
   needed them, so the wait costs nothing; it only removes an optimism that
   was also the deadlock.
+- **(added 2026-09-01; ADDRESSED same day, no flag — pure accounting, stats
+  `SCHEMA 3`, tests V32a–c; benchmark spec S1) Per-op-class utilization
+  accounting (`ACCTC`).** XProf reports MXU utilization per op
+  (`op_profile`), while the simulator's ACCT split was per unit only, so the
+  fidelity matrix could not compare the two by class. Every job now carries
+  `Job::op_class` (enum `OpClass`, Job.h; default `OP_OTHER`) and the
+  `Transformer` composite tags at creation: q/k/v → `QKV`, o → `O`,
+  gate/up → `GATE_UP`, down → `DOWN`, LM-head GEMM → `HEAD`, scores +
+  softmax chunks + AV → `ATTN`, norm1/norm2/final_norm → `VPU_NORM`, rope /
+  silu_mul / residual adds / logits softmax → `VPU_EW`; every other
+  composite (`Matmul`, `Softmax`, …) stays `OTHER`. Arch's per-cycle
+  classifier increments a per-(kind, class) copy (`State::acctc`) at the same
+  site with the same memstall > underfilled > busy precedence, so the class
+  rows sum to the unit's ACCT counters exactly; idle has no job and stays
+  per-unit. main.cc writes, after each ACCT line, one
+  `ACCTC <UNIT_TYPE> <idx> <class> busy <n> underfilled <n> memstall <n>`
+  per class with a nonzero counter, and the header is `SCHEMA 3`. jobs.dot
+  labels are untouched (V-tests grep them). Baseline cycles and traffic are
+  bit-identical (pure bookkeeping). V32a pins the busy/underfilled columns
+  beat-exact on `Transformer 1 512 8 8 1024 512 0 1 1024` at the pinned
+  config from the OS cycle model (per job: tiles × (⌈K/2⌉ + sz) + tiles − 1
+  transition cycles) and the VPU phase sums, plus the sum invariant on all
+  units; V32b: a plain `Matmul` reports only `OTHER`; V32c: `SCHEMA 3`.
+  Older tests that counted `^ACCT` lines now match `^ACCT ` (with the space).
 - **(added 2026-09-01; ADDRESSED same day, flag `-act_share` default 1,
   tests V31b + V29a CMD pin; benchmark spec S4b) Activation panels read once
   per MXU instead of once into shared VMEM.** `createSAJobs` splits N across

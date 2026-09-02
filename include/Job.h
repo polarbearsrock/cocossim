@@ -17,9 +17,30 @@
 extern uint64_t alloc_addr;
 struct State;
 
+// Op class of a job for per-class utilization accounting (benchmark spec
+// S1): the Transformer composite tags every job it creates at construction
+// so Arch's per-cycle busy/underfilled/memstall classifier can be split the
+// way XProf reports per-op utilization (SCHEMA 3 'ACCTC' lines). Composites
+// other than Transformer leave the default, OP_OTHER. Names in
+// OP_CLASS_NAMES (Job.cc) are the stats-file spelling.
+enum OpClass {
+  OP_OTHER = 0,
+  OP_QKV,     // q/k/v projections
+  OP_O,       // attention output projection
+  OP_GATE_UP, // MLP gate and up projections
+  OP_DOWN,    // MLP down projection
+  OP_HEAD,    // LM head (unembedding) GEMM
+  OP_ATTN,    // QK^T scores, softmax chunks, AV
+  OP_VPU_NORM,// norm1 / norm2 / final_norm
+  OP_VPU_EW,  // rope, silu_mul, residual adds, logits softmax
+  N_OP_CLASSES
+};
+extern const char *const OP_CLASS_NAMES[N_OP_CLASSES];
+
 struct Job {
   [[nodiscard]] virtual int get_type() const = 0;
   bool batched_weights = false;
+  int op_class = OP_OTHER;
   uint64_t addr;
   const uint64_t addr_hold;
   // Bytes reserved for this job at [addr_hold, addr_hold + alloc_size). The

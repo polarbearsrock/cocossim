@@ -109,7 +109,13 @@ int main(int argc, char **argv) {
   // SCHEMA 2: SA eff_util capacity is mxu_macs_per_pe * sz^2 (full tile ~1.0).
   // Schema-1 files (no SCHEMA line) used sz^2 against 2-cycle K-steps, capping
   // full-tile eff_util at ~0.5 -- not comparable across schemas.
-  fprintf(f, "SCHEMA 2\n");
+  // SCHEMA 3 (benchmark spec S1): ACCT semantics unchanged; each unit's ACCT
+  // line is followed by per-op-class lines
+  //   ACCTC <UNIT_TYPE> <idx> <class> busy <n> underfilled <n> memstall <n>
+  // one per OpClass (Job.h) with any nonzero counter, whose busy/underfilled/
+  // memstall columns sum to the unit's ACCT values exactly (idle is per-unit).
+  // Jobs not created by the Transformer composite report as class OTHER.
+  fprintf(f, "SCHEMA 3\n");
   for (int p = 0; p < periods; ++p) {
     fprintf(f, "Cycles %llu\n", res[p].cycles);
     for (int i = 0; i < arch->states.size(); ++i) {
@@ -133,6 +139,15 @@ int main(int argc, char **argv) {
               (unsigned long long) s->acct_memstall,
               (unsigned long long) (gcycles - accounted),
               (unsigned long long) s->total_work, eff);
+      for (int c = 0; c < N_OP_CLASSES; ++c) {
+        uint64_t cb = s->acctc[State::ACCTC_BUSY][c];
+        uint64_t cu = s->acctc[State::ACCTC_UNDERFILLED][c];
+        uint64_t cm = s->acctc[State::ACCTC_MEMSTALL][c];
+        if (cb == 0 && cu == 0 && cm == 0) continue;
+        fprintf(f, "ACCTC %s %d %s busy %llu underfilled %llu memstall %llu\n",
+                s->get_ty_string().c_str(), i, OP_CLASS_NAMES[c],
+                (unsigned long long) cb, (unsigned long long) cu, (unsigned long long) cm);
+      }
     }
   }
 

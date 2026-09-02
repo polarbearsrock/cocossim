@@ -336,9 +336,15 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
         // Precedence is load-bearing: a stalled cycle counts as memstall even if the
         // job is also underfilled — memory starvation must be separated from shape
         // under-fill for the per-unit attribution (spec 3.5).
-        if (s->is_idle_from_memory) s->acct_memstall++;
-        else if (s->is_underfilled()) s->acct_underfilled++;
-        else s->acct_busy++;
+        // The per-class split (spec S1) mirrors the same decision, keyed by
+        // the running job's op_class (an active unit always holds its job:
+        // increment() returns state != idle and TO_IDLE_CLEANUP clears j
+        // only on the transition to idle; OP_OTHER is the defensive
+        // fallback so the class rows still sum to the unit totals).
+        int oc = s->j ? s->j->op_class : OP_OTHER;
+        if (s->is_idle_from_memory) { s->acct_memstall++; s->acctc[State::ACCTC_MEMSTALL][oc]++; }
+        else if (s->is_underfilled()) { s->acct_underfilled++; s->acctc[State::ACCTC_UNDERFILLED][oc]++; }
+        else { s->acct_busy++; s->acctc[State::ACCTC_BUSY][oc]++; }
       }
     }
 
