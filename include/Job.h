@@ -50,7 +50,10 @@ struct Job {
   int op_id = -1;
   // Decode KV-cache stream (benchmark spec S6): score/AV jobs of a decode
   // layer gather the paged KV cache through a block table. Their reads issue
-  // at the -kv_bw_pct-derated rate and are never prefetched across ops.
+  // at the -kv_bw_pct-derated rate, and their KV (weight-side) sweep is
+  // never prefetched across ops -- a paged-attention kernel gathers its own
+  // blocks. The Q activation panel is an ordinary activation and stays
+  // prefetchable once the job is ready.
   bool kv_stream = false;
   uint64_t addr;
   const uint64_t addr_hold;

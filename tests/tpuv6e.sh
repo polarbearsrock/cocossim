@@ -1419,10 +1419,24 @@ PIN="-c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 1
 k0=$(cycles_of "$WORK/v34a_s.txt"); k1=$(cycles_of "$WORK/v34b_s.txt")
 m0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34a.log" | tail -1 | awk '{print $3}')
 m1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34b.log" | tail -1 | awk '{print $3}')
-if [ -n "$k0" ] && [ -n "$k1" ] && [ "$k1" -gt "$k0" ] && [ "$m0" = "$m1" ]; then
-  ok "V34a -kv_bw_pct 50 slows decode KV streams ($k0 -> $k1, CMDs invariant $m0)"
+# The budget is ONE per-cycle token bucket shared by every KV-stream job on
+# the chip (review finding: a per-unit cap against the device plate let two
+# MXUs stream 2x the intended rate, and P=50 cost only +7%). This shape is
+# KV-dominated (67 MB of KV per layer vs ~5 MB of weights), so halving the
+# KV rate against a DRAM that serves ~12 beats/cycle must cost >= 30%.
+# P=99 vs P=100 (no cap): the default stays bit-identical, but pacing KV
+# issue at the plate is NOT a no-op -- -dram_enq 32 lets a KV stream burst
+# 32 beats/cycle into the FIFO ahead of weight fetches, and P=99 measured
+# 5.6% FASTER than uncapped on this shape. Assert the step stays under 10%
+# and leave the remedy to the fit (-dram_enq = plate, spec 6).
+"$BIN" $PIN -kv_bw_pct 99 -i "$WORK/v34.txt" -o "$WORK/v34x_s.txt" > "$WORK/v34x.log" 2>&1
+k99=$(cycles_of "$WORK/v34x_s.txt")
+cont=$(awk -v a="${k0:-0}" -v b="${k99:-0}" 'BEGIN{d=(a-b)/a; if(d<0)d=-d; print (a>0 && b>0 && d<=0.10)?1:0}')
+if [ -n "$k0" ] && [ -n "$k1" ] && [ "$m0" = "$m1" ] && [ "$cont" -eq 1 ] \
+   && [ "$(awk -v a="$k0" -v b="$k1" 'BEGIN{print (b>=1.3*a)?1:0}')" -eq 1 ]; then
+  ok "V34a -kv_bw_pct 50 slows decode KV streams ($k0 -> $k1, +$(( (k1 - k0) * 100 / k0 ))%, P99 $k99, CMDs invariant $m0)"
 else
-  bad "V34a cycles $k0 -> $k1, CMDs $m0 vs $m1"
+  bad "V34a cycles $k0 -> $k1 (want >= 1.3x), P99=$k99 (want within 10%), CMDs $m0 vs $m1"
 fi
 # V34b: prefill attention reads the just-computed projections contiguously:
 # bit-identical under -kv_bw_pct 50.
@@ -1454,10 +1468,38 @@ d0=$(cycles_of "$WORK/v34g_s.txt"); d1=$(cycles_of "$WORK/v34h_s.txt")
 e0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34g.log" | tail -1 | awk '{print $3}')
 e1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34h.log" | tail -1 | awk '{print $3}')
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -data_overhead -5 -i "$WORK/v34g.txt" -o "$WORK/v34i_s.txt" > "$WORK/v34i.log" 2>&1; rd=$?
-if [ -n "$d0" ] && [ -n "$d1" ] && [ $((d1 - d0)) -eq 777 ] && [ "$e0" = "$e1" ] && [ "$rd" -eq 1 ] && grep -q 'data_overhead' "$WORK/v34i.log"; then
-  ok "V34d -data_overhead 777 adds exactly 777 cycles ($d0 -> $d1), negative rejected"
+# The overhead cycles are demand-idle by definition (nothing is dispatched
+# yet): the MEM demand-idle numerator must grow by exactly 777 too.
+di0=$(grep -ao 'MEM demand-idle: [0-9]*' "$WORK/v34g.log" | grep -o '[0-9]*$')
+di1=$(grep -ao 'MEM demand-idle: [0-9]*' "$WORK/v34h.log" | grep -o '[0-9]*$')
+if [ -n "$d0" ] && [ -n "$d1" ] && [ $((d1 - d0)) -eq 777 ] && [ "$e0" = "$e1" ] && [ "$rd" -eq 1 ] \
+   && grep -q 'data_overhead' "$WORK/v34i.log" && [ $((${di1:-0} - ${di0:-0})) -eq 777 ]; then
+  ok "V34d -data_overhead 777 adds exactly 777 cycles ($d0 -> $d1), all demand-idle, negative rejected"
 else
-  bad "V34d cycles $d0 -> $d1 delta=$((${d1:-0} - ${d0:-0})), CMDs $e0 vs $e1, badval_rc=$rd"
+  bad "V34d cycles $d0 -> $d1 delta=$((${d1:-0} - ${d0:-0})), demand-idle $di0 -> $di1, CMDs $e0 vs $e1, badval_rc=$rd"
+fi
+# V34e: 64-bit byte amounts in the VPU (review finding): an unfused binary
+# elementwise job over M x cols with 4*M*cols >= 2^31 wrapped its read
+# count to 1 beat. Transformer 1 64 2 2 16384 4096 0 8 at -c 1 -sa_sz 256
+# (M = 32768): the unfused VPU ops move, beat-exact,
+#   silu_mul 32768 x 16384: 2 x 2^30 B read = 33554432 + 2^30 B write =
+#     16777216 -> 50331648
+#   norm1, norm2: 32768 x 64 x 2 B = 4 MiB read + 4 MiB write = 131072 each
+#   rope: 32768 x (64+64) x 2 B = 8 MiB read + write -> 262144
+#   res1, res2: 2 x 4 MiB read + 4 MiB write = 196608 each
+#   total 51249152 = CMDs(-fuse_vpu 0) - CMDs(-fuse_vpu 1)
+# (pre-fix the silu read wrapped: delta 17694720).
+printf 'Transformer 1 64 2 2 16384 4096 0 8\n' > "$WORK/v34j.txt"
+"$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -i "$WORK/v34j.txt" -o "$WORK/v34j_s.txt" > "$WORK/v34j.log" 2>&1
+"$BIN" -c 1 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_vpu 1 -i "$WORK/v34j.txt" -o "$WORK/v34k_s.txt" > "$WORK/v34k.log" 2>&1
+bu=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34j.log" | tail -1 | awk '{print $3}')
+bf=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34k.log" | tail -1 | awk '{print $3}')
+if [ -n "$bu" ] && [ -n "$bf" ] && [ $((bu - bf)) -eq 51249152 ]; then
+  ok "V34e 64-bit VPU byte amounts: unfused VPU traffic exact on a 2^29-element op ($bu - $bf)"
+else
+  bad "V34e CMDs unfused=$bu fused=$bf delta=$((${bu:-0} - ${bf:-0})) (want 51249152)"
 fi
 
 # V35: batched prefill (benchmark spec S3). mode 0 with batch > 1 runs every

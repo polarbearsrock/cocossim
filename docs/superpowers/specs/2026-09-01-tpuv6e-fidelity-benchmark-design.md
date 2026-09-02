@@ -139,6 +139,108 @@ Known composite omissions carried into the error budget, not fixed here:
 Qwen3's QK-norm (two per-head RMSNorms per layer; fused sidecars on silicon
 anyway), embedding gather, KV-cache write of the new token, sampling.
 
+### 5.1 Status (2026-09-01, evening)
+
+All six prerequisites landed on `codex/tpuv6-model`: S4 (`6d9017c` +
+review fixes `b5c984d`/`6022ed6`/`7bb503d`: true-byte write-back,
+`-act_share`, two pre-existing prefetch/window defects found by the review
+panel), S1 (`51a9d2c`: ACCTC per-class lines, SCHEMA 3), S5 (`f9fbc3c`:
+census v2), S2/S6/S3 (one commit: `-op_overhead` with OPBOUND counts,
+`-kv_bw_pct` relative to the DRAM plate, `-data_overhead`, batched
+prefill). Suites 66/66 + 5/5.
+
+Post-F0 holdout, pure priors (`configs/tpuv6e.sh`, all fit knobs at their
+defaults), now six points thanks to S3:
+
+| point | predicted | measured | error |
+|---|---|---|---|
+| prefill 512 b1 | 15.06 ms | 19.15 | −21.4% |
+| prefill 2048 b1 | 58.01 ms | 58.57 | −1.0% |
+| prefill 512 b8 | 85.8 ms | 108.9 | −21.2% |
+| prefill 2048 b8 | 425.8 ms | 453.0 | −6.0% |
+| decode 512×8 | 11.14 ms/step | 14.10 | −21.0% |
+| decode 2048×32 | 17.28 ms/step | 26.20 | −34.0% |
+
+MAPE 17.4% (six points), 19.3% (the original four). The long prefills —
+where per-kernel and host costs are amortized — are within noise; the
+short-prefill and decode points miss by the near-constant ~21% that the
+per-op / data terms exist to fit, and the long-context decode point adds
+the KV-gather term. Every point sits on the under-predicted side, as the
+physics-only model should.
+
+Two findings from S5 that change §3.2/§6:
+- **XProf semantics confirmed**: `bandwidthUtils` = [HBM read+write, VMEM
+  read, VMEM write] against peaks [1638, 23296, 16128] GB/s; the `flops`
+  field is a share of the trace, not a utilization — per-op MXU utilization
+  is recomputed as rawFlops / rawTime / peak. The Pallas ragged-paged-
+  attention custom call carries no cost model (flops = bytes = 0), so
+  attention MXU/HBM utilization is `n/a` from XProf; A1 (kernel in
+  isolation, timed) is the only attention utilization source. Weight
+  prefetches are booked on `copy-start` DMA ops, so per-class HBM numbers
+  understate real traffic; the root-level HBM utilization includes them.
+- **The stored session-3 prefill traces are prefix-cache hits, not full
+  prefills**: `prefill_512_1` and `prefill_2048_1` contain the same 256-token
+  program (the ragged-paged-attention page size), the signature of a cache
+  hit recomputing only the last page. Every tier-2 prefill trace must be
+  re-captured with prefix caching verified off (the dh2 *walls* already were;
+  the traces predate that fix). Decode traces are whole (63 steps captured).
+
+### 5.2 H1 executed (2026-09-01 evening): first tier-1 fidelity map
+
+Session H1 ran on an on-demand v6e-1 (us-east5-b, ~$4.50 including two
+aborted passes): 78 G-sweep and 22 E1 points, chained, 20-rep medians, one
+XProf trace per point (`results/fidelity/h1/*.csv`; traces under
+`$RESULTS_DIR/fidelity/h1/traces`, 1.3 GB). Two probe defects were found
+and fixed on the way and are recorded in `probes/g_sweep.py`: a scan step
+that returned one output element let XLA slice the GEMM to a single dot
+product (100 PFLOP/s readings), and a redeploy that nested the fixed
+scripts into a subdirectory ran the stale ones. Both probes now refuse or
+flag rows above peak/plate.
+
+Simulator side: `fidelity/sim_matrix.sh` ran every H1 shape on the pinned
+config; `fidelity/score_matrix.py` scored 99 GEMM cells and 21 E1 rows
+(`results/fidelity/h1/tier1_scorecard_priors.csv`, and
+`_ovh15000.csv` with `-op_overhead 15000` as a first fit coordinate).
+
+Priors (no fit): G3 35 PASS / 19 CONDITIONAL / 10 FAIL; G2 3/6/1; G1
+1/2/1; E1 1/2/18. The map decomposes into five mechanisms:
+
+1. **Per-kernel fixed cost t₀ (the dominant miss).** Silicon is flat at
+   31.5 µs for the 33.5 MB q projection from M=1 to 64, 15.2 µs for the
+   8.4 MB kv projection, 7–9 µs for any elementwise kernel under ~4 MB; the
+   sim charges nothing fixed (qwen_q −13…−26%, qwen_kv −55%, 1024³ −44%,
+   small E1 −54…−98%). t = t₀ + bytes/BW with t₀ ≈ 9–10 µs (GEMM), ≈ 7 µs
+   (elementwise), BW ≈ 1.35 TB/s. With `-op_overhead 15000` (8.6 µs) G3
+   goes to 38/23/3 — the q/kv cells pass — while elementwise overshoots
+   (+13…+25%): the fit wants a smaller t₀ for VPU ops than for GEMMs, or
+   a per-class overhead.
+2. **Big weight streams match.** gate/up, down and the Mistral head
+   (100–270 MB) are within ±10% at every M: the sim's read streaming rate
+   is silicon's.
+3. **Loop order / first-job fetch (structural, sim too slow).** M×8192² at
+   M ≥ 512: +17…+28%; mistral_down at M ≥ 128: +18%; the effect grows
+   with K and with the number of row blocks that run compute-only on a
+   resident slice while the first block paid the whole fetch (spec 6.7).
+4. **Write-heavy streaming (sim too fast).** The only E1 rows that measure
+   HBM (≥ 400 MB moved; every smaller row is a VMEM-resident scan carry on
+   silicon, 2.2–4.5 TB/s) show add at 1.09–1.10 TB/s and exp at 1.06 TB/s
+   on silicon vs ~1.5 TB/s in the sim (−25…−28%). Read-only weight streams
+   agree, so this is the write path: DRAMSim3's write buffering / read-write
+   turnaround is more generous than HBM's. Candidate: a write-bandwidth
+   derate or an ini timing revisit (tWR/tWTR), validated on an E1b probe
+   that separates read-only (reduce) from write-only (fill) streams.
+5. **Two singletons.** The Qwen head (1.24 GB, N = 151936, not a multiple
+   of 256) runs 17–20% slower on silicon than pure streaming predicts —
+   ragged last tile or large-tensor layout effect; probe with N ∈ {131072,
+   151936, 152064} in H5. 8192³ sustains 686 TF/s vs 727 at 4096³:
+   sustained-power capping the sim does not model (−13%).
+
+E1 design note: a scan carry under VMEM never touches HBM, so the cell's
+small and mid sizes measure t₀ + VMEM, not HBM. `score_matrix.py` flags
+rows with bytes_moved < 150 MB as `vmem_resident` and scores them
+separately; the HBM verdict uses only the large rows. H5 should add a
+read-only and a write-only stream probe at ≥ 512 MB.
+
 ## 6. Fit protocol
 
 Parameters and the tier-1 cells that identify them:
@@ -152,6 +254,14 @@ Parameters and the tier-1 cells that identify them:
 | `-vu_sz` | prior unless A1 prefill (softmax-bound regime) identifies it; reported as unidentified otherwise |
 | `-data_overhead` | tier-2 fit subset F only |
 | `-dbuf` budget, `-vmem_headroom` | priors; sensitivity reported, not fit |
+
+Note on `-dram_enq` (found while reviewing S6): the pinned 32 beats/cycle
+issue width is 2.2× the HBM plate at 1.75 GHz (14.6 beats/cycle), so a
+decode KV stream can burst 32 beats into the FIFO ahead of weight fetches;
+pacing KV issue at the plate (`-kv_bw_pct 99`) measured 5.6% FASTER than
+uncapped on the V34a shape. The fit should try `-dram_enq` = plate (15)
+before anything else, since an unphysical issue width is an easy way for
+the DRAM queue to reorder traffic the hardware never sees.
 
 Method: minimize mean absolute log-error over tier-1 cells with the
 parameters above (coordinate descent is sufficient; parameter count is

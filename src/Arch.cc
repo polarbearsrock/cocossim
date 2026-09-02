@@ -95,6 +95,15 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   uint64_t phase_cycles = data_overhead_cycles;
   gcycles = data_overhead_cycles;
   const uint64_t MAX_TIME = 0xFFFFFFFFFFFFFFFF;
+  // -kv_bw_pct: budget = P% of the DRAM PLATE (channels x bus_width/8 x 2
+  // transfers per tCK, per simulator cycle) in beats, shared chip-wide.
+  {
+    const auto *dc = mem::dramsim3config;
+    double plate_beats = (double) dc->channels * dc->bus_width / 8.0 * 2.0
+                         / ((double) freq_sa * dc->tCK) / bytes_per_tx;
+    kv_issue_rate = (kv_bw_pct < 100) ? plate_beats * kv_bw_pct / 100.0 : 0.0;
+    kv_budget_acc = 0.0;
+  }
 
   int phase_idx = 0;
   uint64_t next_phase;
@@ -112,8 +121,10 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   }
 
   int dram_cmds = 0;
-  uint64_t mem_demand_idle = 0;
-  uint64_t mem_idle_all = 0;
+  // The -data_overhead cycles precede the first dispatch: demand-idle by
+  // definition, so both idle stats start there.
+  uint64_t mem_demand_idle = data_overhead_cycles;
+  uint64_t mem_idle_all = data_overhead_cycles;
 
   // ---------------------------------------------------------------------
   // Cross-op weight prefetch (-dbuf, spec 6.7). XLA streams the NEXT
@@ -221,6 +232,10 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
   const double cycle_adjust = 1. / freq_sa;
 
   while (!(total_idle == states.size() && total_frontier == 0)) {
+    // Refill the chip-wide KV-stream budget; carry at most one cycle over so
+    // an idle stretch cannot bank unbounded credit.
+    if (kv_bw_pct < 100)
+      kv_budget_acc = std::min(kv_budget_acc + kv_issue_rate, 2.0 * kv_issue_rate);
     if (gcycles >= next_phase) {
       phase_idx++;
       state_updates.at(-1) = -1;

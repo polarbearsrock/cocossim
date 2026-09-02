@@ -50,6 +50,10 @@ def main():
                          si_tflops=float(r["tflops"]), sim_tflops=2.0 * int(r["M"]) * int(r["K"]) * int(r["N"]) / sm / 1e6,
                          sim_sa_busy=float(s["sa_busy"]), sim_sa_memstall=float(s["sa_memstall"]),
                          verdict=verdict(err)))
+    # E1: a scan carry under VMEM (~128 MiB) never touches HBM on silicon, so
+    # rows moving < 150 MB measure t0 + VMEM streaming, not HBM. They are
+    # reported (cell E1v) but get no HBM verdict; only the large rows do.
+    VMEM_BYTES = 150e6
     for r in csv.DictReader(open(a.e1_csv)):
         key = ("E", r["op"], int(r["n"]))
         s = sim.get(key)
@@ -58,9 +62,11 @@ def main():
         si = float(r["per_step_us"]); sm = float(s["us"])
         p10 = float(r["p10_s"]) / int(r["chain"]) * 1e6; p90 = float(r["p90_s"]) / int(r["chain"]) * 1e6
         err = (sm - si) / si
-        rows.append(dict(cell="E1", label=r["op"], shape=f"n={r['n']}", si_us=si, si_p10=p10, si_p90=p90,
+        vmem = int(r["bytes_moved"]) < VMEM_BYTES
+        rows.append(dict(cell="E1v" if vmem else "E1", label=r["op"], shape=f"n={r['n']}", si_us=si, si_p10=p10, si_p90=p90,
                          sim_us=sm, err=err, si_tflops=0.0, sim_tflops=0.0,
-                         sim_sa_busy=0.0, sim_sa_memstall=0.0, verdict=verdict(err)))
+                         sim_sa_busy=0.0, sim_sa_memstall=0.0,
+                         verdict="VMEM-RESIDENT (no HBM verdict)" if vmem else verdict(err)))
 
     print(f"{'cell':4s} {'label':16s} {'shape':18s} {'si_us':>9s} {'[p10,p90]':>17s} {'sim_us':>9s} {'err':>7s}  verdict")
     counts = defaultdict(int)
@@ -70,6 +76,8 @@ def main():
               f"{r['sim_us']:9.2f} {100 * r['err']:+6.1f}%  {r['verdict']}")
     print()
     for cell in ("G1", "G2", "G3", "E1"):
+        if cell == "E1":
+            print(f"E1v: {sum(v for (c, _), v in counts.items() if c == 'E1v')} VMEM-resident rows (silicon carry fits VMEM; not HBM cells)")
         tot = sum(v for (c, _), v in counts.items() if c == cell)
         if tot:
             print(f"{cell}: PASS {counts[(cell, 'PASS')]}  CONDITIONAL {counts[(cell, 'CONDITIONAL')]}  "

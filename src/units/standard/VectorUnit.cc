@@ -39,7 +39,7 @@ bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int 
           // consumed on-chip by a fused successor)
           state_transfer(VectorUnit::VPUState::write,
                          0,
-                         sj->fused_out ? 0 : lin * par * data_type_width * batch_size,
+                         sj->fused_out ? 0 : (int64_t) lin * par * data_type_width * batch_size,
                          0);
         } else if (ph_ar.front().first == VPUPhase::REDUCE) {
           // Reduction phase: compute along linear dimension
@@ -83,7 +83,7 @@ void VecUnitState::init() {
   LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, vcd_idx), j->job_idx);
 
   VectorUnit::VPUState first_state;
-  int first_phase_read;
+  int64_t first_phase_read;
   int first_phase_cycles;
   auto front = sj->phases.front();
   if (sj->is_prebuffered) {
@@ -94,7 +94,7 @@ void VecUnitState::init() {
       first_state = VectorUnit::VPUState::buffered_lin;
     }
   } else {
-    first_phase_read = sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width * sj->n_read_operands;
+    first_phase_read = (int64_t) sj->linearized_dimension * sj->parallel_dimension * batch_size * data_type_width * sj->n_read_operands;
     if (front.first == VPUPhase::BROADCAST) {
       first_state = VectorUnit::VPUState::unbuffered_par;
     } else {

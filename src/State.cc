@@ -53,14 +53,14 @@ void State::enqueue_reads() {
     // tCK, per simulator cycle), not of -dram_enq: the issue cap sits above
     // what the DRAM can serve, so a cap relative to it would only bite far
     // below 50% and leave the knob a dead zone for the fit.
+    // Shared token bucket (global.h): every KV-stream job on the chip draws
+    // from the same per-cycle budget, so n MXUs cannot stream n x the rate.
     int cap = dram_enq_per_cycle;
-    if (j->kv_stream && kv_bw_pct < 100) {
-      const auto *dc = mem::dramsim3config;
-      double plate_beats = (double) dc->channels * dc->bus_width / 8.0 * 2.0
-                           / ((double) freq_sa * dc->tCK) / bytes_per_tx;
-      cap = std::max(1, std::min(cap, (int) (plate_beats * kv_bw_pct / 100.0)));
-    }
+    const bool kv = j->kv_stream && kv_bw_pct < 100;
+    if (kv) cap = std::max(0, std::min(cap, (int) kv_budget_acc));
     int to_enq = std::min(cap, mem_read_left_unqueued);
+    if (kv) kv_budget_acc -= to_enq;
+    if (to_enq <= 0) return;
     check_in_bounds(j, to_enq, "reads");
     mem_read_left_unqueued -= to_enq;
     mem_queued += to_enq;
@@ -95,16 +95,16 @@ bool State::process_stage() {
   return false;
 }
 
-void State::state_transfer(int st, int read_amt_bytes, int write_amt_bytes, int min_cycles) {
+void State::state_transfer(int st, int64_t read_amt_bytes, int64_t write_amt_bytes, int min_cycles) {
   IFVERB(printf("Time(%llu) - Transfer from %s to %s\n", gcycles, to_string(state), to_string(st)));
   UPDATE_STATE(st);
   min_stage_cycles = min_cycles;
   int rmin = read_amt_bytes > 0 ? 1 : 0;
   int wmin = write_amt_bytes > 0 ? 1 : 0;
   if (!hold_reads) {// -dbuf_tile: the next tile's reads are already in flight
-    SET_READS(std::max(rmin, read_amt_bytes / bytes_per_tx));
+    SET_READS(std::max(rmin, (int) (read_amt_bytes / bytes_per_tx)));
   }
-  SET_WRITES(std::max(wmin, write_amt_bytes / bytes_per_tx));
+  SET_WRITES(std::max(wmin, (int) (write_amt_bytes / bytes_per_tx)));
   if (is_idle_from_memory) {
     UPDATE_IDLEMEM(false);
   }

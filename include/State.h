@@ -133,7 +133,9 @@ struct State {
   void enqueue_reads();
   void check_idle_from_memory();
   bool process_stage();
-  void state_transfer(int st, int read_amt, int write_amt, int min_cycles);
+  // Byte amounts are 64-bit: a batched-prefill elementwise job can exceed
+  // 2^31 bytes (review finding V34e); beats stay int (< 2^31 for < 128 GiB).
+  void state_transfer(int st, int64_t read_amt, int64_t write_amt, int min_cycles);
   virtual void init() = 0;
   virtual bool increment(const enqueue_job_f_t &, int &total_idle, int *n_idle_units) = 0;
   virtual void set_state(int st) = 0;

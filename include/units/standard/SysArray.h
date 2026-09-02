@@ -187,6 +187,8 @@ namespace SystolicArray {
       return (int64_t) cols * (panel / bytes_per_tx);
     }
     [[nodiscard]] int64_t prefetchable_act_beats() const override {
+      // kv_stream jobs keep this: their Q rows are an ordinary just-computed
+      // activation; only the KV (weight-side) gather is un-prefetchable.
       if (ws_cfg || act_resident) return 0;
       return (int64_t) activation_panel_bytes(M, K, sz_cfg) / bytes_per_tx;
     }

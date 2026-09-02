@@ -86,6 +86,11 @@ extern int op_overhead_cycles;
 // -kv_bw_pct: effective issue rate for decode KV-cache streams (paged
 // gather) as a percentage of dram_enq_per_cycle. Traffic invariant.
 extern int kv_bw_pct;
+// The derate is ONE per-cycle token bucket shared by every KV-stream job on
+// the chip (Arch.cc refills kv_budget_acc by kv_issue_rate beats each cycle,
+// carrying at most one cycle over; State::enqueue_reads draws from it).
+extern double kv_issue_rate;
+extern double kv_budget_acc;
 // -data_overhead: fixed per-run cycles for layout/copy kernels the model
 // has no jobs for (kernel census: 4-7% of device time); the clock advances
 // by this much before the first dispatch, nothing else moves.

@@ -68,13 +68,17 @@ def main():
             r = time_op(fn)
             per_step = r["median_s"] / CHAIN
             gbs = moved / per_step / 1e9
+            # Above the HBM plate the scan carry stayed VMEM-resident across
+            # iterations (arrays under ~128 MiB never touch HBM): that is a
+            # VMEM-bandwidth reading, not an HBM one -- keep it, flagged, so
+            # score_matrix can use the HBM rows and report VMEM separately.
+            # (H1 session: 2.2-4.5 TB/s for 25-200 MB moved; 1.1 TB/s above.)
+            vmem = gbs > PLATE_GBS * 1.05
             row = {"op": op, "n": n, "bytes_moved": moved, "chain": CHAIN, **r,
-                   "per_step_us": per_step * 1e6, "gbs": gbs}
-            if gbs > PLATE_GBS * 1.05:
-                print(f"SANITY FAIL: {gbs:.0f} GB/s exceeds plate -- XLA elided work; row NOT written", flush=True)
-                continue
+                   "per_step_us": per_step * 1e6, "gbs": gbs, "vmem_resident": int(vmem)}
             csv_append(args.out, row)
-            print(f"{op:4s} n={n:10d}  {row['per_step_us']:9.2f} us/step  {gbs:7.0f} GB/s", flush=True)
+            print(f"{op:4s} n={n:10d}  {row['per_step_us']:9.2f} us/step  {gbs:7.0f} GB/s"
+                  f"{'  [VMEM-resident carry]' if vmem else ''}", flush=True)
             if args.trace:
                 d = os.path.join(args.trace, f"E1_{op}_{n}")
                 os.makedirs(d, exist_ok=True)

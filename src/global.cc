@@ -26,6 +26,8 @@ int dbuf_tile = 0;
 int act_share = 1;
 int op_overhead_cycles = 0;
 int kv_bw_pct = 100;
+double kv_issue_rate = 0;
+double kv_budget_acc = 0;
 int data_overhead_cycles = 0;
 int64_t pf_outstanding_beats = 0;
 
