@@ -302,6 +302,26 @@ async copies would), so a stall costs less at layer level than in a
 single-op microbenchmark; the tier-1 t₀ may therefore be a lower bound on
 the whole-model value.
 
+### 6.2 Correction (2026-09-01, late): H1's chain length did not amortize the host floor
+
+E1's rows under 4 MB are flat at 7.1 µs per step, and 113 µs / 16 = 7.06 µs:
+the B1 host-dispatch floor divided by CHAIN. A chained call is one
+executable, so its ~113 µs launch + completion cost lands once per call
+and leaks floor/CHAIN into every per-step number — 7 µs at chain 16, 14 µs
+at chain 8 (which is where C5's "t₀ ≈ 10 µs" came from too). Consequences:
+- the small-op FAIL cells of §5.2 (qwen_kv, qwen_q, 1024³, small E1) are
+  mostly this leak: qwen_q 31.5 − 7 ≈ 24.5 µs vs sim 24.7 µs;
+- the "per-kernel t₀ ≈ 7–10 µs" of §5.2 item 1 is NOT established, and
+  `-op_overhead 12250` in `tpuv6e_fitted.sh` largely compensates an
+  artifact; the fit is void until re-measured;
+- B2's 31–35 µs "per kernel" was host issue throughput on async chains,
+  not device time. The device-side per-kernel cost is currently unknown.
+Method going forward (all probes): time each cell at CHAIN and 2·CHAIN and
+report per_step = (t₂C − tC) / CHAIN (pure device per-step) and intercept =
+2·tC − t₂C (the per-call fixed cost, measured); choose CHAIN so a call runs
+≥ 1 ms. Session H1b re-runs G1/G2/G3/E1 this way (plus E1b read-only /
+write-only streams for the write-path gap) alongside H2.
+
 ## 7. Verdicts and go/no-go
 
 Per cell and metric:

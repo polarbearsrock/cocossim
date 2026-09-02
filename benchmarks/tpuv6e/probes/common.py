@@ -32,6 +32,40 @@ def time_op(fn, reps=None):
     }
 
 
+def time_chain_slope(make_fn, chain, min_call_s=1e-3, max_chain=4096, reps=None):
+    """Device-side per-step time of a chained kernel by the SLOPE method.
+
+    A chained call is one executable, so its launch + completion cost (the
+    ~113 us host floor, spec 2) lands once per call and leaks floor/CHAIN
+    into a naive per-step division (session H1: 7.1 us/step at chain 16 on
+    tiny elementwise ops = 113/16). Timing the chain at C and 2C and taking
+    per_step = (t_2C - t_C) / C cancels every per-call constant; the
+    intercept 2*t_C - t_2C is that constant, measured rather than assumed.
+
+    make_fn(C) must return a zero-arg callable that runs a C-step chain
+    (compiled per C; C is a static scan length). C is grown until a call
+    lasts at least min_call_s so the difference is well above jitter.
+    Returns per_step_s, intercept_s, chain, both raw timings, and a
+    conservative per-step band from the two runs' p10/p90.
+    """
+    C = chain
+    t1 = time_op(make_fn(C), reps=reps)
+    while t1["median_s"] < min_call_s and C < max_chain:
+        C = min(max_chain, C * 2)
+        t1 = time_op(make_fn(C), reps=reps)
+    t2 = time_op(make_fn(2 * C), reps=reps)
+    per_step = (t2["median_s"] - t1["median_s"]) / C
+    return {
+        "chain": C,
+        "per_step_s": per_step,
+        "per_step_p10_s": (t2["p10_s"] - t1["p90_s"]) / C,
+        "per_step_p90_s": (t2["p90_s"] - t1["p10_s"]) / C,
+        "intercept_s": 2 * t1["median_s"] - t2["median_s"],
+        "t_c_s": t1["median_s"], "t_2c_s": t2["median_s"],
+        "reps": t1["reps"],
+    }
+
+
 def csv_append(path, row: dict):
     exists = os.path.exists(path)
     with open(path, "a", newline="") as f:
