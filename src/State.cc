@@ -61,7 +61,8 @@ void State::check_idle_from_memory() {
   // Check if unit should be marked idle due to pending memory operations
   if (min_stage_cycles == 0 && !is_idle_from_memory &&
       (mem_read_left > 0 ||
-       mem_write_left > 0)) {
+       mem_write_left > 0 ||
+       prefetch_read_left > 0)) {
     UPDATE_IDLEMEM(true);
   }
 }
@@ -70,7 +71,10 @@ bool State::process_stage() {
   // Process current stage: decrement cycle counter and check completion
   if (min_stage_cycles > 0)
     min_stage_cycles--;
-  if (min_stage_cycles == 0 && (mem_read_left == 0 || !reads_gate) && mem_write_left == 0) {
+  // prefetch_read_left is outside the -dbuf_tile reads_gate on purpose: the
+  // credited beats are this job's first-tile operands (see State.h).
+  if (min_stage_cycles == 0 && (mem_read_left == 0 || !reads_gate) && mem_write_left == 0 &&
+      prefetch_read_left == 0) {
     return true;
   }
   check_idle_from_memory();

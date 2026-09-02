@@ -15,6 +15,7 @@
 #include <vector>
 
 extern uint64_t alloc_addr;
+struct State;
 
 struct Job {
   [[nodiscard]] virtual int get_type() const = 0;
@@ -49,6 +50,21 @@ struct Job {
   // the moment the job is dispatched.
   int64_t prefetch_credit_beats = 0;
   bool started = false;
+  // Landing bookkeeping for those beats (S4 fix round 2). The credit is
+  // booked at ISSUE, but the prefetched addresses sit at the front of this
+  // job's window, and the job's own write-back -- which starts right behind
+  // its (credit-reduced) demand reads -- lands inside that span whenever the
+  // credit exceeds the remaining demand. A write to an address whose read is
+  // still pending is the DRAMSim3 deadlock described at alloc_size. So every
+  // prefetch beat keeps its owner (mem::prefetch_owner), the DRAM callback
+  // counts it here, and at dispatch the issued-but-unlanded remainder becomes
+  // the executing state's prefetch_read_left (Arch.cc), which process_stage
+  // waits on like demand reads: the unit cannot compute on data that has not
+  // arrived, and no write is issued before the last prefetched beat landed.
+  // Traffic is untouched -- the credit still replaces demand beats 1:1.
+  int64_t prefetch_issued_beats = 0;
+  int64_t prefetch_landed_beats = 0;
+  State *exec_state = nullptr;// set at dispatch, after prefetch_read_left is programmed
   // Whole beats of weight-side traffic the prefetcher may stream ahead of
   // dispatch: per column tile floor(panel / bytes_per_tx), summed -- exactly
   // what the charge sites deduct, and never more than the job's address

@@ -267,6 +267,14 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           job->started = true;// stops -dbuf prefetch issue for this job
           LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, state->vcd_idx), job->job_idx);
           state->init();
+          // Prefetched-but-unlanded beats of this job become a wait the
+          // state honours like demand reads (Job.h): program the count
+          // BEFORE publishing the state to the callback (single-threaded,
+          // callbacks only fire inside ClockTick, so no landing can slip
+          // between the two statements).
+          state->prefetch_read_left =
+              (int) (job->prefetch_issued_beats - job->prefetch_landed_beats);
+          job->exec_state = state;
           state->min_stage_cycles += job_overhead_cycles;
           enqueued_job = true;
           any_job_assigned = true;
@@ -341,12 +349,16 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     }
     // Offered-load stats. demand-idle: cycles where no UNIT has any read or
     // write outstanding (the starvation -dbuf exists to fill -- counted from
-    // the states' own pending counters so prefetch traffic cannot mask it).
+    // the states' own pending counters so prefetch traffic cannot mask it;
+    // prefetch beats a DISPATCHED job is waiting on are demand by then).
     // idle incl. prefetch: nothing queued or in flight at all.
     {
       bool demand_pending = false;
       for (auto *s: states)
-        if (s->mem_read_left > 0 || s->mem_write_left > 0) { demand_pending = true; break; }
+        if (s->mem_read_left > 0 || s->mem_write_left > 0 || s->prefetch_read_left > 0) {
+          demand_pending = true;
+          break;
+        }
       if (!demand_pending) mem_demand_idle++;
       if (to_enqueue.empty() && mem::address_reads_bkwds_lookup.empty() &&
           mem::address_writes_bkwds_lookup.empty())
@@ -384,13 +396,16 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           throw std::runtime_error("prefetch for job " + std::to_string(ent.job->job_idx) +
                                    " would walk past its allocation");
         for (int b = 0; b < n; ++b) {
-          // Priority 3 (behind SA/VPU demand for -mem_prio); no owning state:
-          // completions are absorbed by the null-guard in the DRAM callback.
+          // Priority 3 (behind SA/VPU demand for -mem_prio); no owning
+          // STATE (nullptr), but an owning JOB: the callback counts the
+          // landing on it (Job.h, prefetch_landed_beats).
+          mem::prefetch_owner[ent.next_addr] = ent.job;
           to_enqueue.emplace_back(ent.next_addr, false, 3, nullptr);
           ent.next_addr += bytes_per_tx;
         }
         *avail -= n;
         ent.job->prefetch_credit_beats += n;
+        ent.job->prefetch_issued_beats += n;
         pf_outstanding_beats += n;
         budget -= n;
       }

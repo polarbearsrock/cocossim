@@ -1103,8 +1103,8 @@ fi
 # issued, so the write-back lands in the next row's epoch. With 32-beat
 # writes the resident-weight slack hid it; at true bytes the LAST epoch
 # exceeds the window by up to one output tile W: abort ("walked past its
-# allocation") or, when the overrun aliases a neighbouring job's window,
-# the DRAMSim3 read/write deadlock (Job.h). sys_job_alloc_bytes now reserves
+# allocation" -- check_in_bounds catches every overrun, so an overrun can
+# never alias a neighbour silently). sys_job_alloc_bytes now reserves
 # that tile for multi-row OS jobs when -dbuf_tile is on -- the walk is
 # unchanged. Epochs (rows R > 1, cols C, weights resident from row 2 or
 # not): epoch 1 = combined + (C-1) wgt + (C-1) W; epochs 2..R-1 = act
@@ -1136,8 +1136,11 @@ fi
 #     read + 4 x 32768 write = 262144
 #   total 73728 + 57344 + 28672 + 147456 + 147456 + 262144 = 716800
 # Run 2: the pinned config with only -fuse_attn 0 flipped, S = 512 (the
-# run that HUNG at 14/44 jobs). -c 2, -act_share 1, -dbuf 48 (prefetch is
-# traffic-invariant), -dbuf_tile 0 and 1 must both finish 44/44 at:
+# run that HUNG at 14/44 jobs -- that hang was V31d's write-over-pending-
+# prefetch-read deadlock, not this overrun, which the wider window only
+# sidestepped by timing; kept as the pinned-config completion + CMD pin).
+# -c 2, -act_share 1, -dbuf 48 (prefetch is traffic-invariant), -dbuf_tile
+# 0 and 1 must both finish 44/44 at:
 #   q,k,v,o 512x256x256, core_n 128: 2 jobs/core of 256x256x128; weight
 #     128*256*2/64 = 1024, act 2048. Core 0: 3072 + 2048; core 1
 #     (act_resident): 1024 + 0; writes 4 x 1024 -> 10240 each, x4 = 40960
@@ -1185,6 +1188,59 @@ if [ "$rc0$rc1$rc2$rc3$rc4" = "00000" ] \
   ok "V31c multi-row OS jobs complete under -dbuf_tile 1 (CMDs -c 1 S=1024: $c0, S=512 pinned/-c 1: $c2, invariant)"
 else
   bad "V31c rc=$rc0/$rc1/$rc2/$rc3/$rc4 CMDs -c 1 S=1024: $c0/$c1 (want 716800) S=512 pinned: $c2/$c3 -c 1: $c4 (want 237568)"
+fi
+
+# V31d: a job's write-back must never land on an address whose -dbuf
+# PREFETCH read has not landed (S4 fix round 2, review findings 1+2). The
+# prefetcher streams a job's weight sweep and (once READY) its activation
+# panel into [addr_hold, addr_hold + credit) and books the credit at ISSUE;
+# the dispatched job deducts the credit from its demand reads, so its own
+# walk -- demand reads from addr_hold, then the write-back right behind
+# them -- starts its writes at addr_hold + (formula - credit): INSIDE the
+# prefetched span whenever credit > formula - credit. Nothing waited for the
+# prefetched beats to land (nullptr owner in the DRAM callback), and at K =
+# 256 a tile computes in 128 cycles, shorter than the DRAM queue latency of
+# a panel issued just before dispatch. A write to an address with a pending
+# read is the DRAMSim3 read/write deadlock Job.h documents: the run freezes.
+# This needs no window overrun and no -dbuf_tile (V31c's fix cured the
+# S=512 pinned run by timing luck only). Fix: prefetch beats keep their
+# owner (Job::prefetch_issued/landed_beats); at dispatch the credited-but-
+# unlanded beats become the state's prefetch_read_left, which process_stage
+# waits on like demand reads -- the MXU cannot compute on data that has not
+# arrived, and no write is issued before every prefetched beat has landed.
+# Traffic is untouched: the credit still replaces demand beats 1:1.
+# Run A: the pinned config, S = 512, -fuse_attn 0 -act_share 0 -dbuf_tile 0
+# (hung at 31/44, CMDs frozen at 229951). 44/44 jobs at V31c Run 2's
+# 237568 plus the core-1 activation panels -act_share 0 restores:
+#   q,k,v,o: 4 GEMMs x 2 core-1 jobs x act(256*256*2/64 = 2048) = 16384
+#   gate,up: 2 x 2 x 2048 = 8192;  down: 2 x act(256*512*2/64 = 4096) = 8192
+#   total 237568 + 32768 = 270336
+# Run B: Run A at -dbuf 0 (the control that always completed): the same
+# 270336 -- prefetch stays exactly traffic-invariant.
+# Run C: -c 1 (V31c's C1 flags) with -dbuf 48 -dbuf_tile 1, S = 1024 (hung
+# at 33/46): 46/46 at V31c Run 1's 716800.
+# Run D: the pinned config, S = 640, -fuse_attn 0 -act_share 0 -dbuf_tile 1
+# (the review saw 8+ write-over-pending-prefetch events on its 640x64x640
+# scores job and completion by luck): 60/60, CMDs equal to its -dbuf 0 run
+# (Run E) -- -dbuf_tile does not protect against the alias, so the fix must
+# hold there too.
+printf 'Transformer 1 256 4 4 512 640 0 1\n' > "$WORK/v31d640.txt"
+timeout 120 "$REPO/configs/tpuv6e.sh" "$WORK/v31c2.txt" "$WORK/v31dA_s.txt" -fuse_attn 0 -act_share 0 -dbuf_tile 0 > "$WORK/v31dA.log" 2>&1; rA=$?
+timeout 120 "$REPO/configs/tpuv6e.sh" "$WORK/v31c2.txt" "$WORK/v31dB_s.txt" -fuse_attn 0 -act_share 0 -dbuf_tile 0 -dbuf 0 > "$WORK/v31dB.log" 2>&1; rB=$?
+timeout 120 "$BIN" $C1 -dbuf 48 -dbuf_tile 1 -i "$WORK/v31c.txt" -o "$WORK/v31dC_s.txt" > "$WORK/v31dC.log" 2>&1; rC=$?
+timeout 120 "$REPO/configs/tpuv6e.sh" "$WORK/v31d640.txt" "$WORK/v31dD_s.txt" -fuse_attn 0 -act_share 0 -dbuf_tile 1 > "$WORK/v31dD.log" 2>&1; rD=$?
+timeout 120 "$REPO/configs/tpuv6e.sh" "$WORK/v31d640.txt" "$WORK/v31dE_s.txt" -fuse_attn 0 -act_share 0 -dbuf_tile 1 -dbuf 0 > "$WORK/v31dE.log" 2>&1; rE=$?
+dA=$(cmds_of "$WORK/v31dA.log"); dB=$(cmds_of "$WORK/v31dB.log"); dC=$(cmds_of "$WORK/v31dC.log")
+dD=$(cmds_of "$WORK/v31dD.log"); dE=$(cmds_of "$WORK/v31dE.log")
+if [ "$rA$rB$rC$rD$rE" = "00000" ] \
+   && [ "$(finished_all "$WORK/v31dA.log" 44)" = 1 ] && [ "$(finished_all "$WORK/v31dB.log" 44)" = 1 ] \
+   && [ "$(finished_all "$WORK/v31dC.log" 46)" = 1 ] \
+   && [ "$(finished_all "$WORK/v31dD.log" 60)" = 1 ] && [ "$(finished_all "$WORK/v31dE.log" 60)" = 1 ] \
+   && [ "${dA:-0}" -eq 270336 ] && [ "$dB" = "$dA" ] && [ "${dC:-0}" -eq 716800 ] \
+   && [ -n "$dD" ] && [ "$dD" = "$dE" ]; then
+  ok "V31d write-back waits for unlanded prefetch reads (S=512 -act_share 0: $dA, -c 1 S=1024 -dbuf 48: $dC, S=640: $dD, all -dbuf-invariant)"
+else
+  bad "V31d rc=$rA/$rB/$rC/$rD/$rE CMDs S=512: $dA/$dB (want 270336) -c 1 S=1024: $dC (want 716800) S=640: $dD/$dE"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

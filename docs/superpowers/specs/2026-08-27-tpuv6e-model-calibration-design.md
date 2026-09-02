@@ -330,8 +330,12 @@ residuals before being dismissed as noise.
   at `-buf_mb 1`), but the 1/64 write charge hid it behind the
   resident-weight slack for every shape whose weights fit VMEM; at true
   bytes the pinned config with `-fuse_attn 0` aborted (S=768/1024, "walked
-  past its allocation on writes") or hung in the DRAMSim3 read/write
-  deadlock (S=512, the overrun aliasing a neighbour's window). Only prefill
+  past its allocation on writes"). The S=512 HANG this entry and its commit
+  message first attributed to "the overrun aliasing a neighbour's window"
+  was NOT this bug: `check_in_bounds` aborts every overrun before it can
+  alias anything, so a silent overrun is impossible; that hang was the
+  write-over-pending-prefetch-read deadlock of the next entry (fix round
+  2), which the wider window only sidestepped by timing. Only prefill
   attention jobs have several row tiles (every `createSAJobs` job has one),
   and `-fuse_attn 1` makes the scores jobs write nothing, which is why V18c/
   V25/V29 never saw it. Fix: `sys_job_alloc_bytes` takes `tile_dbuf` and
@@ -348,6 +352,44 @@ residuals before being dismissed as noise.
   invariant): 4096³ and decode unchanged (single-row jobs); the Llama-8B
   prefill-2048 layer 3088716 → 3037359 (−1.7%, the AV jobs' wider windows
   shift the address layout DRAMSim3 sees).
+- **(added 2026-09-01, S4 fix round 2; ADDRESSED same day, bookkeeping
+  fix — no flag — test V31d) A job's write-back could land on an address
+  whose `-dbuf` prefetch read had not landed: DRAMSim3 deadlock.** The
+  prefetcher streams a job's weight sweep and, once the job is READY, its
+  activation panel into `[addr_hold, addr_hold + credit)` and books the
+  credit at ISSUE (`Arch.cc`); nothing ever waited for those beats to land
+  (nullptr owner in the DRAM callback). The dispatched job deducts the
+  credit from its demand reads and walks from `addr_hold`, so its write-back
+  starts at `addr_hold + (formula − credit)` — inside the prefetched span
+  whenever credit > formula − credit — after only ceil(K/2) compute cycles
+  (128 at K=256), shorter than the queue latency of a panel issued just
+  before dispatch. A write to an address with a pending read is the
+  read/write deadlock `Job.h` documents. Pre-existing since `-dbuf`, but at
+  32-beat writes the write-back never reached back into the span; at true
+  bytes (S4a) it does. Reachable without any window overrun and at
+  `-dbuf_tile 0`: the pinned config with `-fuse_attn 0 -act_share 0
+  -dbuf_tile 0` on `Transformer 1 256 4 4 512 512 0 1` froze at 31/44 jobs
+  (CMDs 229951), the -c 1 V31c flags with `-dbuf 48 -dbuf_tile 1` at S=1024
+  froze at 33/46 (653058); both complete at `-dbuf 0`. Fix: every prefetch
+  beat keeps its owning job (`mem::prefetch_owner`, `Job::prefetch_issued_
+  beats`/`prefetch_landed_beats`), and at dispatch the issued-but-unlanded
+  remainder is programmed as the state's `prefetch_read_left`, which
+  `process_stage` waits on like demand reads (outside the `-dbuf_tile`
+  `reads_gate`: the credited beats are the first tile's operands, never the
+  pre-issued next tile's) — the MXU cannot compute on data that has not
+  arrived, and no write is issued before the last prefetched beat landed.
+  Traffic untouched (the credit still replaces demand beats 1:1); the
+  memstall attribution and the demand-idle stat count the wait as demand.
+  V31d pins, beat-exact and `-dbuf`-invariant: the S=512 ablation run at
+  270336 (= V31c's 237568 + the 32768 core-1 activation beats `-act_share
+  0` restores: q,k,v,o 4×2×2048, gate/up 2×2×2048, down 2×4096), the -c 1
+  S=1024 `-dbuf 48 -dbuf_tile 1` run at 716800, and S=640 `-dbuf_tile 1`
+  (60/60, equal to its `-dbuf 0` run). Pinned-config effect (CMDs
+  invariant): 4096³ 345903 and the Llama-8B prefill-2048 layer 3037359
+  unchanged, the decode layer 551329 → 551586 (+0.05%) — under the pinned
+  flags the prefetched beats had all but always landed before the job
+  needed them, so the wait costs nothing; it only removes an optimism that
+  was also the deadlock.
 - **(added 2026-09-01; ADDRESSED same day, flag `-act_share` default 1,
   tests V31b + V29a CMD pin; benchmark spec S4b) Activation panels read once
   per MXU instead of once into shared VMEM.** `createSAJobs` splits N across

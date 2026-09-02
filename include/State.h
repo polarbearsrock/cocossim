@@ -103,6 +103,13 @@ struct State {
   // process_stage does not wait on them. The next read stage re-arms both.
   bool reads_gate = true;
   bool hold_reads = false;
+  // -dbuf prefetch beats of the current job that were issued before dispatch
+  // and have not landed yet (Job::prefetch_issued_beats - landed, programmed
+  // at dispatch in Arch.cc and decremented by the DRAM read callback).
+  // process_stage waits on it unconditionally -- reads_gate does not apply,
+  // these beats are the FIRST tile's operands, never the pre-issued next
+  // tile's -- so no write-back can be issued over a pending prefetch read.
+  int prefetch_read_left = 0;
 
   virtual ~State() = default;
   State() = delete;

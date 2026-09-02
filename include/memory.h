@@ -25,6 +25,12 @@ namespace mem {
   // overwritten by a same-address re-issue and orphan the first requester
   // (hangs the run). Do not simplify back to State*.
   extern std::unordered_map<uint64_t, std::deque<State *>> address_reads_bkwds_lookup, address_writes_bkwds_lookup;
+  // Owner of each in-flight -dbuf prefetch read (the reads lookup carries a
+  // nullptr for them). One entry per address suffices: a job's prefetch
+  // cursor walks its own window once, and windows never overlap. The read
+  // callback pops it to count the landing on the job (Job::prefetch_landed_
+  // beats) and, once the job is dispatched, on its state's prefetch_read_left.
+  extern std::unordered_map<uint64_t, Job *> prefetch_owner;
   extern mem_ty *mem_sys;
 
   void setup();

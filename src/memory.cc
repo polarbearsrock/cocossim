@@ -20,6 +20,7 @@ namespace mem {
   dramsim3::Config *dramsim3config;
   std::unordered_map<uint64_t, std::deque<State *>> address_reads_bkwds_lookup;
   std::unordered_map<uint64_t, std::deque<State *>> address_writes_bkwds_lookup;
+  std::unordered_map<uint64_t, Job *> prefetch_owner;
 }
 
 static int q = 0;
@@ -98,9 +99,26 @@ void mem::setup() {
             if (it->second.empty()) {
                 address_reads_bkwds_lookup.erase(it);
             }
-            // nullptr = -dbuf prefetch beat (no owning state): the credit was
-            // booked at issue time, nothing waits on the completion.
-            if (q) q->mem_read_left -= 1;
+            // nullptr = -dbuf prefetch beat: the credit was booked at issue
+            // time; the landing is counted on the owning job so a dispatched
+            // job waits for it before it computes or writes (Job.h). When a
+            // demand read and the prefetch read share an address, which of
+            // the two completions pops which entry is arbitrary -- both
+            // counters only reach zero once both have landed, and the state
+            // waits on both.
+            if (q) {
+                q->mem_read_left -= 1;
+            } else {
+                auto po = prefetch_owner.find(addr);
+                if (po == prefetch_owner.end()) {
+                    std::cerr << "Error: prefetch read " << std::hex << addr << " has no owner" << std::endl;
+                } else {
+                    Job *jb = po->second;
+                    prefetch_owner.erase(po);
+                    jb->prefetch_landed_beats += 1;
+                    if (jb->exec_state) jb->exec_state->prefetch_read_left -= 1;
+                }
+            }
         } else {
             std::cerr << "Error: Address " << std::hex << addr << " not found in address_reads_bkwds_lookup" << std::endl;
         } }, [](uint64_t addr) {
