@@ -1346,5 +1346,179 @@ else
   bad "V32c header: $(head -1 "$WORK/v32a_s.txt") / $(head -1 "$WORK/v32b_s.txt") (want SCHEMA 3)"
 fi
 
+# V33: -op_overhead (benchmark spec S2). Silicon pays a fixed cost per KERNEL
+# (~8 per layer; chained microbenchmarks fit t = t0 + bytes/BW), the model
+# has ~86 jobs per layer, so the fit knob is per OP boundary per core: every
+# composite call stamps its jobs with one op_id (a Matmul line = one op; the
+# Transformer's attention stage = one op per layer, like the fused kernel),
+# and a unit entering a job whose op_id differs from the last one it ran
+# stalls op_overhead cycles before issuing reads -- a pure serial delay,
+# not added to the compute length (that would hide under memory-bound
+# fetches). Jobs with no op_id (legacy composites) are each their own op.
+# The stats file reports OPBOUND <unit> <idx> <n>: the ops a unit entered --
+# the count the knob charges -- which is exact by construction. The cycle
+# delta is NOT: a 1000-cycle shift moves every later DRAM access against the
+# refresh schedule (measured: 3772 and 3972 on these two shapes), so cycles
+# are asserted within +-10% of 4 x 1000.
+# V33a: 4 Matmul lines on one core: OPBOUND 4, ~4000 cycles.
+printf 'Matmul 512 512 512\nMatmul 512 512 512\nMatmul 512 512 512\nMatmul 512 512 512\n' > "$WORK/v33.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v33.txt" -o "$WORK/v33a_s.txt" > "$WORK/v33a.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -op_overhead 1000 -i "$WORK/v33.txt" -o "$WORK/v33b_s.txt" > "$WORK/v33b.log" 2>&1
+a0=$(cycles_of "$WORK/v33a_s.txt"); a1=$(cycles_of "$WORK/v33b_s.txt")
+ob=$(awk '$1=="OPBOUND" && $2=="SYSTOLIC_ARRAY" && $3==0 {print $4}' "$WORK/v33b_s.txt")
+if [ -n "$a0" ] && [ -n "$a1" ] && [ "${ob:-0}" -eq 4 ] && [ $((a1 - a0)) -ge 3600 ] && [ $((a1 - a0)) -le 4400 ]; then
+  ok "V33a -op_overhead: 4 op boundaries, +$((a1 - a0)) cycles on one core"
+else
+  bad "V33a boundaries=${ob:-?} cycles $a0 -> $a1 delta=$((${a1:-0} - ${a0:-0})) (want 4, 3600..4400)"
+fi
+# V33b: two cores: each sees every op once (OPBOUND 4 on both units) and pays
+# in parallel, so the critical path still grows by ~4 x 1000.
+"$BIN" -c 2 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v33.txt" -o "$WORK/v33c_s.txt" > "$WORK/v33c.log" 2>&1
+"$BIN" -c 2 -sa_sz 64 -vu_sz 64 -f 1 -op_overhead 1000 -i "$WORK/v33.txt" -o "$WORK/v33d_s.txt" > "$WORK/v33d.log" 2>&1
+b0=$(cycles_of "$WORK/v33c_s.txt"); b1=$(cycles_of "$WORK/v33d_s.txt")
+ob0=$(awk '$1=="OPBOUND" && $2=="SYSTOLIC_ARRAY" && $3==0 {print $4}' "$WORK/v33d_s.txt")
+ob1=$(awk '$1=="OPBOUND" && $2=="SYSTOLIC_ARRAY" && $3==1 {print $4}' "$WORK/v33d_s.txt")
+if [ -n "$b0" ] && [ -n "$b1" ] && [ "${ob0:-0}" -eq 4 ] && [ "${ob1:-0}" -eq 4 ] && [ $((b1 - b0)) -ge 3600 ] && [ $((b1 - b0)) -le 4400 ]; then
+  ok "V33b -op_overhead on two cores: 4 boundaries each, +$((b1 - b0)) cycles"
+else
+  bad "V33b boundaries=${ob0:-?}/${ob1:-?} cycles $b0 -> $b1 delta=$((${b1:-0} - ${b0:-0}))"
+fi
+# V33c: decode Transformer, sidecars fused off the chain: per layer the serial
+# op sequence on a core is q, k, v, attention, o, gate, up, down = 8 ops, so
+# -op_overhead 1000 adds at least 8000 cycles (and far fewer than the ~30
+# jobs-as-ops the old per-job knob would charge: upper sanity bound 20000).
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -fuse_vpu 1 -i "$WORK/v25d.txt" -o "$WORK/v33e_s.txt" > "$WORK/v33e.log" 2>&1
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -fuse_vpu 1 -op_overhead 1000 -i "$WORK/v25d.txt" -o "$WORK/v33f_s.txt" > "$WORK/v33f.log" 2>&1
+c0=$(cycles_of "$WORK/v33e_s.txt"); c1=$(cycles_of "$WORK/v33f_s.txt")
+if [ -n "$c0" ] && [ -n "$c1" ] && [ $((c1 - c0)) -ge 16000 ] && [ $((c1 - c0)) -le 40000 ]; then
+  ok "V33c decode 2 layers: op boundaries on the critical path (+$((c1 - c0)) cycles)"
+else
+  bad "V33c cycles $c0 -> $c1 delta=$((${c1:-0} - ${c0:-0})) (want 16000..40000 for 2 layers)"
+fi
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -op_overhead -1 -i "$WORK/v33.txt" -o "$WORK/v33g_s.txt" > "$WORK/v33g.log" 2>&1; rv=$?
+if [ "$rv" -eq 1 ] && grep -q 'op_overhead' "$WORK/v33g.log"; then
+  ok "V33d -op_overhead -1 rejected"
+else
+  bad "V33d rc=$rv (want 1 + message)"
+fi
+
+# V34: fit knobs (benchmark spec S6).
+# -kv_bw_pct P: decode score/AV jobs stream the paged KV cache; the kernel
+# gathers it through a block table at a lower effective HBM rate than a
+# contiguous stream. Those jobs (kv_stream, decode only) issue reads at
+# max(1, dram_enq * P / 100) beats per cycle and are never prefetched (a
+# paged-attention kernel gathers its own blocks; XLA cannot stream them
+# ahead). Traffic invariant. V34a: decode 2048 ctx x batch 32, P=50 vs 100:
+# CMDs equal, cycles strictly higher.
+printf 'Transformer 1 512 8 4 1024 2048 1 32\n' > "$WORK/v34.txt"
+PIN="-c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 -fuse_attn 1 -fuse_vpu 1 -dbuf 48 -dbuf_tile 1"
+"$BIN" $PIN -i "$WORK/v34.txt" -o "$WORK/v34a_s.txt" > "$WORK/v34a.log" 2>&1
+"$BIN" $PIN -kv_bw_pct 50 -i "$WORK/v34.txt" -o "$WORK/v34b_s.txt" > "$WORK/v34b.log" 2>&1
+k0=$(cycles_of "$WORK/v34a_s.txt"); k1=$(cycles_of "$WORK/v34b_s.txt")
+m0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34a.log" | tail -1 | awk '{print $3}')
+m1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34b.log" | tail -1 | awk '{print $3}')
+if [ -n "$k0" ] && [ -n "$k1" ] && [ "$k1" -gt "$k0" ] && [ "$m0" = "$m1" ]; then
+  ok "V34a -kv_bw_pct 50 slows decode KV streams ($k0 -> $k1, CMDs invariant $m0)"
+else
+  bad "V34a cycles $k0 -> $k1, CMDs $m0 vs $m1"
+fi
+# V34b: prefill attention reads the just-computed projections contiguously:
+# bit-identical under -kv_bw_pct 50.
+printf 'Transformer 1 512 8 4 1024 512 0 1\n' > "$WORK/v34p.txt"
+"$BIN" $PIN -i "$WORK/v34p.txt" -o "$WORK/v34c_s.txt" > "$WORK/v34c.log" 2>&1
+"$BIN" $PIN -kv_bw_pct 50 -i "$WORK/v34p.txt" -o "$WORK/v34d_s.txt" > "$WORK/v34d.log" 2>&1
+p0=$(cycles_of "$WORK/v34c_s.txt"); p1=$(cycles_of "$WORK/v34d_s.txt")
+q0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34c.log" | tail -1 | awk '{print $3}')
+q1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34d.log" | tail -1 | awk '{print $3}')
+if [ -n "$p0" ] && [ "$p0" = "$p1" ] && [ "$q0" = "$q1" ]; then
+  ok "V34b prefill bit-identical under -kv_bw_pct 50 ($p0 cycles, $q0 CMDs)"
+else
+  bad "V34b cycles $p0 vs $p1, CMDs $q0 vs $q1"
+fi
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -kv_bw_pct 0 -i "$WORK/v33.txt" -o "$WORK/v34e_s.txt" > "$WORK/v34e.log" 2>&1; r0=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -kv_bw_pct 101 -i "$WORK/v33.txt" -o "$WORK/v34f_s.txt" > "$WORK/v34f.log" 2>&1; r1=$?
+if [ "$r0" -eq 1 ] && [ "$r1" -eq 1 ] && grep -q 'kv_bw_pct' "$WORK/v34e.log"; then
+  ok "V34c -kv_bw_pct 0 / 101 rejected"
+else
+  bad "V34c rc=$r0/$r1 (want 1/1 + message)"
+fi
+# -data_overhead N: layout/copy kernels the model has no jobs for (census:
+# 4-7% of device time) as a fixed per-run cost: the clock advances N cycles
+# before the first dispatch, nothing else moves. V34d: exactly +777, CMDs equal.
+printf 'Matmul 256 256 256\n' > "$WORK/v34g.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v34g.txt" -o "$WORK/v34g_s.txt" > "$WORK/v34g.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -data_overhead 777 -i "$WORK/v34g.txt" -o "$WORK/v34h_s.txt" > "$WORK/v34h.log" 2>&1
+d0=$(cycles_of "$WORK/v34g_s.txt"); d1=$(cycles_of "$WORK/v34h_s.txt")
+e0=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34g.log" | tail -1 | awk '{print $3}')
+e1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v34h.log" | tail -1 | awk '{print $3}')
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -data_overhead -5 -i "$WORK/v34g.txt" -o "$WORK/v34i_s.txt" > "$WORK/v34i.log" 2>&1; rd=$?
+if [ -n "$d0" ] && [ -n "$d1" ] && [ $((d1 - d0)) -eq 777 ] && [ "$e0" = "$e1" ] && [ "$rd" -eq 1 ] && grep -q 'data_overhead' "$WORK/v34i.log"; then
+  ok "V34d -data_overhead 777 adds exactly 777 cycles ($d0 -> $d1), negative rejected"
+else
+  bad "V34d cycles $d0 -> $d1 delta=$((${d1:-0} - ${d0:-0})), CMDs $e0 vs $e1, badval_rc=$rd"
+fi
+
+# V35: batched prefill (benchmark spec S3). mode 0 with batch > 1 runs every
+# GEMM over T = batch * seq rows (all sequences' tokens) and builds attention
+# PER SEQUENCE: an independent set of nh score jobs (M = seq, K = head_dim,
+# N = S = seq), softmax chunks over seq*nh rows wired per head, and nh AV jobs
+# (M = seq, K = S, N = head_dim), with K/V tags per (sequence, group). All
+# sequences' scores depend on q/k, all AV feed the o projection; the LM head
+# stays last-token (batch rows). Decode (mode 1) is unchanged.
+# V35a: job count. Transformer 1 8 2 2 16 8 0 2 at -c 1 -sa_sz 4 (V11 shape,
+# batch 2): T = 16, so every GEMM splits into ceil(16/4) = 4 row-block jobs:
+#   norm1 1 | q,k,v 3x4 = 12 | rope 1 | attention 2 seqs x (2 scores +
+#   1 softmax (16 rows of 8) + 2 AV) = 10 | o 4 | res1 1 | norm2 1 |
+#   gate,up 2x4 = 8 | silu 1 | down 4 | res2 1  -> 44   (batch 1 = 25, V11)
+printf 'Transformer 1 8 2 2 16 8 0 2\n' > "$WORK/v35.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v35.txt" -o "$WORK/v35a_s.txt" > "$WORK/v35a.log" 2>&1
+rc=$?
+total=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v35a.log" | tail -1 | sed 's|.*/||')
+fin=$(grep -o 'Jobs finished: [0-9]*/' "$WORK/v35a.log" | tail -1 | grep -o '[0-9]*')
+if [ "$rc" -eq 0 ] && [ "${total:-0}" = "44" ] && [ "$fin" = "$total" ]; then
+  ok "V35a batched prefill: 44 jobs, all finish"
+else
+  bad "V35a rc=$rc total=${total:-?} fin=${fin:-?} (want 44)"
+fi
+# V35b: traffic, beat-exact. Two sequences of 64 tokens vs one sequence of
+# 128 tokens at d_model 64, 2 heads (head_dim 32), -c 1 -sa_sz 64: T = 128
+# in both, so every GEMM, norm, rope and residual moves identical bytes and
+# only attention differs.
+#   1 x 128: scores (128x32x128): pass 1 combined act+wgt (4096+4096)/64 =
+#     128 + tile 2 weights 64, pass 2 act only 64 (weights stay resident) =
+#     256 reads + 2 passes x 2 tiles x 128 write beats = 768/job x 2 = 1536;
+#     softmax 256 rows x 128: 1024 read + 1024 write = 2048;
+#     AV (128x128x32): pass 1 (16384+8192)/64 = 384, pass 2 act 256 = 640
+#     reads + 2 x 64 write = 768/job x 2 = 1536.               total 5120
+#   2 x 64:  scores (64x32x64): (4096+4096)/64 = 128 + 128 write = 256/job
+#     x 2 heads x 2 seqs = 1024; softmax 128 rows x 64 per seq: 256 + 256 =
+#     512 x 2 = 1024; AV (64x64x32): (8192+4096)/64 = 192 + 64 write = 256
+#     x 2 x 2 = 1024.                                          total 3072
+#   delta = 2048 exactly.
+printf 'Transformer 1 64 2 2 128 128 0 1\n' > "$WORK/v35b1.txt"
+printf 'Transformer 1 64 2 2 128 64 0 2\n' > "$WORK/v35b2.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v35b1.txt" -o "$WORK/v35b1_s.txt" > "$WORK/v35b1.log" 2>&1
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v35b2.txt" -o "$WORK/v35b2_s.txt" > "$WORK/v35b2.log" 2>&1
+x1=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v35b1.log" | tail -1 | awk '{print $3}')
+x2=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v35b2.log" | tail -1 | awk '{print $3}')
+if [ -n "$x1" ] && [ -n "$x2" ] && [ $((x1 - x2)) -eq 2048 ]; then
+  ok "V35b batched-prefill attention traffic exact (1x128: $x1, 2x64: $x2)"
+else
+  bad "V35b CMDs 1x128=$x1 2x64=$x2 delta=$((${x1:-0} - ${x2:-0})) (want 2048)"
+fi
+# V35c: the pinned holdout batched-prefill shape runs to completion on the
+# canonical config.
+printf 'Transformer 1 4096 32 8 12288 512 0 8 151936\n' > "$WORK/v35c.txt"
+"$REPO/configs/tpuv6e.sh" "$WORK/v35c.txt" "$WORK/v35c_s.txt" > "$WORK/v35c.log" 2>&1
+rc=$?
+fin_eq=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v35c.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4)?1:0}')
+if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ]; then
+  ok "V35c holdout batched prefill (512 x 8) runs on the pinned config"
+else
+  bad "V35c rc=$rc fin_eq=${fin_eq:-?}"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

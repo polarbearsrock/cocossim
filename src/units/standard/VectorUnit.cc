@@ -17,6 +17,10 @@ using namespace VectorUnit;
 
 bool VecUnitState::increment(const std::function<void(Job *)> &enqueue_job, int &total_idle, int *n_idle_units) {
   auto *sj = (VecUnitJob *) j;
+  if (op_stall_left > 0) {// -op_overhead: nothing issues, the unit reports idle
+    op_stall_left--;
+    return false;
+  }
   int lin, par;
   switch (state) {
     case VectorUnit::VPUState::unbuffered_lin:

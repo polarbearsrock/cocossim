@@ -23,6 +23,8 @@ using namespace frontend::standard;
 // One id per weight tensor instance (a GEMM invocation, an attention head's
 // K/V panel). Jobs sharing an id may reuse each other's VMEM-staged weights.
 static int next_weight_tag = 0;
+// Operator ids for -op_overhead (spec S2); see Job::op_id.
+static int next_op_id = 0;
 
 // VMEM fit policy (spec 6.7): a K x N_slice weight slice claims residency iff
 // it fits its share of VMEM -- the buffer split across the n_slices cores
@@ -156,14 +158,13 @@ JobPair Matmul(const ArchConfig &a_config, const LayerConfig &l_config) {
     throw std::exception();
   }
 
-  if (a_config.ws) {
-    JobList jl = createWSJobs(a_config, M, K, N, "WS");
-    return {jl, jl};
-  } else {
-    // OS: Create sequential jobs per core
-    JobList matmul_layers = createSAJobs(M, K, N, a_config.sa_sz_allo, a_config.n_cores);
-    return {matmul_layers, matmul_layers};
-  }
+  // One Matmul call = one operator for -op_overhead (spec S2): all its
+  // row-block / core jobs share an op_id.
+  JobList jl = a_config.ws ? createWSJobs(a_config, M, K, N, "WS")
+                           : createSAJobs(M, K, N, a_config.sa_sz_allo, a_config.n_cores);
+  int id = next_op_id++;
+  for (auto *jb: jl) jb->op_id = id;
+  return {jl, jl};
 }
 
 
@@ -401,7 +402,8 @@ static JobList makeSoftmaxJobs(int row_len, int n_rows, bool fused = false,
 
 // Llama/Gemma-style decoder stack (spec 3.4).
 // Line: Transformer n_layers d_model n_heads n_kv_heads d_ff seq_len mode batch
-//   mode 0 = prefill: every GEMM has M = seq_len rows, attention context = seq_len
+//   mode 0 = prefill: every GEMM has M = batch * seq_len rows (all sequences'
+//                     tokens), attention built per sequence over context seq_len
 //   mode 1 = decode:  every GEMM has M = batch rows, KV context = seq_len
 // Residual adds depend on BOTH true parents so the simulator is allowed the
 // same SA/VPU overlap the hardware has. KV-cache traffic rides the score/AV
@@ -421,7 +423,14 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     throw std::exception();
   }
   int head_dim = d_model / nh;
-  int M = (mode == 0) ? seq_len : batch;// rows through every GEMM
+  // Rows through every GEMM: prefill runs all sequences' tokens as one
+  // activation matrix (batch * seq, benchmark spec S3), decode one row per
+  // sequence. Attention is built PER SEQUENCE in prefill (M_att = seq rows
+  // over an S = seq context, its own K/V tags), and as one batch-row set in
+  // decode (M_att = batch query rows, KV streams = batch).
+  const int n_seq = (mode == 0) ? batch : 1;
+  const int M_att = (mode == 0) ? seq_len : batch;
+  int M = (mode == 0) ? seq_len * batch : batch;
   int S = seq_len;                      // attention context length
 
   auto mk_binary_ew = [&](int rows, int cols, bool fused = false) -> JobList {
@@ -443,6 +452,13 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
   auto tag = [](const JobList &jl, int cls) {
     for (auto *jb: jl) jb->op_class = cls;
   };
+  // One operator = one op_id (spec S2). Matmul() stamps its own jobs; the
+  // VPU ops and the attention stage (scores + softmax + AV of a layer: one
+  // fused kernel on silicon) are stamped here.
+  auto op = [](const JobList &jl) {
+    int id = next_op_id++;
+    for (auto *jb: jl) jb->op_id = id;
+  };
 
   JobList model_head, prev_tail;
   for (int l = 0; l < n_layers; ++l) {
@@ -451,6 +467,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     auto k = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
     auto v = Matmul(a_config, LayerConfig("Matmul", {M, d_model, nkv * head_dim}));
     tag(norm1, OP_VPU_NORM);
+    op(norm1);
     tag(q.first, OP_QKV);
     tag(k.first, OP_QKV);
     tag(v.first, OP_QKV);
@@ -477,6 +494,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     JobList rope = {new VectorUnit::VecUnitJob(1, M * (d_model + nkv * head_dim), fv,
                                                {{VectorUnit::VPUPhase::BROADCAST, 1}}, 1, fv)};
     tag(rope, OP_VPU_EW);
+    op(rope);
     connectJobLists(q.second, rope);
     connectJobLists(k.second, rope);
 
@@ -511,25 +529,35 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       int key = (nkv >= a_config.n_cores) ? h / group_sz : h;
       return key % a_config.n_cores;
     };
+    const int attn_op = next_op_id++;// scores + softmax + AV: one kernel
+    const bool kvs = (mode == 1);     // decode: paged KV-cache gather (spec S6)
+    // Sequence-major: scores[s * nh + h] / av[s * nh + h]. Each sequence's
+    // groups get fresh tags (its own K/V panels).
+    for (int s = 0; s < n_seq; ++s)
     for (int h = 0; h < nh; ++h) {
       if (h % group_sz == 0) next_weight_tag++;
-      auto *sc = new SystolicArray::SysArrayJob(M, head_dim, S, a_config.sa_sz_allo, a_config.ws,
+      auto *sc = new SystolicArray::SysArrayJob(M_att, head_dim, S, a_config.sa_sz_allo, a_config.ws,
                                                 kv_streams, /*fused_out=*/fa);
       sc->weight_tag = next_weight_tag;
       sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores, kv_streams);
       sc->core_id = attn_core(h);
       sc->op_class = OP_ATTN;
+      sc->op_id = attn_op;
+      sc->kv_stream = kvs;
       scores.push_back(sc);
     }
     next_weight_tag++;
+    for (int s = 0; s < n_seq; ++s)
     for (int h = 0; h < nh; ++h) {
       if (h % group_sz == 0) next_weight_tag++;
-      auto *avj = new SystolicArray::SysArrayJob(M, S, head_dim, a_config.sa_sz_allo, a_config.ws,
+      auto *avj = new SystolicArray::SysArrayJob(M_att, S, head_dim, a_config.sa_sz_allo, a_config.ws,
                                                  kv_streams, /*fused_out=*/false, /*act_resident=*/fa);
       avj->weight_tag = next_weight_tag;
       avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores, kv_streams);
       avj->core_id = attn_core(h);
       avj->op_class = OP_ATTN;
+      avj->op_id = attn_op;
+      avj->kv_stream = kvs;
       av.push_back(avj);
     }
     next_weight_tag++;
@@ -545,15 +573,18 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     // [h*M, (h+1)*M) -- an edge exists iff the ranges overlap. All-to-all
     // here was a modeling artifact that drained both MXUs at every softmax
     // stage (V26); the hardware dependency is per-head.
-    int sm_rows = 0;
-    JobList sm = makeSoftmaxJobs(S, M * nh, fa, &sm_rows);
-    tag(sm, OP_ATTN);
-    for (int k = 0; k < (int) sm.size(); ++k) {
-      int lo = k * sm_rows;
-      int hi = std::min((k + 1) * sm_rows, M * nh) - 1;// inclusive last row
-      for (int h = lo / M; h <= hi / M; ++h) {
-        scores[h]->add_child(sm[k]);
-        sm[k]->add_child(av[h]);
+    for (int s = 0; s < n_seq; ++s) {
+      int sm_rows = 0;
+      JobList sm = makeSoftmaxJobs(S, M_att * nh, fa, &sm_rows);
+      tag(sm, OP_ATTN);
+      for (auto *jb: sm) jb->op_id = attn_op;
+      for (int k = 0; k < (int) sm.size(); ++k) {
+        int lo = k * sm_rows;
+        int hi = std::min((k + 1) * sm_rows, M_att * nh) - 1;// inclusive last row
+        for (int h = lo / M_att; h <= hi / M_att; ++h) {
+          scores[s * nh + h]->add_child(sm[k]);
+          sm[k]->add_child(av[s * nh + h]);
+        }
       }
     }
     connectJobLists(v.second, av);
@@ -570,6 +601,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       // implied transitively (o <- ... <- q <- block_in).
       JobList side = mk_binary_ew(M, d_model, true);
       tag(side, OP_VPU_EW);
+      op(side);
       connectJobLists(o.second, side);
       connectJobLists(block_in, side);
       res1 = o.second;
@@ -581,12 +613,14 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     } else {
       res1 = mk_binary_ew(M, d_model);
       tag(res1, OP_VPU_EW);
+      op(res1);
       connectJobLists(o.second, res1);
       connectJobLists(block_in, res1);
     }
 
     JobList norm2 = makeRMSNormJobs(d_model, M, fv);
     tag(norm2, OP_VPU_NORM);
+    op(norm2);
     connectJobLists(res1, norm2);
 
     auto gate = Matmul(a_config, LayerConfig("Matmul", {M, d_model, d_ff}));
@@ -603,6 +637,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
 
     JobList silu_mul = mk_binary_ew(M, d_ff, fv);
     tag(silu_mul, OP_VPU_EW);
+    op(silu_mul);
     connectJobLists(gate.second, silu_mul);
     connectJobLists(up.second, silu_mul);
 
@@ -619,6 +654,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     if (fv) {
       JobList side = mk_binary_ew(M, d_model, true);
       tag(side, OP_VPU_EW);
+      op(side);
       connectJobLists(down.second, side);
       connectJobLists(res1, side);
       res2 = down.second;
@@ -628,6 +664,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     } else {
       res2 = mk_binary_ew(M, d_model);
       tag(res2, OP_VPU_EW);
+      op(res2);
       connectJobLists(down.second, res2);
       connectJobLists(res1, res2);
     }
@@ -648,6 +685,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     int head_rows = batch;
     JobList final_norm = makeRMSNormJobs(d_model, head_rows, fv);
     tag(final_norm, OP_VPU_NORM);
+    op(final_norm);
     connectJobLists(prev_tail, final_norm);
     auto head = Matmul(a_config, LayerConfig("Matmul", {head_rows, d_model, vocab}));
     tag(head.first, OP_HEAD);
@@ -655,6 +693,7 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     else connectJobLists(final_norm, head.first);
     JobList logits_sm = makeSoftmaxJobs(vocab, head_rows);
     tag(logits_sm, OP_VPU_EW);
+    op(logits_sm);
     connectJobLists(head.second, logits_sm);
     prev_tail = logits_sm;
   }

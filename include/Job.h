@@ -41,6 +41,17 @@ struct Job {
   [[nodiscard]] virtual int get_type() const = 0;
   bool batched_weights = false;
   int op_class = OP_OTHER;
+  // Operator identity for -op_overhead (benchmark spec S2): every composite
+  // call stamps its jobs with one id (a Matmul line = one op; the
+  // Transformer's attention stage = one op per layer, like the fused kernel
+  // silicon runs). A unit pays op_overhead once when it enters a job whose id
+  // differs from the last one it ran. -1 = unstamped (legacy composites):
+  // every such job is its own op.
+  int op_id = -1;
+  // Decode KV-cache stream (benchmark spec S6): score/AV jobs of a decode
+  // layer gather the paged KV cache through a block table. Their reads issue
+  // at the -kv_bw_pct-derated rate and are never prefetched across ops.
+  bool kv_stream = false;
   uint64_t addr;
   const uint64_t addr_hold;
   // Bytes reserved for this job at [addr_hold, addr_hold + alloc_size). The

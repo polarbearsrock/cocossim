@@ -18,6 +18,10 @@ using namespace frontend::standard;
 
 bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &enqueue_job, int &total_idle, int *n_idle_units) {
   auto *sj = (SysArrayJob *) j;
+  if (op_stall_left > 0) {// -op_overhead: nothing issues, the unit reports idle
+    op_stall_left--;
+    return false;
+  }
   enqueue_reads();
   enqueue_writes();
   if (process_stage()) {

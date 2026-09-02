@@ -437,6 +437,29 @@ residuals before being dismissed as noise.
   Side effect worth knowing: it also removes the lockstep collision of the
   two cores' job-start panel fetches that dominated the `-dbuf 0` control
   run in V29a.
+- **(added 2026-09-01, fidelity-benchmark prerequisites S2/S6/S3; tests
+  V33a–d, V34a–d, V35a–c) Fit knobs and batched prefill.**
+  `-op_overhead N`: silicon pays a fixed cost per KERNEL (~8 per layer;
+  chained microbenchmarks fit t = t₀ + bytes/BW, C5: t₀ ≈ 10 µs, C1v2 ≈ 5 µs),
+  the model has ~86 jobs per layer, so the knob is per OP boundary per core:
+  every composite call stamps its jobs with one `op_id` (a Matmul line = one
+  op; the Transformer's attention stage = one op per layer, like the fused
+  kernel), and a unit entering a job of a new `op_id` stalls N cycles before
+  issuing any read — a pure serial delay, reported as idle (adding it to the
+  compute length would hide under memory-bound fetches). V33a/b pin exactly
+  4 × 1000 on a four-op chain at 1 and 2 cores. `-kv_bw_pct P`: decode
+  score/AV jobs (`kv_stream`) gather the paged KV cache through a block
+  table; they issue reads at max(1, dram_enq·P/100) beats per cycle and are
+  never prefetched across ops (a paged-attention kernel gathers its own
+  blocks; XLA cannot stream them ahead). Traffic invariant (V34a), prefill
+  bit-identical (V34b). `-data_overhead N`: layout/copy kernels the model
+  has no jobs for (census: 4–7% of device time) as a fixed per-run cost —
+  the clock starts N cycles in, no DRAM ticks (V34d exact). Batched prefill:
+  mode 0 with batch > 1 runs the GEMMs over batch × seq rows and builds
+  attention per sequence (own K/V tags, per-head wiring per sequence, all
+  feeding the o projection); V35a pins the job count (44 on the V11 shape at
+  batch 2), V35b the beat-exact attention traffic difference between 2 × 64
+  and 1 × 128 tokens (2048 beats), V35c runs the pinned holdout shape.
 - **(added 2026-09-01; ADDRESSED same day, flag `-fuse_vpu`, tests V30a–d)
   VPU ops fused into GEMM prologues/epilogues.** The silicon kernel census
   puts RMSNorm/RoPE/SiLU/residual at 0.1% of device time: XLA fuses them, so

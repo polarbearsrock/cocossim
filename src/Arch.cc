@@ -89,8 +89,11 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
     stats[i].pct_active = new double[total_states];
   }
 
-  uint64_t phase_cycles = 0;
-  gcycles = 0;
+  // -data_overhead: the clock starts this many cycles in (global.h). No
+  // DRAM ticks are simulated for them: they stand for layout/copy kernels
+  // the model has no jobs for, charged as pure time.
+  uint64_t phase_cycles = data_overhead_cycles;
+  gcycles = data_overhead_cycles;
   const uint64_t MAX_TIME = 0xFFFFFFFFFFFFFFFF;
 
   int phase_idx = 0;
@@ -276,6 +279,13 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
               (int) (job->prefetch_issued_beats - job->prefetch_landed_beats);
           job->exec_state = state;
           state->min_stage_cycles += job_overhead_cycles;
+          // -op_overhead: a new op on this unit (or an unstamped job, which
+          // is its own op) stalls before issuing any read (State.h).
+          if (job->op_id == -1 || job->op_id != state->last_op_id) {
+            state->op_boundaries++;
+            if (op_overhead_cycles > 0) state->op_stall_left = op_overhead_cycles;
+          }
+          state->last_op_id = job->op_id;
           enqueued_job = true;
           any_job_assigned = true;
         }

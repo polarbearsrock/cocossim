@@ -9,6 +9,7 @@
 
 #include "Arch.h"
 #include "State.h"
+#include "memory.h"
 #include "global.h"
 #include <stdexcept>
 
@@ -46,7 +47,20 @@ void State::enqueue_writes() {
 void State::enqueue_reads() {
   // Queue memory read transactions with bandwidth limits
   if (mem_read_left_unqueued > 0) {
-    int to_enq = std::min(dram_enq_per_cycle, mem_read_left_unqueued);
+    // -kv_bw_pct: a decode KV-cache stream (paged gather) issues at a derated
+    // rate; the beats are the same, only the pace changes. The rate is a
+    // percentage of the DRAM PLATE (channels x bus_width/8 x 2 transfers per
+    // tCK, per simulator cycle), not of -dram_enq: the issue cap sits above
+    // what the DRAM can serve, so a cap relative to it would only bite far
+    // below 50% and leave the knob a dead zone for the fit.
+    int cap = dram_enq_per_cycle;
+    if (j->kv_stream && kv_bw_pct < 100) {
+      const auto *dc = mem::dramsim3config;
+      double plate_beats = (double) dc->channels * dc->bus_width / 8.0 * 2.0
+                           / ((double) freq_sa * dc->tCK) / bytes_per_tx;
+      cap = std::max(1, std::min(cap, (int) (plate_beats * kv_bw_pct / 100.0)));
+    }
+    int to_enq = std::min(cap, mem_read_left_unqueued);
     check_in_bounds(j, to_enq, "reads");
     mem_read_left_unqueued -= to_enq;
     mem_queued += to_enq;

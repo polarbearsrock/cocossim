@@ -40,7 +40,10 @@ Arch* StandardParser::make_arch() {
               {"-dbuf", &dbuf_lookahead},
               {"-dbuf_tile", &dbuf_tile},
               {"-fuse_vpu", &fuse_vpu},
-              {"-act_share", &act_share}},
+              {"-act_share", &act_share},
+              {"-op_overhead", &op_overhead_cycles},
+              {"-kv_bw_pct", &kv_bw_pct},
+              {"-data_overhead", &data_overhead_cycles}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -61,7 +64,10 @@ Arch* StandardParser::make_arch() {
              "-dbuf         cross-op weight prefetch byte budget in MiB (default 0 = off)\n"
              "-dbuf_tile    within-op tile double buffering: 0 off (default), 1 on\n"
              "-fuse_vpu     norm/rope/silu/residual fused into GEMM epilogues (traffic-free sidecars): 0 off (default), 1 on\n"
-             "-act_share    GEMM activation panel staged once into shared VMEM across cores: 1 on (default), 0 per-MXU reads");
+             "-act_share    GEMM activation panel staged once into shared VMEM across cores: 1 on (default), 0 per-MXU reads\n"
+             "-op_overhead  cycles stalled per op boundary per core (default 0)\n"
+             "-kv_bw_pct    decode KV-cache stream issue rate, percent of -dram_enq (default 100)\n"
+             "-data_overhead fixed per-run cycles for unmodeled layout/copy kernels (default 0)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -140,6 +146,18 @@ Arch* StandardParser::make_arch() {
   }
   if (act_share != 0 && act_share != 1) {
     std::cerr << "Error: -act_share must be 0 or 1, got " << act_share << std::endl;
+    exit(1);
+  }
+  if (op_overhead_cycles < 0) {
+    std::cerr << "Error: -op_overhead must be >= 0, got " << op_overhead_cycles << std::endl;
+    exit(1);
+  }
+  if (kv_bw_pct < 1 || kv_bw_pct > 100) {
+    std::cerr << "Error: -kv_bw_pct must be in [1, 100], got " << kv_bw_pct << std::endl;
+    exit(1);
+  }
+  if (data_overhead_cycles < 0) {
+    std::cerr << "Error: -data_overhead must be >= 0, got " << data_overhead_cycles << std::endl;
     exit(1);
   }
   if (ws == 1 && dbuf_lookahead > 0) {

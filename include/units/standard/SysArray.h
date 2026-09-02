@@ -179,7 +179,9 @@ namespace SystolicArray {
     // consumes to zero, and never more than sys_job_alloc_bytes reserves
     // (each tile's window term is >= floor(panel / bytes_per_tx)). OS only.
     [[nodiscard]] int64_t prefetchable_weight_beats() const override {
-      if (ws_cfg || weight_tag == -1) return 0;
+      // kv_stream: a paged-attention kernel gathers its own KV blocks; XLA
+      // cannot stream them ahead of the kernel (spec S6).
+      if (ws_cfg || weight_tag == -1 || kv_stream) return 0;
       int cols = std::max(N / sz_cfg, 1);
       int64_t panel = (int64_t) weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
       return (int64_t) cols * (panel / bytes_per_tx);

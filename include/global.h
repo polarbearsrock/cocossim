@@ -78,6 +78,18 @@ extern int dbuf_tile;
 // job charges the panel, its siblings on cores >= 1 are act_resident.
 // 0: every core reads its own copy (the legacy per-MXU model, ablation).
 extern int act_share;
+// Fit knobs (benchmark spec S2/S6).
+// -op_overhead: cycles a unit stalls when it enters a job of a new op_id
+// (per op boundary per core -- silicon pays per kernel, ~8 per layer, not
+// per row-block job). Pure serial delay before the job's reads.
+extern int op_overhead_cycles;
+// -kv_bw_pct: effective issue rate for decode KV-cache streams (paged
+// gather) as a percentage of dram_enq_per_cycle. Traffic invariant.
+extern int kv_bw_pct;
+// -data_overhead: fixed per-run cycles for layout/copy kernels the model
+// has no jobs for (kernel census: 4-7% of device time); the clock advances
+// by this much before the first dispatch, nothing else moves.
+extern int data_overhead_cycles;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

@@ -116,6 +116,13 @@ struct State {
   // these beats are the FIRST tile's operands, never the pre-issued next
   // tile's -- so no write-back can be issued over a pending prefetch read.
   int prefetch_read_left = 0;
+  // -op_overhead (benchmark spec S2): op_id of the last job this unit ran
+  // (-2 = none yet, so the first job is always a boundary) and the pure
+  // serial stall still to burn before the current job issues any read --
+  // a stalled cycle is neither busy nor memstall; the unit reports idle.
+  int last_op_id = -2;
+  int op_stall_left = 0;
+  uint64_t op_boundaries = 0;// ops this unit entered (stats line OPBOUND)
 
   virtual ~State() = default;
   State() = delete;

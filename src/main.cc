@@ -148,6 +148,10 @@ int main(int argc, char **argv) {
                 s->get_ty_string().c_str(), i, OP_CLASS_NAMES[c],
                 (unsigned long long) cb, (unsigned long long) cu, (unsigned long long) cm);
       }
+      // Ops this unit entered (op_id boundaries, spec S2): the count
+      // -op_overhead charges, and the per-unit kernel count silicon pays.
+      fprintf(f, "OPBOUND %s %d %llu\n", s->get_ty_string().c_str(), i,
+              (unsigned long long) s->op_boundaries);
     }
   }
 
