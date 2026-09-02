@@ -19,11 +19,13 @@ EOF
 # Prefetch the Phase-D model so measurement runs never pay download time.
 # SKIP_MODEL=1 (tier-1 microbenchmark sessions) skips the ~16 GB download.
 export HF_HOME="$HOME/hf"
+export HF_MODEL="${HF_MODEL:-Qwen/Qwen3-8B}"
 if [ "${SKIP_MODEL:-0}" != "1" ]; then
 python - <<'EOF'
+import os
 from huggingface_hub import snapshot_download
-snapshot_download("Qwen/Qwen3-8B", allow_patterns=["*.safetensors", "*.json", "*.txt"])
-print("model cached")
+snapshot_download(os.environ["HF_MODEL"], allow_patterns=["*.safetensors", "*.json", "*.txt"])
+print("model cached:", os.environ["HF_MODEL"])
 EOF
 fi
 echo SETUP_OK
