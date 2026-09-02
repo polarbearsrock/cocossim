@@ -322,6 +322,74 @@ report per_step = (t₂C − tC) / CHAIN (pure device per-step) and intercept =
 ≥ 1 ms. Session H1b re-runs G1/G2/G3/E1 this way (plus E1b read-only /
 write-only streams for the write-path gap) alongside H2.
 
+### 6.3 Re-measurement and tier 2 (2026-09-01, session "tier1" + "tier2_qwen" + "tier2_mistral", three concurrent VMs)
+
+All three data sets were collected concurrently on separate on-demand v6e-1
+VMs in us-east5-b (us-east5-a was stocked out); raw CSVs are under
+`benchmarks/tpuv6e/results/fidelity/{tier1,tier2_qwen,tier2_mistral}/`.
+
+**Slope method, corrected.** The slope estimator assumes the C- and
+2C-step scans compile to the same per-step program. They do not always:
+every Mistral G3 shape ran 2.1–2.75× longer at 2C than at C
+(`t_2C/t_C` in `g_sweep_slope.csv`), while the chain-16 per-step
+reproduced the H1 chained numbers to 1%. `score_matrix.py` therefore uses
+the slope only when `t_2C/t_C ∈ [1.80, 2.05]` and otherwise falls back to
+the chain-C per-step minus the nominal 113 µs floor (a ≤ 1% correction on
+those ≥ 1 ms calls), flagging the row (`method` column; 24 of 120 rows).
+The H1 numbers for the ≥ 1 ms shapes stand; the floor leak only mattered
+where per-step × chain was small (E1 below 2²⁰ elements, kv rows).
+
+**Tier 1, corrected map** (`tier1/scorecard_tier1_slope.csv`; error =
+(sim − silicon)/silicon):
+
+| cell | result |
+|---|---|
+| G3 decode shapes M ≤ 64 | q/gate_up/down PASS (±8%); kv −11…−15% (8 MB streams: silicon 1.06 TB/s, a ~1 µs per-kernel cost the sim lacks); Qwen head −13…−19% (ragged N = 151936 streams at 1.15 TB/s on silicon vs 1.35 in the sim); Mistral head +5…+16%. |
+| G2 / G1 mid-M (512–2048 rows, K = N = 4096/8192) | sim +13…+37% too SLOW: silicon overlaps weight streaming and compute (512×8192² runs at 585 TF/s **and** 1.14 TB/s simultaneously), the sim's SA time is ≈ stream + compute (memstall 0.48). Small squares worse: 1024³ +66%, 2048³ +50% (silicon 572/725 TF/s). 8192³ −11.5% (sim sustains 788 TF/s, silicon 698). |
+| E1 HBM rows (≥ 2²⁵ elements) | sim −15…−25% too fast: silicon streams write-heavy elementwise at 1.16–1.17 TB/s, the sim at 1.5. Rows below 2²⁵ elements are VMEM-resident on silicon (up to 9.6 TB/s effective) and get no HBM verdict. |
+| A1 prefill (Pallas `flash_attention`) | sim +30% (S 512), +88% (S 2048), +79% (S 8192) at B = 1; +8…+20% at B = 8. Consistent with the in-model census: RPA prefill attention costs 250–290 µs per 2048-token sequence-layer on silicon, the sim ≈ 450–470 µs (head_dim-128 contraction half-fills the 256-deep array). |
+| A1 decode (Pallas `paged_attention`, GQA 32/8, page 16) | **Not the models' kernel.** vLLM runs `ragged_paged_attention` (RPA): 166 µs per layer at S 2048 B 32 in the Qwen decode census vs 1470 µs for the probe's kernel. A1 decode and K1 are kernel-relative data only; decode attention is calibrated against the census. |
+
+**Tier 2, priors** (`score_tier2.py`; silicon = per-step device time from
+the census, sim = full run or the l1/l2/lh extrapolation, which matched
+seven full runs within ±2%). Two vLLM facts shape the census: prefill is
+chunked at 8192 tokens (one forward = the whole trace), and the decode
+batch is padded to a token bucket (batch 8 runs as an M = 16 program) with
+partial-batch steps interleaved while long contexts prefill — the step is
+the padded-batch program plus its LM head and glue. Mistral ran through
+vLLM's PyTorch-wrapper path (`step_fun_impl`, `*ParallelLinear`), Qwen3
+through the native JAX path; both are recognised.
+
+| model | prefill | decode |
+|---|---|---|
+| Qwen3-8B (fit set) | 256×1 −22%, 512×1 −16%, 512×4 −13%, 512×8 −16%, 1024×1 −6%, 2048×1 +3%, 2048×4 −4%, 4096×1 +21% | 512×1 −27%, 512×8 −28%, 512×32 −31%, 2048×8 −24%, 2048×32 −13%, 4096×16 +1%, 8192×8 +9% |
+| Mistral-7B-v0.3 (holdout) | 512×1 −13%, 2048×1 −12%, 512×8 −35% | 512×8 −28%, 2048×32 −15%, 8192×8 +6% |
+
+Priors MAPE: Qwen 15.5% (bias −11%), Mistral 18.1% (bias −16%).
+
+**Where the residual sits** (per-class attribution, census vs sim
+`ACCTC`; silicon class times overlap with XLA's async weight prefetch, so
+they are indicative, the totals are exact):
+
+1. *In-model weight streaming.* Silicon streams the 15 GB of Qwen weights
+   at ≈ 1.15 TB/s inside a decode step (isolated chained GEMMs reach
+   1.33–1.38 TB/s; the difference is XLA's `copy`/layout ops — "data",
+   ~1 ms per step — and per-op gaps), the sim at ≈ 1.5 TB/s. This is the
+   whole −25…−30% at short-context decode and short prefill. A per-op
+   boundary stall (`-op_overhead`, section 5) of ~5 µs reproduces the
+   in-model loss without touching the isolated-kernel cells.
+2. *Decode attention (RPA kernel).* Per layer ≈ 20 µs fixed + ~5 µs per
+   sequence at short context (512×32: 184 µs/layer for 67 MB of KV), but
+   ≈ 1.6 TB/s effective at long context (2048×32: 166 µs/layer for
+   268 MB; 8192×8: 146 µs). The sim is 3.7× too fast at 512×32 and 2×
+   too slow at 8192×8: its per-head KV jobs are demand-fetched (KV panels
+   are excluded from `-dbuf` prefetch by design) and stream at ≈ 0.9 TB/s.
+3. *Prefill attention.* Sim 1.6–2.2× too slow at S ≥ 2048 (item A1
+   above); at 4096×1 it is the entire +21%.
+4. *Mid-M GEMM overlap* (tier-1 G2): only visible in tier 2 where a
+   prefill program is compute-heavy; masked by item 3 at 4096×1 and by
+   item 1 at short prompts.
+
 ## 7. Verdicts and go/no-go
 
 Per cell and metric:
