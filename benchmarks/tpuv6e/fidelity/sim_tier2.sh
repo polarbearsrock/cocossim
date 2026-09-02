@@ -24,6 +24,10 @@ mkdir -p "$OUT"
 JOBS="${SIM_JOBS:-32}"
 export MODELS="${MODELS:-qwen mistral}" VARIANTS="${VARIANTS:-full l1 l2 lh}"
 
+# COLLECT_ONLY must not regenerate points.txt: a driver's xargs reads it
+# lazily, so rewriting it with the default MODELS/VARIANTS mid-run would
+# feed that driver the whole grid (happened 2026-09-02).
+if [ "${COLLECT_ONLY:-0}" != "1" ]; then
 python3 - "$OUT" "$HERE/../holdout" <<'EOF'
 import sys, os
 out, holdout = sys.argv[1], sys.argv[2]
@@ -56,6 +60,7 @@ with open(os.path.join(out, "points.txt"), "w") as f:
         f.write(name + "\n")
 print(len(runs), "runs")
 EOF
+fi
 
 run_one() {
   name="$1"; shift
