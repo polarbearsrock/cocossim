@@ -57,7 +57,11 @@ run_one() {
   echo "done $name in $((SECONDS - t0))s"
 }
 export -f run_one; export OUT REPO
-xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} "${EXTRA[@]}" < "$OUT/points.txt"
+# COLLECT_ONLY=1 skips the runs and just (re)builds the CSV from whatever
+# stats files exist, so partial grids can be scored while the rest runs.
+if [ "${COLLECT_ONLY:-0}" != "1" ]; then
+  xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} "${EXTRA[@]}" < "$OUT/points.txt"
+fi
 
 python3 - "$OUT" <<'EOF'
 import sys, os, re, csv

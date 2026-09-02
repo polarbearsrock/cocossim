@@ -116,9 +116,14 @@ def main():
     for k in sorted(wall, key=lambda k: (k[0] != "prefill", k[1], k[2])):
         mode, seq, batch = k
         v = sim.get(k, {})
-        full = float(v["full"]["us"]) / 1e3 if "full" in v else None
         ext = extrap(v, layers)
         ext = ext / 1e3 if ext is not None else None
+        if "full" in v:
+            full = float(v["full"]["us"]) / 1e3; sim_method = "full"
+        else:  # full run still in flight: score the triplet extrapolation, flagged
+            full = ext; sim_method = "extrap" if ext is not None else "none"
+            if "lh" in v:
+                v = dict(v, full=v["lh"])  # per-class shares from the 1-layer+head run
         ws = sorted(wall[k])
         w_ms = ws[len(ws) // 2] * 1e3
         if mode == "decode":
@@ -135,8 +140,9 @@ def main():
         p = lambda x: f"{100 * x:+7.1f}%" if x is not None else f"{'-':>8s}"
         name = f"{mode} {seq}x{batch}"
         print(f"{name:22s} {f(full, 11)} {f(ext, 10)} {f(dev)} {f(busy)} {f(w_ms)} {p(err_dev)} {p(err_busy)}  {vd:11s} {len(ws)}"
-              + (f"  wall spread {100 * (ws[-1] - ws[0]) / ws[0]:.1f}%" if len(ws) > 1 else ""))
-        row = dict(model=a.model, mode=mode, seq=seq, batch=batch, sim_full_ms=full, sim_extrap_ms=ext,
+              + (f"  wall spread {100 * (ws[-1] - ws[0]) / ws[0]:.1f}%" if len(ws) > 1 else "")
+              + ("" if sim_method == "full" else f"  [sim: {sim_method}]"))
+        row = dict(model=a.model, mode=mode, seq=seq, batch=batch, sim_full_ms=full, sim_extrap_ms=ext, sim_method=sim_method,
                    dev_ms=dev, dev_busy_ms=busy, wall_ms=w_ms, n_wall=len(ws), err_dev=err_dev, err_busy=err_busy,
                    verdict=vd, steps=steps.get(k, 0))
         # per-class attribution

@@ -22,6 +22,28 @@ def verdict(err):
     return "PASS" if a <= 0.10 else ("CONDITIONAL" if a <= 0.25 else "FAIL")
 
 
+FLOOR_US = 113.0   # per-call launch + completion constant (spec 2); fallback only
+SLOPE_OK = (1.80, 2.05)  # t_2C / t_C range in which the C and 2C programs agree
+
+
+def per_step(r):
+    """(per-step us, method). The slope (t_2C - t_C)/C cancels the per-call
+    constant, but it assumes the C- and 2C-step scans compile to the same
+    per-step program. Session tier1 (2026-09-01) showed they do not for
+    every shape: all Mistral G3 rows ran 2.1-2.75x longer at 2C than at C
+    (the chain-16 per-step reproduced the old chained numbers to 1%). When
+    the ratio leaves SLOPE_OK the slope measures a compile artifact, so the
+    row falls back to the chain-C program's per-step minus the nominal
+    floor (a <=1% correction on the >1 ms calls this triggers on)."""
+    if r.get("t_c_us") in (None, ""):
+        return float(r["per_step_us"]), "chained"
+    c = int(r["chain"]); tc = float(r["t_c_us"]); t2 = float(r["t_2c_us"])
+    ratio = t2 / tc
+    if SLOPE_OK[0] <= ratio <= SLOPE_OK[1]:
+        return float(r["per_step_us"]), "slope"
+    return (tc - FLOOR_US) / c, f"chainC(2C/C={ratio:.2f})"
+
+
 def band(r):
     """Per-step [p10, p90] in us: slope-method rows carry it directly; the
     original H1 rows carry per-call p10_s/p90_s to be divided by the chain."""
@@ -51,14 +73,15 @@ def main():
         s = sim.get(key)
         if not s:
             continue
-        si = float(r["per_step_us"]); sm = float(s["us"])
+        si, method = per_step(r); sm = float(s["us"])
         p10, p90 = band(r)
         err = (sm - si) / si
+        flops = 2.0 * int(r["M"]) * int(r["K"]) * int(r["N"])
         rows.append(dict(cell=r["cell"], label=r["label"], shape=f"{r['M']}x{r['K']}x{r['N']}",
                          si_us=si, si_p10=p10, si_p90=p90, sim_us=sm, err=err,
-                         si_tflops=float(r["tflops"]), sim_tflops=2.0 * int(r["M"]) * int(r["K"]) * int(r["N"]) / sm / 1e6,
+                         si_tflops=flops / si / 1e6, sim_tflops=flops / sm / 1e6,
                          sim_sa_busy=float(s["sa_busy"]), sim_sa_memstall=float(s["sa_memstall"]),
-                         verdict=verdict(err)))
+                         verdict=verdict(err), method=method))
     # E1: a scan carry under VMEM (~128 MiB) never touches HBM on silicon, so
     # rows moving < 150 MB measure t0 + VMEM streaming, not HBM. They are
     # reported (cell E1v) but get no HBM verdict; only the large rows do.
@@ -68,21 +91,25 @@ def main():
         s = sim.get(key)
         if not s:
             continue
-        si = float(r["per_step_us"]); sm = float(s["us"])
+        si, method = per_step(r); sm = float(s["us"])
         p10, p90 = band(r)
         err = (sm - si) / si
         vmem = int(r["bytes_moved"]) < VMEM_BYTES
         rows.append(dict(cell="E1v" if vmem else "E1", label=r["op"], shape=f"n={r['n']}", si_us=si, si_p10=p10, si_p90=p90,
                          sim_us=sm, err=err, si_tflops=0.0, sim_tflops=0.0,
                          sim_sa_busy=0.0, sim_sa_memstall=0.0,
-                         verdict="VMEM-RESIDENT (no HBM verdict)" if vmem else verdict(err)))
+                         verdict="VMEM-RESIDENT (no HBM verdict)" if vmem else verdict(err), method=method))
 
-    print(f"{'cell':4s} {'label':16s} {'shape':18s} {'si_us':>9s} {'[p10,p90]':>17s} {'sim_us':>9s} {'err':>7s}  verdict")
+    print(f"{'cell':4s} {'label':16s} {'shape':18s} {'si_us':>9s} {'[p10,p90]':>17s} {'sim_us':>9s} {'err':>7s}  verdict      method")
     counts = defaultdict(int)
     for r in rows:
         counts[(r["cell"], r["verdict"])] += 1
         print(f"{r['cell']:4s} {r['label']:16s} {r['shape']:18s} {r['si_us']:9.2f} [{r['si_p10']:7.2f},{r['si_p90']:7.2f}] "
-              f"{r['sim_us']:9.2f} {100 * r['err']:+6.1f}%  {r['verdict']}")
+              f"{r['sim_us']:9.2f} {100 * r['err']:+6.1f}%  {r['verdict']:11s}  {r['method']}")
+    nfb = sum(1 for r in rows if r["method"].startswith("chainC"))
+    if nfb:
+        print(f"\n{nfb} rows fell back to the chain-C per-step (2C program slower than 2x C: XLA compiled the "
+              f"longer scan differently); the slope is not a device constant there.")
     print()
     for cell in ("G1", "G2", "G3", "E1"):
         if cell == "E1":
