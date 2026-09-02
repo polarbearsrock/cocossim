@@ -266,6 +266,16 @@ kernel the models run; they are kernel-relative data (K1: page shuffling
 costs nothing, ratio 1.00). K1's per-step numbers carry ~14 µs of host
 floor (chain 8, plain `time_op`); the ratios do not.
 
+**The fitted config is for whole-model runs only.** Re-scoring tier 1
+under `-dram_enq 12` (`tier1/scorecard_tier1_enq12.csv`) turns the
+isolated G3 streams from ±5% to +14…+25% too slow: chained single kernels
+really do sustain 1.35 TB/s, the loss to 1.15 happens only inside a model
+step (XLA copies, DMA gaps). So: `tpuv6e_fitted.sh` for Transformer
+runs, `tpuv6e.sh` (priors) for kernel-level cells, and the proper fix is
+a per-op data-movement term (copy bytes proportional to activations)
+rather than a global bandwidth cap. `-data_overhead` is per run and must
+be 0 for single-kernel runs.
+
 **Go/no-go** (spec §7): GO for utilization experiments in the weight-
 streaming and mid-length-prefill regimes with `tpuv6e_fitted.sh`, quoting
 ±10% (Qwen) / ±15% (a model on the other vLLM path). NO-GO until items 1–2

@@ -436,6 +436,15 @@ step) plus the fixed 1 ms per forward that XLA's copy/layout kernels cost
 in the same direction; `configs/tpuv6e_fitted.sh` carries them. The
 §6.1 numbers are superseded.
 
+**Scope of the fitted config.** Tier 1 re-scored under `-dram_enq 12`
+alone (`tier1/scorecard_tier1_enq12.csv`): G3 q/gate_up/down go from
+±5% to +14…+25% (sim too slow), Qwen head and kv improve (−14 → −5%,
+−11 → −7%), E1 HBM rows flip from −25% to +26%. Isolated chained kernels
+sustain 1.35 TB/s; the drop to 1.15 is an in-model XLA effect. The fitted
+config therefore applies to whole-model (`Transformer`) runs; kernel-level
+cells keep the priors, and the mechanism that would serve both is a
+per-op data-movement charge, not a bandwidth cap.
+
 **Verdict per regime** (fitted config):
 
 | regime | Qwen | Mistral (holdout) | verdict |

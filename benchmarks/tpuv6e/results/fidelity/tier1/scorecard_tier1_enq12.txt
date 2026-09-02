@@ -1,0 +1,116 @@
+cell label            shape                  si_us         [p10,p90]    sim_us     err  verdict      method
+G1   G1_1024x1024     1024x1024x1024          3.75 [   3.70,   3.81]      6.25  +66.7%  FAIL         slope
+G1   G1_2048x2048     2048x2048x2048         23.71 [  23.40,  23.97]     32.29  +36.2%  FAIL         slope
+G1   qwen_q           4096x4096x4096        176.88 [ 175.72, 177.76]    202.30  +14.4%  CONDITIONAL  slope
+G1   G1_8192x8192     8192x8192x8192       1576.22 [1573.92,1577.82]   1403.27  -11.0%  CONDITIONAL  slope
+G2   G2_8192x8192     128x8192x8192          91.61 [  12.00, 246.16]    115.95  +26.6%  FAIL         slope
+G2   G2_8192x8192     256x8192x8192          91.75 [  24.92, 237.49]    122.10  +33.1%  FAIL         slope
+G2   G2_8192x8192     512x8192x8192         117.54 [ 104.66, 148.49]    159.87  +36.0%  FAIL         slope
+G2   G2_8192x8192     1024x8192x8192        186.70 [ 185.26, 188.06]    242.87  +30.1%  FAIL         slope
+G2   G2_8192x8192     2048x8192x8192        331.63 [ 330.78, 333.06]    408.77  +23.3%  CONDITIONAL  slope
+G2   qwen_q           128x4096x4096          25.10 [  11.32,  52.22]     30.84  +22.9%  CONDITIONAL  slope
+G2   qwen_q           256x4096x4096          28.06 [  13.36,  45.31]     32.37  +15.4%  CONDITIONAL  slope
+G2   qwen_q           512x4096x4096          30.71 [  30.09,  31.15]     43.07  +40.3%  FAIL         slope
+G2   qwen_q           1024x4096x4096         48.20 [  47.73,  48.65]     65.80  +36.5%  FAIL         slope
+G2   qwen_q           2048x4096x4096         95.69 [  94.54,  96.92]    111.32  +16.3%  CONDITIONAL  slope
+G3   qwen_q           1x4096x4096            25.20 [  11.06,  54.40]     28.31  +12.4%  CONDITIONAL  slope
+G3   qwen_q           4x4096x4096            25.26 [  11.66,  53.99]     28.31  +12.1%  CONDITIONAL  slope
+G3   qwen_q           8x4096x4096            25.13 [  11.14,  55.31]     27.56   +9.7%  PASS         slope
+G3   qwen_q           16x4096x4096           25.17 [  12.34,  55.07]     28.45  +13.0%  CONDITIONAL  slope
+G3   qwen_q           32x4096x4096           25.29 [  12.05,  54.19]     28.61  +13.1%  CONDITIONAL  slope
+G3   qwen_q           64x4096x4096           25.45 [  12.73,  53.20]     28.90  +13.6%  CONDITIONAL  slope
+G3   qwen_q           128x4096x4096          25.80 [  11.95,  53.02]     30.84  +19.5%  CONDITIONAL  slope
+G3   qwen_q           256x4096x4096          28.01 [  14.92,  45.07]     32.37  +15.6%  CONDITIONAL  slope
+G3   qwen_kv          1x4096x1024             7.91 [   7.67,   7.99]      6.91  -12.6%  CONDITIONAL  slope
+G3   qwen_kv          4x4096x1024             7.66 [   7.49,   7.85]      6.94   -9.4%  PASS         slope
+G3   qwen_kv          8x4096x1024             7.66 [   7.50,   7.73]      6.97   -9.0%  PASS         slope
+G3   qwen_kv          16x4096x1024            7.67 [   7.53,   7.80]      7.03   -8.4%  PASS         slope
+G3   qwen_kv          32x4096x1024            7.83 [   7.73,   7.96]      7.13   -8.9%  PASS         slope
+G3   qwen_kv          64x4096x1024            7.86 [   7.70,   8.00]      7.34   -6.7%  PASS         slope
+G3   qwen_kv          128x4096x1024           8.14 [   8.01,   8.30]      7.98   -2.0%  PASS         slope
+G3   qwen_kv          256x4096x1024           8.60 [   8.47,   8.69]      8.96   +4.1%  PASS         slope
+G3   qwen_gate_up     1x4096x12288           73.72 [  35.83, 194.29]     82.82  +12.3%  CONDITIONAL  slope
+G3   qwen_gate_up     4x4096x12288           72.33 [  36.64, 188.92]     84.68  +17.1%  CONDITIONAL  slope
+G3   qwen_gate_up     8x4096x12288           72.23 [  35.98, 198.03]     82.85  +14.7%  CONDITIONAL  slope
+G3   qwen_gate_up     16x4096x12288          73.37 [  37.16, 196.89]     85.20  +16.1%  CONDITIONAL  slope
+G3   qwen_gate_up     32x4096x12288          71.88 [  27.02, 201.70]     85.80  +19.4%  CONDITIONAL  slope
+G3   qwen_gate_up     64x4096x12288          71.80 [  38.20, 195.18]     85.99  +19.8%  CONDITIONAL  slope
+G3   qwen_gate_up     128x4096x12288         72.02 [  32.80, 192.53]     88.50  +22.9%  CONDITIONAL  slope
+G3   qwen_gate_up     256x4096x12288         74.49 [  38.55, 197.60]     89.28  +19.9%  CONDITIONAL  slope
+G3   qwen_down        1x12288x4096           73.14 [  34.13, 192.33]     83.89  +14.7%  CONDITIONAL  slope
+G3   qwen_down        4x12288x4096           72.05 [  36.83, 195.58]     84.09  +16.7%  CONDITIONAL  slope
+G3   qwen_down        8x12288x4096           74.14 [  37.16, 200.14]     84.52  +14.0%  CONDITIONAL  slope
+G3   qwen_down        16x12288x4096          72.92 [  30.20, 198.94]     84.61  +16.0%  CONDITIONAL  slope
+G3   qwen_down        32x12288x4096          72.68 [  36.39, 201.10]     85.09  +17.1%  CONDITIONAL  slope
+G3   qwen_down        64x12288x4096          72.87 [  41.19, 202.06]     86.05  +18.1%  CONDITIONAL  slope
+G3   qwen_down        128x12288x4096         73.39 [  37.11, 195.12]     87.40  +19.1%  CONDITIONAL  slope
+G3   qwen_down        256x12288x4096         75.00 [  37.00, 180.43]     91.17  +21.6%  CONDITIONAL  slope
+G3   qwen_head        1x4096x151936        1081.91 [1028.59,1274.24]   1022.24   -5.5%  PASS         slope
+G3   qwen_head        4x4096x151936        1118.68 [1022.09,1215.81]   1019.40   -8.9%  PASS         slope
+G3   qwen_head        8x4096x151936        1100.51 [1028.19,1243.17]   1017.92   -7.5%  PASS         slope
+G3   qwen_head        16x4096x151936       1075.18 [1023.99,1227.27]   1029.20   -4.3%  PASS         slope
+G3   qwen_head        32x4096x151936       1084.59 [1023.25,1283.18]   1035.72   -4.5%  PASS         slope
+G3   qwen_head        64x4096x151936       1097.45 [1032.43,1257.93]   1043.01   -5.0%  PASS         slope
+G3   qwen_head        128x4096x151936      1108.11 [1027.52,1227.71]   1059.26   -4.4%  PASS         slope
+G3   qwen_head        256x4096x151936      1079.04 [1039.48,1232.97]   1083.78   +0.4%  PASS         slope
+G3   mistral_gate_up  1x4096x14336           87.01 [  10.19, 216.21]     96.45  +10.8%  CONDITIONAL  slope
+G3   mistral_gate_up  4x4096x14336           81.01 [  33.36, 191.30]     97.53  +20.4%  CONDITIONAL  chainC(2C/C=2.19)
+G3   mistral_gate_up  8x4096x14336           80.59 [  28.01, 199.85]     97.88  +21.5%  CONDITIONAL  chainC(2C/C=2.16)
+G3   mistral_gate_up  16x4096x14336          88.83 [  13.52, 217.78]     98.01  +10.3%  CONDITIONAL  slope
+G3   mistral_gate_up  32x4096x14336          81.43 [   2.73, 198.56]     98.47  +20.9%  CONDITIONAL  chainC(2C/C=2.12)
+G3   mistral_gate_up  64x4096x14336          80.45 [  31.54, 195.83]    100.45  +24.9%  CONDITIONAL  chainC(2C/C=2.15)
+G3   mistral_gate_up  128x4096x14336         90.95 [   9.32, 215.20]    103.76  +14.1%  CONDITIONAL  slope
+G3   mistral_gate_up  256x4096x14336         82.48 [  32.19, 190.07]    103.67  +25.7%  FAIL         chainC(2C/C=2.12)
+G3   mistral_down     1x14336x4096           79.39 [   6.38, 204.39]     98.03  +23.5%  CONDITIONAL  chainC(2C/C=2.10)
+G3   mistral_down     4x14336x4096           79.30 [  34.32, 189.01]     98.58  +24.3%  CONDITIONAL  chainC(2C/C=2.24)
+G3   mistral_down     8x14336x4096           79.58 [  35.08, 217.97]    103.29  +29.8%  FAIL         chainC(2C/C=2.06)
+G3   mistral_down     16x14336x4096          84.71 [  26.47, 219.67]     99.43  +17.4%  CONDITIONAL  slope
+G3   mistral_down     32x14336x4096          85.36 [  26.85, 219.18]    100.91  +18.2%  CONDITIONAL  slope
+G3   mistral_down     64x14336x4096          84.05 [  35.33, 209.11]    101.68  +21.0%  CONDITIONAL  slope
+G3   mistral_down     128x14336x4096         82.59 [  32.23, 177.90]    106.82  +29.3%  FAIL         chainC(2C/C=2.13)
+G3   mistral_down     256x14336x4096         83.20 [  42.74, 169.60]    107.48  +29.2%  FAIL         chainC(2C/C=2.14)
+G3   mistral_head     1x4096x32768          180.12 [  27.21, 351.37]    222.87  +23.7%  CONDITIONAL  chainC(2C/C=2.73)
+G3   mistral_head     4x4096x32768          179.99 [  24.82, 353.48]    221.17  +22.9%  CONDITIONAL  chainC(2C/C=2.75)
+G3   mistral_head     8x4096x32768          179.61 [  29.31, 351.99]    220.48  +22.8%  CONDITIONAL  chainC(2C/C=2.72)
+G3   mistral_head     16x4096x32768         180.39 [  75.16, 336.76]    224.32  +24.4%  CONDITIONAL  chainC(2C/C=2.62)
+G3   mistral_head     32x4096x32768         181.12 [  54.03, 339.58]    224.77  +24.1%  CONDITIONAL  chainC(2C/C=2.59)
+G3   mistral_head     64x4096x32768         180.28 [  34.76, 352.74]    226.55  +25.7%  FAIL         chainC(2C/C=2.76)
+G3   mistral_head     128x4096x32768        181.21 [  22.72, 352.87]    230.51  +27.2%  FAIL         chainC(2C/C=2.73)
+G3   mistral_head     256x4096x32768        182.86 [  55.05, 344.50]    237.46  +29.9%  FAIL         chainC(2C/C=2.68)
+E1v  add              n=32768                 0.06 [   0.05,   0.06]      0.21 +250.1%  VMEM-RESIDENT (no HBM verdict)  chainC(2C/C=1.62)
+E1v  add              n=65536                 0.10 [   0.09,   0.10]      0.35 +266.7%  VMEM-RESIDENT (no HBM verdict)  chainC(2C/C=1.76)
+E1v  add              n=131072                0.18 [   0.17,   0.18]      0.64 +267.6%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=262144                0.34 [   0.34,   0.34]      1.23 +262.3%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=524288                0.67 [   0.66,   0.68]      2.41 +258.6%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=1048576               1.33 [   1.31,   1.35]      4.88 +266.4%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=2097152               1.41 [   1.39,   1.42]     10.09 +617.4%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=4194304               2.68 [   2.66,   2.71]     20.07 +648.4%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=8388608               5.24 [   5.16,   5.29]     40.14 +666.3%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  add              n=16777216             10.50 [  10.33,  10.60]     80.13 +663.3%  VMEM-RESIDENT (no HBM verdict)  slope
+E1   add              n=33554432             51.74 [  46.96, 103.30]    160.38 +210.0%  FAIL         slope
+E1   add              n=67108864            354.78 [ 212.87, 446.85]    320.89   -9.6%  PASS         slope
+E1   add              n=134217728           691.31 [ 583.90, 799.88]    641.84   -7.2%  PASS         slope
+E1   add              n=268435456          1389.23 [1362.67,1419.32]   1283.47   -7.6%  PASS         slope
+E1v  exp              n=32768                 0.06 [   0.06,   0.06]      0.16 +165.5%  VMEM-RESIDENT (no HBM verdict)  chainC(2C/C=1.67)
+E1v  exp              n=65536                 0.10 [   0.10,   0.10]      0.25 +158.7%  VMEM-RESIDENT (no HBM verdict)  chainC(2C/C=1.78)
+E1v  exp              n=131072                0.19 [   0.19,   0.20]      0.45 +132.0%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=262144                0.39 [   0.39,   0.39]      0.84 +116.7%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=524288                0.78 [   0.77,   0.79]      1.62 +108.2%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=1048576               1.56 [   1.55,   1.58]      3.36 +115.1%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=2097152               1.62 [   1.60,   1.63]      6.61 +308.3%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=4194304               3.19 [   3.16,   3.21]     13.35 +319.0%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=8388608               6.32 [   6.28,   6.39]     26.65 +322.0%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=16777216             12.66 [  12.52,  12.81]     53.42 +321.9%  VMEM-RESIDENT (no HBM verdict)  slope
+E1v  exp              n=33554432             28.14 [  24.78,  25.84]    106.96 +280.1%  VMEM-RESIDENT (no HBM verdict)  chainC(2C/C=1.79)
+E1   exp              n=67108864            207.57 [  85.03, 299.33]    214.09   +3.1%  PASS         chainC(2C/C=2.35)
+E1   exp              n=134217728           422.44 [ 386.78, 538.10]    428.25   +1.4%  PASS         slope
+E1   exp              n=268435456           917.73 [ 825.56, 965.72]    856.52   -6.7%  PASS         slope
+
+24 rows fell back to the chain-C per-step (2C program slower than 2x C: XLA compiled the longer scan differently); the slope is not a device constant there.
+
+G1: PASS 0  CONDITIONAL 2  FAIL 2  (of 4)
+G2: PASS 0  CONDITIONAL 4  FAIL 6  (of 10)
+G3: PASS 16  CONDITIONAL 41  FAIL 7  (of 64)
+E1v: 21 VMEM-resident rows (silicon carry fits VMEM; not HBM cells)
+E1: PASS 6  CONDITIONAL 0  FAIL 1  (of 7)
+wrote /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier1/scorecard_tier1_enq12.csv
