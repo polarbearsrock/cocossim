@@ -264,19 +264,20 @@ fi
 
 # V12: decode semantics. Transformer 1 8 2 1 16 32 1 4 -sa_sz 4:
 #   GQA: K/V projections have N = nkv*head_dim = 1*4 = 4 -> SA job "4 x 8 x 4"
-#   scores read the 32-token KV context: SA job "4 x 4 x 32"
-#   AV contracts over the context:       SA job "4 x 32 x 4"
-#   M = batch = 4 everywhere (no seq_len-sized GEMM rows: no "32 x 8 x" node)
+#   scores read the 32-token KV context: SA job "8 x 4 x 32" (one job per KV
+#   head under -attn_group 1: M = batch x group = 4 x 2 query rows, V37)
+#   AV contracts over the context:       SA job "8 x 32 x 4"
+#   GEMM rows are batch-sized (no seq_len-sized rows: no "32 x 8 x" node)
 printf 'Transformer 1 8 2 1 16 32 1 4\n' > "$WORK/v12.txt"
 "$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -i "$WORK/v12.txt" -o "$WORK/v12_s.txt" > "$WORK/v12.log" 2>&1
 rc=$?
 fin_eq=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v12.log" | tail -1 | awk -F'[:/ ]+' '{print ($3==$4)?1:0}')
 if [ "$rc" -eq 0 ] && [ "${fin_eq:-0}" -eq 1 ] \
    && grep -q 'label="4 x 8 x 4"' jobs.dot \
-   && grep -q 'label="4 x 4 x 32"' jobs.dot \
-   && grep -q 'label="4 x 32 x 4"' jobs.dot \
+   && grep -q 'label="8 x 4 x 32"' jobs.dot \
+   && grep -q 'label="8 x 32 x 4"' jobs.dot \
    && ! grep -q 'label="32 x 8 x' jobs.dot; then
-  ok "V12 decode: GQA K/V, KV-context scores/AV, batch-sized rows"
+  ok "V12 decode: GQA K/V, KV-context scores/AV per kv head (batch x group rows), batch-sized GEMM rows"
 else
   bad "V12 rc=$rc fin_eq=${fin_eq:-?} (check jobs.dot labels)"
 fi
@@ -736,7 +737,9 @@ fi
 
 # V25b: decode invariance. At decode the score matrix is batch x S rows (tiny
 # next to KV-cache streams), so fusion must not move decode timing by more
-# than noise: cycles within 2%, and fused traffic strictly lower.
+# than noise: cycles within 3% (2.1% with the per-kv-head attention jobs of
+# V37: fewer, larger score jobs round fewer output tiles), and fused traffic
+# strictly lower.
 printf 'Transformer 2 512 8 4 1024 512 1 4\n' > "$WORK/v25d.txt"
 "$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
   -i "$WORK/v25d.txt" -o "$WORK/v25c_s.txt" > "$WORK/v25c.log" 2>&1
@@ -745,9 +748,9 @@ printf 'Transformer 2 512 8 4 1024 512 1 4\n' > "$WORK/v25d.txt"
 cu=$(cycles_of "$WORK/v25c_s.txt"); cf=$(cycles_of "$WORK/v25d_s.txt")
 du=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25c.log" | tail -1 | awk '{print $3}')
 df=$(grep -o 'DRAM CMDs: [0-9]*' "$WORK/v25d.log" | tail -1 | awk '{print $3}')
-inv_ok=$(awk -v a="${cu:-0}" -v b="${cf:-0}" 'BEGIN{d=(a-b)/a; if(d<0)d=-d; print (a>0 && b>0 && d<=0.02)?1:0}')
+inv_ok=$(awk -v a="${cu:-0}" -v b="${cf:-0}" 'BEGIN{d=(a-b)/a; if(d<0)d=-d; print (a>0 && b>0 && d<=0.03)?1:0}')
 if [ "$inv_ok" -eq 1 ] && [ -n "$du" ] && [ -n "$df" ] && [ "$df" -lt "$du" ]; then
-  ok "V25b decode cycles move <=2% under -fuse_attn ($cu -> $cf, CMDs $du -> $df)"
+  ok "V25b decode cycles move <=3% under -fuse_attn ($cu -> $cf, CMDs $du -> $df)"
 else
   bad "V25b cycles $cu -> $cf, CMDs $du -> $df"
 fi
@@ -1610,6 +1613,131 @@ if [ "${sp_first:-x}" = "500" ]; then
   ok "V36c OPSPAN OTHER first == 500 under -data_overhead 500"
 else
   bad "V36c OPSPAN OTHER first=${sp_first:-?} (want 500)"
+fi
+
+
+# V37: decode attention job structure (fidelity spec 6.3 item 2, root cause
+# 2026-09-01). The RPA kernel handles a GQA group's query heads in ONE pass
+# per K/V tile; the model built one QK^T and one AV job per QUERY head, so
+# after the group's first head streamed the panel its siblings ran their
+# array passes against the resident copy with the DRAM idle (1-core 8192x8:
+# 36% of the layer with no traffic; MHA, which has no siblings: 1%).
+# -attn_group 1 (default) builds one job per KV HEAD with M = group x M_att
+# rows and the same batch weight streams; -attn_group 0 is the legacy
+# per-query-head structure. -kv_prefetch 1 (default) makes the KV sweep
+# eligible for -dbuf prefetch (the kernel's own DMA pipeline streams the
+# next block while the current one computes); 0 restores the S6 exclusion.
+# V37a: tiny GQA decode (nh 4, nkv 2): 2 x (nh - nkv) = 4 fewer SA jobs, all
+# finish, DRAM traffic identical (bytes are per group either way).
+printf 'Transformer 1 8 4 2 16 32 1 4\n' > "$WORK/v37a.txt"
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_attn 1 -attn_group 0 -i "$WORK/v37a.txt" -o "$WORK/v37a0_s.txt" > "$WORK/v37a0.log" 2>&1
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -fuse_attn 1 -attn_group 1 -i "$WORK/v37a.txt" -o "$WORK/v37a1_s.txt" > "$WORK/v37a1.log" 2>&1
+n0=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v37a0.log" | tail -1 | awk -F'[/ ]' '{print $NF}')
+n1=$(grep -o 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v37a1.log" | tail -1 | awk -F'[/ ]' '{print $NF}')
+f0=$(finished_all "$WORK/v37a0.log" "${n0:-0}"); f1=$(finished_all "$WORK/v37a1.log" "${n1:-0}")
+d0=$(cmds_of "$WORK/v37a0.log"); d1=$(cmds_of "$WORK/v37a1.log")
+if [ -n "$n0" ] && [ -n "$n1" ] && [ "$n1" -eq $((n0 - 4)) ] && [ "$f0" = 1 ] && [ "$f1" = 1 ] && [ -n "$d0" ] && [ "$d0" = "$d1" ]; then
+  ok "V37a -attn_group 1: $n0 -> $n1 jobs (one QK^T + one AV per kv head), all finish, CMDs $d0 invariant"
+else
+  bad "V37a jobs $n0 -> $n1 (want -4) finished=$f0/$f1 CMDs $d0 vs $d1"
+fi
+# V37b: real shape, one core (no cross-core interleaving to hide bubbles):
+# Transformer 1 4096 32 8 12288 4096 1 8 under the pinned v6e flags. Legacy:
+# the DRAM idles >= 25% of the layer even counting prefetch; grouped + KV
+# prefetch: <= 18% and under 60% of the legacy figure (the attention phase
+# itself is then bandwidth-bound -- passes + memstall == KV bytes at the
+# plate; the residue is the -dbuf lookahead across the layer's GEMMs,
+# measured 14% at this shape, 10% with -dbuf 256). Two cores: the layer
+# runs within 15% of the DRAM plate bound (CMDs x 64 B / 936 B per cycle);
+# the legacy build sits 22% above it.
+printf 'Transformer 1 4096 32 8 12288 4096 1 8\n' > "$WORK/v37b.txt"
+V6E="-n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1.75 -ws 0 -buf_mb 128 -dram_ini ../configs/HBM2e_v6e.ini -dram_enq 32 -fuse_attn 1 -fuse_vpu 1 -dbuf 48 -dbuf_tile 1 -act_share 1"
+( cd "$REPO/build" && ./perf_model -c 1 $V6E -attn_group 0 -kv_prefetch 0 -i "$WORK/v37b.txt" -o "$WORK/v37b0_s.txt" > "$WORK/v37b0.log" 2>&1 )
+( cd "$REPO/build" && ./perf_model -c 1 $V6E -attn_group 1 -kv_prefetch 1 -i "$WORK/v37b.txt" -o "$WORK/v37b1_s.txt" > "$WORK/v37b1.log" 2>&1 )
+idle_pct() { # log -> percent of cycles idle incl. prefetch
+  awk '/MEM demand-idle/ {match($0, /idle incl\. prefetch: [0-9]+/); ip=substr($0, RSTART+21, RLENGTH-21); match($0, /\/ [0-9]+ cycles/); tot=substr($0, RSTART+2, RLENGTH-9); if (tot>0) printf "%d", 100*ip/tot}' "$1"
+}
+i0=$(idle_pct "$WORK/v37b0.log"); i1=$(idle_pct "$WORK/v37b1.log")
+if [ -n "$i0" ] && [ -n "$i1" ] && [ "$i0" -ge 25 ] && [ "$i1" -le 18 ] && [ $((i1 * 100)) -le $((i0 * 60)) ]; then
+  ok "V37b one core: DRAM idle incl. prefetch ${i0}% (legacy) -> ${i1}% (grouped + KV prefetch)"
+else
+  bad "V37b DRAM idle incl. prefetch legacy=${i0:-?}% grouped=${i1:-?}% (want >=25 -> <=18 and <=60% of legacy)"
+fi
+( cd "$REPO/build" && ./perf_model -c 2 $V6E -attn_group 0 -kv_prefetch 0 -i "$WORK/v37b.txt" -o "$WORK/v37c0_s.txt" > "$WORK/v37c0.log" 2>&1 )
+( cd "$REPO/build" && ./perf_model -c 2 $V6E -attn_group 1 -kv_prefetch 1 -i "$WORK/v37b.txt" -o "$WORK/v37c1_s.txt" > "$WORK/v37c1.log" 2>&1 )
+c0=$(cycles_of "$WORK/v37c0_s.txt"); c1=$(cycles_of "$WORK/v37c1_s.txt")
+d0=$(cmds_of "$WORK/v37c0.log"); d1=$(cmds_of "$WORK/v37c1.log")
+pb=$(( ${d1:-0} * 64 / 936 ))  # cycles at the 1638 GB/s plate, 1.75 GHz
+if [ -n "$c0" ] && [ -n "$c1" ] && [ "$pb" -gt 0 ] && [ $((c1 * 100)) -le $((pb * 115)) ] && [ $((c0 * 100)) -gt $((pb * 115)) ] && [ "$d0" = "$d1" ]; then
+  ok "V37c two cores: decode layer $c0 -> $c1 cycles vs plate bound $pb (legacy $((c0 * 100 / pb))%, grouped $((c1 * 100 / pb))%), CMDs $d0 invariant"
+else
+  bad "V37c cycles $c0 -> $c1, plate bound ${pb} (want grouped <= 115%, legacy > 115%), CMDs $d0 vs $d1"
+fi
+# V37d: -kv_prefetch 0 alone keeps the sweep un-prefetched (idle stays high
+# on one core even with grouped jobs); invalid values rejected.
+( cd "$REPO/build" && ./perf_model -c 1 $V6E -attn_group 1 -kv_prefetch 0 -i "$WORK/v37b.txt" -o "$WORK/v37d_s.txt" > "$WORK/v37d.log" 2>&1 )
+i2=$(idle_pct "$WORK/v37d.log")
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -attn_group 2 -i "$WORK/v37a.txt" -o "$WORK/v37e_s.txt" > "$WORK/v37e.log" 2>&1; r1=$?
+"$BIN" -c 1 -sa_sz 4 -vu_sz 4 -f 1 -kv_prefetch -1 -i "$WORK/v37a.txt" -o "$WORK/v37f_s.txt" > "$WORK/v37f.log" 2>&1; r2=$?
+if [ -n "$i2" ] && [ "$i2" -ge 15 ] && [ "$r1" -eq 1 ] && grep -q 'attn_group' "$WORK/v37e.log" && [ "$r2" -eq 1 ] && grep -q 'kv_prefetch' "$WORK/v37f.log"; then
+  ok "V37d -kv_prefetch 0 keeps KV un-prefetched (idle ${i2}%); -attn_group 2 / -kv_prefetch -1 rejected"
+else
+  bad "V37d idle=${i2:-?}% (want >=15) rc=$r1/$r2"
+fi
+
+# V38: attention kernel floors (fidelity spec 6.3 item 2). The census fit of
+# the RPA decode kernel: t_layer = 15 us + sum over (sequence x kv head x
+# 4096-token block) of max(block bytes / BW, 0.6 us). Two knobs, both
+# charged only on the attention op so tier-1 GEMM cells are untouched:
+#   -attn_overhead N   cycles stalled on every unit at each attention op
+#                      boundary (the -op_overhead mechanism, ATTN-scoped)
+#   -kv_block_latency N minimum cycles per weight stream per -kv_block
+#                      tokens on a KV-stream QK^T job: the job cannot
+#                      complete before streams x blocks x N cycles have
+#                      elapsed since it started; the wait is ATTN memstall
+# V38a: 2-layer decode (v25d): -attn_overhead 5000 adds ~2 x 5000 on the
+# critical path (both cores stall in parallel, +-10% refresh band, V33);
+# a Matmul-only workload is untouched to the cycle.
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -fuse_vpu 1 -attn_overhead 5000 -i "$WORK/v25d.txt" -o "$WORK/v38a_s.txt" > "$WORK/v38a.log" 2>&1
+e0=$(cycles_of "$WORK/v33e_s.txt"); e1=$(cycles_of "$WORK/v38a_s.txt")
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -attn_overhead 5000 -i "$WORK/v33.txt" -o "$WORK/v38b_s.txt" > "$WORK/v38b.log" 2>&1
+g0=$(cycles_of "$WORK/v33a_s.txt"); g1=$(cycles_of "$WORK/v38b_s.txt")
+if [ -n "$e0" ] && [ -n "$e1" ] && [ $((e1 - e0)) -ge 9000 ] && [ $((e1 - e0)) -le 11000 ] && [ -n "$g0" ] && [ "$g0" = "$g1" ]; then
+  ok "V38a -attn_overhead 5000: decode 2 layers +$((e1 - e0)) cycles; Matmul-only unchanged ($g0)"
+else
+  bad "V38a decode $e0 -> $e1 delta=$((${e1:-0} - ${e0:-0})) (want 9000..11000); matmul $g0 -> $g1"
+fi
+# V38b: Transformer 1 512 8 4 1024 512 1 8 (nkv 4 -> 2 QK^T jobs per core,
+# 8 streams x 1 block of 4096): -kv_block_latency 20000 floors each job at
+# 160000 cycles, +~320000 on the critical path; -kv_block 256 (2 blocks)
+# doubles it; the floor is booked as ATTN memstall; prefill (no KV stream)
+# is untouched.
+printf 'Transformer 1 512 8 4 1024 512 1 8\n' > "$WORK/v38c.txt"
+printf 'Transformer 1 512 8 4 1024 512 0 1\n' > "$WORK/v38p.txt"
+F38="-c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 -fuse_attn 1 -fuse_vpu 1"
+"$BIN" $F38 -i "$WORK/v38c.txt" -o "$WORK/v38c0_s.txt" > "$WORK/v38c0.log" 2>&1
+"$BIN" $F38 -kv_block_latency 20000 -i "$WORK/v38c.txt" -o "$WORK/v38c1_s.txt" > "$WORK/v38c1.log" 2>&1
+"$BIN" $F38 -kv_block_latency 20000 -kv_block 256 -i "$WORK/v38c.txt" -o "$WORK/v38c2_s.txt" > "$WORK/v38c2.log" 2>&1
+"$BIN" $F38 -i "$WORK/v38p.txt" -o "$WORK/v38p0_s.txt" > "$WORK/v38p0.log" 2>&1
+"$BIN" $F38 -kv_block_latency 20000 -i "$WORK/v38p.txt" -o "$WORK/v38p1_s.txt" > "$WORK/v38p1.log" 2>&1
+h0=$(cycles_of "$WORK/v38c0_s.txt"); h1=$(cycles_of "$WORK/v38c1_s.txt"); h2=$(cycles_of "$WORK/v38c2_s.txt")
+p0=$(cycles_of "$WORK/v38p0_s.txt"); p1=$(cycles_of "$WORK/v38p1_s.txt")
+ms0=$(awk '$1=="ACCTC" && $2=="SYSTOLIC_ARRAY" && $3==0 && $4=="ATTN" {print $10}' "$WORK/v38c0_s.txt")
+ms1=$(awk '$1=="ACCTC" && $2=="SYSTOLIC_ARRAY" && $3==0 && $4=="ATTN" {print $10}' "$WORK/v38c1_s.txt")
+dd1=$((${h1:-0} - ${h0:-0})); dd2=$((${h2:-0} - ${h0:-0}))
+if [ -n "$h0" ] && [ -n "$h1" ] && [ "$dd1" -ge 288000 ] && [ "$dd1" -le 352000 ] && [ "$dd2" -ge 576000 ] && [ "$dd2" -le 704000 ] && \
+   [ $((${ms1:-0} - ${ms0:-0})) -ge 250000 ] && [ -n "$p0" ] && [ "$p0" = "$p1" ]; then
+  ok "V38b -kv_block_latency 20000: +$dd1 cycles (2 jobs x 8 streams x 1 block per core), -kv_block 256 -> +$dd2, ATTN memstall +$((ms1 - ms0)), prefill unchanged"
+else
+  bad "V38b deltas $dd1 / $dd2 (want ~320000 / ~640000), ATTN memstall ${ms0:-?} -> ${ms1:-?}, prefill $p0 -> $p1"
+fi
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -kv_block_latency -1 -i "$WORK/v33.txt" -o "$WORK/v38d_s.txt" > "$WORK/v38d.log" 2>&1; r3=$?
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -kv_block 0 -i "$WORK/v33.txt" -o "$WORK/v38e_s.txt" > "$WORK/v38e.log" 2>&1; r4=$?
+if [ "$r3" -eq 1 ] && grep -q 'kv_block_latency' "$WORK/v38d.log" && [ "$r4" -eq 1 ] && grep -q 'kv_block' "$WORK/v38e.log"; then
+  ok "V38c -kv_block_latency -1 / -kv_block 0 rejected"
+else
+  bad "V38c rc=$r3/$r4"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"

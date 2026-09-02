@@ -169,6 +169,10 @@ namespace SystolicArray {
     // (the executing state has its own copies; these must match it).
     const int sz_cfg;
     const bool ws_cfg;
+    // -kv_block_latency (global.h): streams x blocks x latency, set by the
+    // layer on KV-stream QK^T jobs; the state refuses to complete the job
+    // before this many cycles have elapsed since it started.
+    int64_t kv_floor_cycles = 0;
 
     SysArrayJob(int m, int k, int n, int sz, bool ws, int n_weight_streams = 1,
                 bool fused_out = false, bool act_resident = false);
@@ -179,9 +183,11 @@ namespace SystolicArray {
     // consumes to zero, and never more than sys_job_alloc_bytes reserves
     // (each tile's window term is >= floor(panel / bytes_per_tx)). OS only.
     [[nodiscard]] int64_t prefetchable_weight_beats() const override {
-      // kv_stream: a paged-attention kernel gathers its own KV blocks; XLA
-      // cannot stream them ahead of the kernel (spec S6).
-      if (ws_cfg || weight_tag == -1 || kv_stream) return 0;
+      // kv_stream: under -kv_prefetch 0 a paged gather is treated as a
+      // block XLA cannot stream ahead of (spec S6); by default the sweep is
+      // prefetchable, as the kernel's own DMA pipeline keeps the next block
+      // in flight while the current one computes (spec 6.3 item 2).
+      if (ws_cfg || weight_tag == -1 || (kv_stream && !kv_prefetch)) return 0;
       int cols = std::max(N / sz_cfg, 1);
       int64_t panel = (int64_t) weight_panel_bytes(K, N, sz_cfg, batched_weights) * n_weight_streams;
       return (int64_t) cols * (panel / bytes_per_tx);
@@ -226,6 +232,10 @@ public:
     bool weights_stay_resident = false;
     // Rows consumed under the resident tag (C5v2 window, -vmem_rows).
     int resident_rows_used = 0;
+    // -kv_block_latency: dispatch cycle of the running job and the cycles
+    // still to wait once its last tile is done (ATTN memstall meanwhile).
+    uint64_t job_start_cycle = 0;
+    int64_t floor_stall_left = 0;
 
     bool increment(const std::function<void(Job *)> &enqueue_job,
                    int &total_idle,

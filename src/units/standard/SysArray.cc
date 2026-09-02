@@ -22,6 +22,30 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
     op_stall_left--;
     return false;
   }
+  // Job completion, gated by -kv_block_latency: a KV-stream QK^T job models
+  // the RPA kernel's per-block DMA pipeline, whose grid steps cost ~0.6 us
+  // each even when the block is tiny; the job holds its last state (booked
+  // as memstall of its class) until streams x blocks x latency cycles have
+  // elapsed since dispatch, then completes.
+  auto finish_job = [&]() {
+    total_work += (uint64_t) sj->M * sj->K * sj->N;
+    if (is_idle_from_memory) UPDATE_IDLEMEM(false);
+    state_transfer(SystolicArray::idle, 0, 0, 0);
+    TO_IDLE_CLEANUP();
+  };
+  auto complete_job = [&]() {
+    int64_t elapsed = (int64_t) (gcycles - job_start_cycle);
+    if (sj->kv_floor_cycles > elapsed) {
+      floor_stall_left = sj->kv_floor_cycles - elapsed;
+      UPDATE_IDLEMEM(true);
+    } else {
+      finish_job();
+    }
+  };
+  if (floor_stall_left > 0) {
+    if (--floor_stall_left == 0) finish_job();
+    return state != SystolicArray::ExState::idle;
+  }
   enqueue_reads();
   enqueue_writes();
   if (process_stage()) {
@@ -62,10 +86,7 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
           int rd_cycles = sj->M * std::max(systolic_fpu_latency, batch_size);
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
-              // Job completed
-              total_work += (uint64_t) sj->M * sj->K * sj->N;
-              state_transfer(idle, 0, 0, 0);
-              TO_IDLE_CLEANUP();
+              complete_job();// Job completed (or held on its floor)
             } else {
               // Move to next row tile
               j->addr = j->addr_hold;
@@ -118,10 +139,7 @@ bool SystolicArray::SysArrayState::increment(const std::function<void(Job *)> &e
         case write:  // Write partial sums back to memory
           if (col_i == loop_cols_tiles) {
             if (row_i == loop_row_tiles) {
-              // Job completed
-              total_work += (uint64_t) sj->M * sj->K * sj->N;
-              state_transfer(SystolicArray::idle, 0, 0, 0);
-              TO_IDLE_CLEANUP();
+              complete_job();// Job completed (or held on its floor)
             } else {
               // Move to next row tile
               if (hold_reads) {
@@ -206,6 +224,8 @@ void SystolicArray::SysArrayState::init() {
   if (j->is_done) {
     std::cerr << "ERROR" << std::endl;
   }
+  job_start_cycle = gcycles;
+  floor_stall_left = 0;
   if (ws) {
     UPDATE_STATE(SystolicArray::prefetch);
     loop_cols_tiles = div_ru(sj->N, sz);

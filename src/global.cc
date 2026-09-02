@@ -29,6 +29,11 @@ int kv_bw_pct = 100;
 double kv_issue_rate = 0;
 double kv_budget_acc = 0;
 int data_overhead_cycles = 0;
+int attn_group = 1;
+int kv_prefetch = 1;
+int attn_overhead_cycles = 0;
+int kv_block_latency_cycles = 0;
+int kv_block_tokens = 4096;
 int64_t pf_outstanding_beats = 0;
 
 int total_jobs = 0;

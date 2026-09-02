@@ -299,7 +299,17 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           // is its own op) stalls before issuing any read (State.h).
           if (job->op_id == -1 || job->op_id != state->last_op_id) {
             state->op_boundaries++;
-            if (op_overhead_cycles > 0) state->op_stall_left = op_overhead_cycles;
+            // -attn_overhead: the attention kernel's fixed cost (census fit
+            // ~15 us per layer) on every unit entering the attention op;
+            // the larger of it and -op_overhead applies (global.h).
+            // Charged on the MXU side only: the softmax jobs enter the same
+            // op on the VPU between QK^T and AV, and a second charge there
+            // would put the kernel's one floor on the critical path twice.
+            int stall = op_overhead_cycles;
+            if (job->op_class == OP_ATTN && attn_overhead_cycles > stall &&
+                job->prefetch_rows() > 0)// a systolic-array job (Job.h)
+              stall = attn_overhead_cycles;
+            if (stall > 0) state->op_stall_left = stall;
           }
           state->last_op_id = job->op_id;
           enqueued_job = true;
@@ -421,6 +431,14 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
         if (!avail) continue;
         int n = (int) std::min<int64_t>(std::min<int64_t>(budget, *avail),
                                         pf_cap_beats - pf_outstanding_beats);
+        // -kv_bw_pct: a KV-stream job's weight sweep draws from the same
+        // chip-wide token bucket whether it is fetched on demand
+        // (State::enqueue_reads) or prefetched here (-kv_prefetch), so the
+        // knob stays a rate on the KV stream, not on the fetch path (V34a).
+        const bool kv_pf = ent.job->kv_stream && kv_bw_pct < 100 && avail == &ent.beats_left;
+        if (kv_pf) n = std::max(0, std::min(n, (int) kv_budget_acc));
+        if (n <= 0) continue;
+        if (kv_pf) kv_budget_acc -= n;
         // Same guard the demand paths apply (State::check_in_bounds): a walk
         // past the window is the DRAMSim3 R/W-aliasing livelock class.
         if (ent.next_addr + (uint64_t) n * bytes_per_tx >

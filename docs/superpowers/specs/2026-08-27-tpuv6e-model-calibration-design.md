@@ -460,6 +460,36 @@ residuals before being dismissed as noise.
   feeding the o projection); V35a pins the job count (44 on the V11 shape at
   batch 2), V35b the beat-exact attention traffic difference between 2 × 64
   and 1 × 128 tokens (2048 beats), V35c runs the pinned holdout shape.
+- **(added 2026-09-01; ADDRESSED same day, flags `-attn_group` `-kv_prefetch`
+  `-attn_overhead` `-kv_block_latency` `-kv_block`, tests V37a–d, V38a–c)
+  Decode attention: job structure and kernel floors.** Fidelity tier 2
+  (spec 2026-09-01 §6.3 item 2) put the sim 3.7× too fast at 512×32 and 2×
+  too slow at 8192×8 against vLLM's `ragged_paged_attention` kernel. Root
+  cause on the slow side: one QK^T and one AV job per QUERY head, so after
+  the first head of a GQA group streamed the K/V panel its siblings ran
+  their 256-cycle tile passes against the resident copy with nothing
+  streaming (1-core 8192×8 layer: DRAM idle 36% incl. prefetch; MHA, which
+  has no siblings, 1%), plus the S6 rule that `kv_stream` jobs are never
+  prefetched. `-attn_group 1` (default, pinned) builds one QK^T and one AV
+  job per KV HEAD with M = group × query rows and the same batch weight
+  streams — bytes identical (V37a CMDs invariant), 4× fewer array passes —
+  and `-kv_prefetch 1` (default, pinned) makes the KV sweep eligible for
+  `-dbuf` prefetch, as the kernel's own DMA pipeline keeps the next block in
+  flight. One core, 1-layer 4096×8: idle 30% → 14%, and the attention phase
+  is then exactly DRAM-bound (passes + memstall = KV bytes at the plate);
+  two cores: the layer runs at 112% of the plate bound, the legacy build at
+  122% (V37b/c). MQA with fewer KV heads than cores keeps the per-head split
+  so no MXU idles (V28). On the fast side the kernel has fixed costs the
+  census fit as t_layer = 15 µs + Σ over (sequence × kv head × 4096-token
+  block) of max(block bytes / BW, 0.6 µs): `-attn_overhead N` stalls the
+  systolic arrays N cycles at each attention op boundary (the `-op_overhead`
+  mechanism scoped to `OP_ATTN`, MXU side only — the softmax enters the same
+  op on the VPU and a second charge there would double it; V38a pins
+  2 × 5000 on a 2-layer decode with a Matmul-only workload untouched), and
+  `-kv_block_latency N` floors each KV-stream QK^T job at streams ×
+  ceil(S / `-kv_block`) × N cycles since dispatch, booked as ATTN memstall
+  (V38b: +2 × 8 × 20000 per core within 3%, doubles at `-kv_block 256`,
+  prefill untouched). Fit values from the census: 26250 and 1050 cycles.
 - **(added 2026-09-01; ADDRESSED same day, flag `-fuse_vpu`, tests V30a–d)
   VPU ops fused into GEMM prologues/epilogues.** The silicon kernel census
   puts RMSNorm/RoPE/SiLU/residual at 0.1% of device time: XLA fuses them, so

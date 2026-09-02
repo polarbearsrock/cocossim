@@ -43,7 +43,12 @@ Arch* StandardParser::make_arch() {
               {"-act_share", &act_share},
               {"-op_overhead", &op_overhead_cycles},
               {"-kv_bw_pct", &kv_bw_pct},
-              {"-data_overhead", &data_overhead_cycles}},
+              {"-data_overhead", &data_overhead_cycles},
+              {"-attn_group", &attn_group},
+              {"-kv_prefetch", &kv_prefetch},
+              {"-attn_overhead", &attn_overhead_cycles},
+              {"-kv_block_latency", &kv_block_latency_cycles},
+              {"-kv_block", &kv_block_tokens}},
              "-c            number of cores\n"
              "-sa_sz        size of the systolic array\n"
              "-vu_sz        size of the vector unit\n"
@@ -67,7 +72,12 @@ Arch* StandardParser::make_arch() {
              "-act_share    GEMM activation panel staged once into shared VMEM across cores: 1 on (default), 0 per-MXU reads\n"
              "-op_overhead  cycles stalled per op boundary per core (default 0)\n"
              "-kv_bw_pct    decode KV-cache stream issue rate, percent of -dram_enq (default 100)\n"
-             "-data_overhead fixed per-run cycles for unmodeled layout/copy kernels (default 0)");
+             "-data_overhead fixed per-run cycles for unmodeled layout/copy kernels (default 0)\n"
+             "-attn_group   decode attention jobs per KV head (1, default) or per query head (0)\n"
+             "-kv_prefetch  KV-stream sweep eligible for -dbuf prefetch: 1 on (default), 0 off\n"
+             "-attn_overhead cycles stalled per attention op boundary per unit (default 0)\n"
+             "-kv_block_latency minimum cycles per KV stream per -kv_block tokens on a QK^T job (default 0)\n"
+             "-kv_block     KV block size in tokens for -kv_block_latency (default 4096)");
   if (cores < 1) {
     std::cerr << "Error: -c (number of cores) must be >= 1, got " << cores << std::endl;
     exit(1);
@@ -158,6 +168,26 @@ Arch* StandardParser::make_arch() {
   }
   if (data_overhead_cycles < 0) {
     std::cerr << "Error: -data_overhead must be >= 0, got " << data_overhead_cycles << std::endl;
+    exit(1);
+  }
+  if (attn_group != 0 && attn_group != 1) {
+    std::cerr << "Error: -attn_group must be 0 or 1, got " << attn_group << std::endl;
+    exit(1);
+  }
+  if (kv_prefetch != 0 && kv_prefetch != 1) {
+    std::cerr << "Error: -kv_prefetch must be 0 or 1, got " << kv_prefetch << std::endl;
+    exit(1);
+  }
+  if (attn_overhead_cycles < 0) {
+    std::cerr << "Error: -attn_overhead must be >= 0, got " << attn_overhead_cycles << std::endl;
+    exit(1);
+  }
+  if (kv_block_latency_cycles < 0) {
+    std::cerr << "Error: -kv_block_latency must be >= 0, got " << kv_block_latency_cycles << std::endl;
+    exit(1);
+  }
+  if (kv_block_tokens < 1) {
+    std::cerr << "Error: -kv_block must be >= 1, got " << kv_block_tokens << std::endl;
     exit(1);
   }
   if (ws == 1 && dbuf_lookahead > 0) {

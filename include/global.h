@@ -95,6 +95,27 @@ extern double kv_budget_acc;
 // has no jobs for (kernel census: 4-7% of device time); the clock advances
 // by this much before the first dispatch, nothing else moves.
 extern int data_overhead_cycles;
+// Decode attention structure (fidelity spec 6.3 item 2, 2026-09-01).
+// -attn_group 1: one QK^T and one AV job per KV HEAD (M = group x query
+// rows), the way the RPA kernel handles a GQA group in one pass per K/V
+// tile; 0: the legacy one-job-per-query-head build, whose sibling jobs ran
+// array passes against the resident panel with the DRAM idle.
+extern int attn_group;
+// -kv_prefetch 1: the KV-stream weight sweep is eligible for -dbuf prefetch
+// (the kernel's own DMA pipeline streams the next block during the current
+// one); 0: the S6 exclusion (a paged gather XLA cannot stream ahead of).
+extern int kv_prefetch;
+// Attention kernel floors from the census fit of vLLM's ragged_paged_attention
+// decode kernel: t_layer = 15 us + sum over (sequence x kv head x 4096-token
+// block) of max(block bytes / BW, 0.6 us).
+// -attn_overhead: cycles every unit stalls at an ATTENTION op boundary (the
+// -op_overhead mechanism scoped to OP_ATTN; the larger of the two applies).
+extern int attn_overhead_cycles;
+// -kv_block_latency: minimum cycles per weight stream per -kv_block tokens on
+// a KV-stream QK^T job; the job cannot complete before streams x blocks x
+// this many cycles have elapsed since its start (booked as ATTN memstall).
+extern int kv_block_latency_cycles;
+extern int kv_block_tokens;
 
 const int embedding_dim= 768;
 const int n_heads = 6;

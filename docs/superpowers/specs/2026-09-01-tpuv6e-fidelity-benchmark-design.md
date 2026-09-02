@@ -385,6 +385,13 @@ they are indicative, the totals are exact):
    268 MB; 8192×8: 146 µs). The sim is 3.7× too fast at 512×32 and 2×
    too slow at 8192×8: its per-head KV jobs are demand-fetched (KV panels
    are excluded from `-dbuf` prefetch by design) and stream at ≈ 0.9 TB/s.
+   **Addressed 2026-09-01 (late):** root cause was the one-job-per-QUERY-
+   head build (a GQA group's sibling jobs ran tile passes against the
+   resident panel with the DRAM idle: 36% of a 1-core 8192×8 layer) plus
+   the prefetch exclusion; `-attn_group 1` + `-kv_prefetch 1` (pinned)
+   make the attention phase DRAM-bound (calibration spec §6.7, V37), and
+   `-attn_overhead` / `-kv_block_latency` carry the kernel's floors (V38).
+   Re-fit against the tier-2 device times follows.
 3. *Prefill attention.* Sim 1.6–2.2× too slow at S ≥ 2048 (item A1
    above); at 4096×1 it is the entire +21%.
 4. *Mid-M GEMM overlap* (tier-1 G2): only visible in tier 2 where a

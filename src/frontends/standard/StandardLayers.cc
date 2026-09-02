@@ -531,12 +531,35 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
     };
     const int attn_op = next_op_id++;// scores + softmax + AV: one kernel
     const bool kvs = (mode == 1);     // decode: paged KV-cache gather (spec S6)
-    // Sequence-major: scores[s * nh + h] / av[s * nh + h]. Each sequence's
-    // groups get fresh tags (its own K/V panels).
+    // -attn_group (spec 6.3 item 2): the RPA kernel multiplies a GQA group's
+    // query heads against each K/V tile in ONE pass, so one QK^T and one AV
+    // job per KV head with M = group_sz x M_att rows (same panel, same
+    // batch streams, same bytes). The legacy per-query-head build (0) made
+    // the group's siblings run their tile passes against the resident panel
+    // with nothing streaming -- a 36% DRAM-idle layer at 8192x8 on one core.
+    // With fewer KV heads than cores (MQA on 2 MXUs) a per-kv-head job would
+    // idle a core, so the group is split evenly across cores (V28: pin by
+    // head, documented 2x refetch of the shared panel) -- the query heads of
+    // a job then are nh / n_cores when that divides, else one per job.
+    int heads_per_job = 1;
+    if (attn_group) {
+      if (nkv >= a_config.n_cores) heads_per_job = group_sz;
+      else if (nh % a_config.n_cores == 0 && (nh / a_config.n_cores) <= group_sz &&
+               group_sz % (nh / a_config.n_cores) == 0)
+        heads_per_job = nh / a_config.n_cores;
+    }
+    const int n_attn_jobs = nh / heads_per_job;
+    const int M_job = M_att * heads_per_job;
+    // -kv_block_latency: the kernel's per-block DMA floor, charged on the
+    // QK^T job of each group: streams x ceil(S / kv_block) x latency.
+    const int64_t kv_floor = kvs ? (int64_t) kv_streams * div_ru(S, kv_block_tokens) * kv_block_latency_cycles : 0;
+    // Sequence-major: scores[s * n_attn_jobs + i] / av[s * n_attn_jobs + i].
+    // Each sequence's groups get fresh tags (its own K/V panels).
     for (int s = 0; s < n_seq; ++s)
-    for (int h = 0; h < nh; ++h) {
+    for (int i = 0; i < n_attn_jobs; ++i) {
+      const int h = i * heads_per_job;// first query head of this job
       if (h % group_sz == 0) next_weight_tag++;
-      auto *sc = new SystolicArray::SysArrayJob(M_att, head_dim, S, a_config.sa_sz_allo, a_config.ws,
+      auto *sc = new SystolicArray::SysArrayJob(M_job, head_dim, S, a_config.sa_sz_allo, a_config.ws,
                                                 kv_streams, /*fused_out=*/fa);
       sc->weight_tag = next_weight_tag;
       sc->weights_fit_vmem = weightSliceFitsVmem(head_dim, S, a_config.n_cores, kv_streams);
@@ -544,13 +567,15 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       sc->op_class = OP_ATTN;
       sc->op_id = attn_op;
       sc->kv_stream = kvs;
+      sc->kv_floor_cycles = kv_floor;
       scores.push_back(sc);
     }
     next_weight_tag++;
     for (int s = 0; s < n_seq; ++s)
-    for (int h = 0; h < nh; ++h) {
+    for (int i = 0; i < n_attn_jobs; ++i) {
+      const int h = i * heads_per_job;
       if (h % group_sz == 0) next_weight_tag++;
-      auto *avj = new SystolicArray::SysArrayJob(M_att, S, head_dim, a_config.sa_sz_allo, a_config.ws,
+      auto *avj = new SystolicArray::SysArrayJob(M_job, S, head_dim, a_config.sa_sz_allo, a_config.ws,
                                                  kv_streams, /*fused_out=*/false, /*act_resident=*/fa);
       avj->weight_tag = next_weight_tag;
       avj->weights_fit_vmem = weightSliceFitsVmem(S, head_dim, a_config.n_cores, kv_streams);
@@ -568,11 +593,12 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       connectJobLists(rope, scores);
     }
 
-    // Per-head attention wiring: softmax chunk k covers rows
-    // [k*sm_rows, (k+1)*sm_rows) of the M*nh row space and head h owns rows
-    // [h*M, (h+1)*M) -- an edge exists iff the ranges overlap. All-to-all
-    // here was a modeling artifact that drained both MXUs at every softmax
-    // stage (V26); the hardware dependency is per-head.
+    // Per-job attention wiring: softmax chunk k covers rows
+    // [k*sm_rows, (k+1)*sm_rows) of the M*nh row space and attention job i
+    // owns rows [i*M_job, (i+1)*M_job) -- an edge exists iff the ranges
+    // overlap. All-to-all here was a modeling artifact that drained both
+    // MXUs at every softmax stage (V26); the hardware dependency is per
+    // head (per group under -attn_group).
     for (int s = 0; s < n_seq; ++s) {
       int sm_rows = 0;
       JobList sm = makeSoftmaxJobs(S, M_att * nh, fa, &sm_rows);
@@ -581,9 +607,9 @@ JobPair Transformer(const ArchConfig &a_config, const LayerConfig &l_config) {
       for (int k = 0; k < (int) sm.size(); ++k) {
         int lo = k * sm_rows;
         int hi = std::min((k + 1) * sm_rows, M_att * nh) - 1;// inclusive last row
-        for (int h = lo / M_att; h <= hi / M_att; ++h) {
-          scores[s * nh + h]->add_child(sm[k]);
-          sm[k]->add_child(av[s * nh + h]);
+        for (int i = lo / M_job; i <= hi / M_job; ++i) {
+          scores[s * n_attn_jobs + i]->add_child(sm[k]);
+          sm[k]->add_child(av[s * n_attn_jobs + i]);
         }
       }
     }

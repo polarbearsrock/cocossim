@@ -31,4 +31,6 @@ exec ./perf_model \
   -dbuf_tile 1 \
   -vmem_rows 0 \
   -act_share 1 \
+  -attn_group 1 \
+  -kv_prefetch 1 \
   -i "$LAYERS" -o "$OUT" "$@"
