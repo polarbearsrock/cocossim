@@ -353,10 +353,15 @@ def infer_model_dim(units):
     if votes:
         return votes.most_common(1)[0][0]
     for u in units:
-        if "JaxLinear" in u.key:
+        if "JaxLinear" in u.key or "ParallelLinear" in u.key:
             for w in gemm_weights(u):
                 votes[min(w)] += u.time
     return votes.most_common(1)[0][0] if votes else None
+
+
+MODEL_PROG = ("jit_run_model_impl", "jit_step_fun_impl")          # JAX-native, torch-wrapper
+LOGITS_PROG = ("jit_run_compute_logits", "jit_compute_logits_func")
+GEMM_KEYS = ("JaxLinear", "JaxEinsum", "run_compute_logits", "ParallelLinear", "compute_logits_func")
 
 
 def gemm_weights(u):
@@ -374,9 +379,15 @@ def gemm_weights(u):
 
 
 def classify_gemm(u, D):
-    """Simulator op class of a gemm-bucket unit (see module docstring)."""
+    """Simulator op class of a gemm-bucket unit (see module docstring).
+    Two vLLM model paths are recognised: the native JAX models (Qwen3:
+    JaxLinear / JaxEinsum provenance, program jit_run_model_impl) and the
+    PyTorch-wrapper path (Mistral-7B ran through it, 2026-09-01: program
+    jit_step_fun_impl, provenance VllmQKVParallelLinear /
+    MergedColumnParallelLinear (gate+up) / VllmRowParallelLinear (o or down,
+    told apart by the weight shape) / compute_logits_func)."""
     k = u.key
-    if "run_compute_logits" in k or "TD,DV->TV" in k:
+    if "run_compute_logits" in k or "TD,DV->TV" in k or "compute_logits_func" in k:
         return "head", "head"
     if "TD,DNH->TNH" in k:
         return "qkv", "q"
@@ -384,6 +395,17 @@ def classify_gemm(u, D):
         return "qkv", "kv"
     if "TNH,NHD->TD" in k:
         return "o", "o"
+    if "QKVParallelLinear" in k:
+        return "qkv", "qkv_merged"
+    if "MergedColumnParallelLinear" in k:
+        return "gate_up", "gate_up"
+    if "RowParallelLinear" in k:
+        ws = gemm_weights(u)
+        if any(w[0] == D and w[1] == D for w in ws):
+            return "o", "o"
+        if any(w[1] == D and w[0] != D for w in ws):
+            return "down", "down"
+        return "gemm_other", "row_parallel_unsplit"
     if "JaxLinear" in k or "mn,np->mp" in k:
         ws = gemm_weights(u)
         ins = [w for w in ws if w[0] == D and w[1] != D]
@@ -425,7 +447,7 @@ def program_runs(units, programs):
     for u in units:
         if u.occ > 0:
             occ[u.program][u.occ] += u.time
-        if u.expr and ("JaxLinear" in u.key or "JaxEinsum" in u.key or "run_compute_logits" in u.key):
+        if u.expr and any(g in u.key for g in GEMM_KEYS):
             M = rows_of(u.expr)
             if M:
                 rows[u.program][M] += u.time
@@ -446,7 +468,7 @@ def census(point, xplanes, steady=False):
     D = infer_model_dim(units)
     runs = program_runs(units, programs)
 
-    model_progs = [p for p in programs if p.startswith("jit_run_model_impl")]
+    model_progs = [p for p in programs if p.startswith(MODEL_PROG)]
     n_steps = max((runs[p][0] for p in model_progs), default=0)
     idle_time = programs.get("IDLE", {}).get("time", 0.0)
     total_time = _m(root)["time"]
@@ -469,9 +491,9 @@ def census(point, xplanes, steady=False):
         if mode == "prefill":
             return 1.0
         if step_prog is not None:
-            if name.startswith("jit_run_model_impl"):
+            if name.startswith(MODEL_PROG):
                 return 1.0 / r if name == step_prog else 0.0
-            if name.startswith("jit_run_compute_logits"):
+            if name.startswith(LOGITS_PROG):
                 return 1.0 / r if (M == batch and r >= n_steps) else 0.0
         return (1.0 / r) if (r and r >= n_steps) else 0.0
 

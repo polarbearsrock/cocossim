@@ -13,6 +13,8 @@
 #   vpu_<class>_busy/memstall (VPU cores), span_<class>_us (OPSPAN first..last)
 # Usage: sim_tier2.sh OUT_DIR [extra perf_model flags...]
 # SIM_JOBS parallel runs (default 32); resumable (skips runs with a stats file).
+# MODELS="qwen mistral" and VARIANTS="full l1 l2 lh" (defaults) restrict the
+# grid, e.g. VARIANTS="l1 l2 lh" MODELS=qwen for a cheap calibration sweep.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
@@ -20,6 +22,7 @@ OUT="${1:?OUT_DIR}"; shift || true
 EXTRA=("$@")
 mkdir -p "$OUT"
 JOBS="${SIM_JOBS:-32}"
+export MODELS="${MODELS:-qwen mistral}" VARIANTS="${VARIANTS:-full l1 l2 lh}"
 
 python3 - "$OUT" "$HERE/../holdout" <<'EOF'
 import sys, os
@@ -29,13 +32,18 @@ from dh_offline import GRIDS
 # model -> (n_layers, d_model, n_heads, n_kv_heads, d_ff, vocab)
 MODELS = {"qwen": (36, 4096, 32, 8, 12288, 151936),
           "mistral": (32, 4096, 32, 8, 14336, 32768)}
+want_models = os.environ["MODELS"].split(); want_variants = os.environ["VARIANTS"].split()
 runs = []
 for model, (L, d, nh, nkv, dff, vocab) in MODELS.items():
+    if model not in want_models:
+        continue
     for (mode, seq, batch) in GRIDS[model]["points"]:
         m = 0 if mode == "prefill" else 1
         base = f"{d} {nh} {nkv} {dff} {seq} {m} {batch}"
         rows = seq * batch if mode == "prefill" else batch
         for variant, layers, head in (("full", L, 1), ("l1", 1, 0), ("l2", 2, 0), ("lh", 1, 1)):
+            if variant not in want_variants:
+                continue
             name = f"{model}_{mode}_{seq}x{batch}_{variant}"
             line = f"Transformer {layers} {base}" + (f" {vocab}" if head else "")
             runs.append((rows * layers, name, line))
