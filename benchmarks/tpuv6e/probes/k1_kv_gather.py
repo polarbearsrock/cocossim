@@ -23,9 +23,12 @@ let XLA collapse a GEMM to one dot product and report 100 PFLOP/s):
                    kernel (dma_reduce_kernel below) that walks the SAME
                    block table with the SAME DMA pattern as paged_attention
                    (grid (B, nkv), one pltpu.make_async_copy per page per
-                   head for K and for V, double-buffered per compute block)
-                   and only sums the pages -- no attention math. Shuffled
-                   table.
+                   head for K and for V, double-buffered per compute block,
+                   and -- like the library's prefetch_next_block -- the last
+                   block of each (b, h) prefetches block 0 of the next (b, h),
+                   so the DMA stream is continuous over the whole grid with
+                   one cold start per call) and only sums the pages -- no
+                   attention math. Shuffled table.
   dma_seq          the same DMA kernel with the sequential table.
   gather_only      the raw gather in XLA: read the same KV bytes through the
                    shuffled page table with jnp.take and reduce ALL elements
@@ -36,14 +39,23 @@ let XLA collapse a GEMM to one dot product and report 100 PFLOP/s):
   contiguous_read  the same bytes read in their natural order (no gather)
                    and reduced the same way (XLA).
   So t_shuffled/t_dense and t_seq/t_dense are the kernel-level derates;
-  t_dma_gather/t_contig is the pure-gather derate (DMA page stream through
-  a random table vs one contiguous XLA stream), t_dma_gather/t_dma_seq its
-  page-order-randomness component and t_dma_seq/t_contig the cost of
-  4 KiB-page DMA issue itself. t_gather/t_contig and t_gather/t_gather_seq
-  are the XLA-gather equivalents; XLA typically MATERIALIZES the gathered
-  copy inside the loop (a [nkv, total_pages, page, hd] temp written and
-  re-read, 3x the charged traffic) -- the compiled-HLO inspection below
-  measures that (body_extra_mb, materialized=1) and the derate line says so.
+  t_dma_gather/t_contig is the pure-gather derate (a continuous DMA page
+  stream through a random table vs one contiguous XLA stream),
+  t_dma_gather/t_dma_seq its page-order-randomness component and
+  t_dma_seq/t_contig the cost of the 4 KiB-page DMA stream itself (page
+  issue + per-(b,h) grid-step cost, the same stream paged_attention runs on;
+  NOT a pipeline drain -- the kernel prefetches across grid steps).
+  t_gather/t_contig and t_gather/t_gather_seq are the XLA-gather
+  equivalents; XLA typically MATERIALIZES the gathered copy inside the loop
+  (a [nkv, total_pages, page, hd] temp written and re-read, 3x the charged
+  traffic) -- the compiled-HLO inspection below measures that
+  (body_extra_mb, materialized=1) and the derate line says so.
+  Residency: a ratio is only printed when numerator and denominator have the
+  same vmem_resident flag (both HBM-streaming, or both flagged); a mixed pair
+  is reported as n/a with both flags, and a both-resident ratio is tagged
+  [both VMEM-resident] -- XLA may keep a loop-invariant K/V in VMEM at the
+  three cells that fit while the Pallas kernels stream it from HBM (pl.ANY),
+  and those two readings are not the same quantity.
 
 Kernel API (resolved from the installed source, jax 0.11.1; --probe-api
 prints it live): paged_attention(q[B, nh, hd], k_pages[nkv, total_pages,
@@ -107,9 +119,11 @@ Nothing here falls back silently: a kernel failure prints the exception
 and aborts unless --skip-failed-variants is given, in which case the
 variant is skipped with the traceback printed and no row written.
 --interpret runs the full run path on CPU with every Pallas kernel in TPU
-interpret mode (simulated HBM/VMEM/DMA/semaphores): all checks execute,
-timings are meaningless and NO CSV row is written. Use it on a small cell
-(--cells 512x8) before a session.
+interpret mode (simulated HBM/VMEM/DMA/semaphores, InterpretParams(
+detect_races=True, dma_execution_mode="eager") so a prefetch that lands in a
+buffer slot still being read is reported as RACE DETECTED and aborts): all
+checks execute, timings are meaningless and NO CSV row is written. Use it on
+a small cell (--cells 512x8) before a session.
 
 Usage: k1_kv_gather.py [--dry-run] [--probe-api] [--interpret]
                        [--out k1_kv_gather.csv] [--trace DIR] [--page-size 16]
@@ -226,42 +240,67 @@ def call_paged_attention(q, k_pages, v_pages, lengths, page_indices, *, pages_pe
 
 
 def dma_reduce_kernel(page_indices_ref, k_hbm_ref, v_hbm_ref, o_ref, k_buf, v_buf, k_sems, v_sems, *,
-                      pages_per_sequence, pages_per_compute_block):
-    """The paged_attention DMA stream without the math. Grid (b, h): stream every
-    page of sequence b for kv head h through the block table -- one async copy
-    per page for K and one for V, pages_per_compute_block of each in flight,
-    double-buffered (block i+1 is started before block i is consumed), exactly
-    like paged_flash_attention_kernel -- and accumulate the page sum into
-    o_ref[page_size, hd] (f32), so every element read reaches the output."""
+                      batch_size, num_kv_heads, pages_per_sequence, pages_per_compute_block):
+    """The paged_attention DMA stream without the math.
+
+    Grid (b, h), sequential ("arbitrary", "arbitrary"; grid step g = b*nkv + h):
+    stream every page of sequence b for kv head h through the block table --
+    one async copy per page for K and one for V, pages_per_compute_block of
+    each in flight, double-buffered -- and accumulate the page sum into
+    o_ref[page_size, hd] (f32), so every element read reaches the output.
+
+    The pipeline never drains inside a call: like paged_flash_attention_kernel
+    (compute_block_indices advance_h/advance_b + prefetch_next_block), the
+    LAST block of every grid step prefetches block 0 of the NEXT (b, h) --
+    (b, h+1), or (b+1, 0) -- so a block is always in flight across the grid
+    step boundary; only block 0 of grid step 0 is issued cold, and only the
+    final block of the final step has no successor. The library keeps the
+    double-buffer slot in a scalar-prefetch ref (buffer_index_ref); here every
+    sequence has the same block count, so the slot is the parity of the global
+    block counter G = g*nblk + blk, which the prefetching step and the
+    consuming step compute identically."""
     from jax import lax
     import jax.numpy as jnp
     from jax.experimental import pallas as pl
     from jax.experimental.pallas import tpu as pltpu
     b, h = pl.program_id(0), pl.program_id(1)
     nblk = pages_per_sequence // pages_per_compute_block
+    step = b * num_kv_heads + h                      # sequential grid step index
+    total_blocks = batch_size * num_kv_heads * nblk  # over the whole grid
 
-    def copies(blk, slot):
-        base = b * pages_per_sequence + blk * pages_per_compute_block
+    def copies(bb, hh, blk, slot):
+        """Descriptors for block blk of sequence bb, kv head hh into buffer slot."""
+        base = bb * pages_per_sequence + blk * pages_per_compute_block
         out = []
         for i in range(pages_per_compute_block):
             page = page_indices_ref[base + i]
-            out.append(pltpu.make_async_copy(k_hbm_ref.at[h].at[page], k_buf.at[slot].at[i], k_sems.at[slot]))
-            out.append(pltpu.make_async_copy(v_hbm_ref.at[h].at[page], v_buf.at[slot].at[i], v_sems.at[slot]))
+            out.append(pltpu.make_async_copy(k_hbm_ref.at[hh].at[page], k_buf.at[slot].at[i], k_sems.at[slot]))
+            out.append(pltpu.make_async_copy(v_hbm_ref.at[hh].at[page], v_buf.at[slot].at[i], v_sems.at[slot]))
         return out
 
-    for c in copies(0, 0):
-        c.start()
+    @pl.when(step == 0)
+    def _cold_start():                               # the only block not prefetched by its predecessor
+        for c in copies(b, h, 0, 0):
+            c.start()
+
     o_ref[...] = jnp.zeros_like(o_ref)
 
     def body(blk, carry):
-        slot = lax.rem(blk, 2)
+        g = step * nblk + blk                        # global block counter
+        slot = lax.rem(g, 2)
+        last = blk + 1 == nblk
+        # successor block: (b, h, blk+1), else block 0 of (b, h+1), else block 0 of (b+1, 0)
+        adv_h = h + 1 < num_kv_heads
+        nb = jnp.where(last, jnp.where(adv_h, b, b + 1), b)
+        nh = jnp.where(last, jnp.where(adv_h, h + 1, 0), h)
+        nblk_i = jnp.where(last, 0, blk + 1)
 
-        @pl.when(blk + 1 < nblk)
-        def _prefetch_next():
-            for c in copies(blk + 1, 1 - slot):
+        @pl.when(g + 1 < total_blocks)
+        def _prefetch_next():                        # into the slot consumed one block ago
+            for c in copies(nb, nh, nblk_i, 1 - slot):
                 c.start()
 
-        for c in copies(blk, slot):
+        for c in copies(b, h, blk, slot):
             c.wait()
         acc = o_ref[...]
         for i in range(pages_per_compute_block):
@@ -286,13 +325,15 @@ def call_dma_reduce(k_pages, v_pages, page_indices, *, pages_per_compute_block, 
         raise ValueError(f"pages_per_sequence={pps} % pages_per_compute_block={pages_per_compute_block} != 0")
     if page_indices.dtype != jnp.int32:
         raise ValueError(f"page_indices must be int32, got {page_indices.dtype}")
+    nblk = pps // pages_per_compute_block
     _log_once((tag, k_pages.shape, page_indices.shape, pages_per_compute_block),
               f"[kernel call] {tag}: dma_reduce(k_pages{tuple(k_pages.shape)}:{k_pages.dtype}, "
               f"v_pages{tuple(v_pages.shape)}:{v_pages.dtype}, page_indices{tuple(page_indices.shape)}:"
               f"{page_indices.dtype}, pages_per_compute_block={pages_per_compute_block}) -> "
-              f"[{b},{nkv},{page_size},{hd}] f32; grid ({b},{nkv}), {pps // pages_per_compute_block} blocks/seq, "
-              f"{2 * pages_per_compute_block} DMAs of {page_size * hd * jnp.dtype(k_pages.dtype).itemsize} B per block")
-    kern = functools.partial(dma_reduce_kernel, pages_per_sequence=pps,
+              f"[{b},{nkv},{page_size},{hd}] f32; grid ({b},{nkv}) sequential, {nblk} blocks/seq, "
+              f"{2 * pages_per_compute_block} DMAs of {page_size * hd * jnp.dtype(k_pages.dtype).itemsize} B per block, "
+              f"{b * nkv * nblk} blocks/call streamed continuously (cross-grid-step prefetch; 1 cold start per call)")
+    kern = functools.partial(dma_reduce_kernel, batch_size=b, num_kv_heads=nkv, pages_per_sequence=pps,
                              pages_per_compute_block=pages_per_compute_block)
     return pl.pallas_call(
         kern,
@@ -639,8 +680,11 @@ def probe_api(args):
     if not unscaled:
         raise SystemExit("kernel source no longer matches the unscaled-logits assumption; re-check paged_step")
     print("dma_reduce (this file): pl.pallas_call, PrefetchScalarGridSpec(num_scalar_prefetch=1 [flattened block "
-          "table]), in_specs K/V in pl.ANY (HBM), grid (B, nkv), scratch VMEM (2, ppb, page, hd) x2 + DMA sems (2,) x2, "
-          "out [B, nkv, page, hd] f32 page sums; per block ppb K + ppb V pltpu.make_async_copy, double-buffered")
+          "table]), in_specs K/V in pl.ANY (HBM), grid (B, nkv) sequential, scratch VMEM (2, ppb, page, hd) x2 + DMA "
+          "sems (2,) x2, out [B, nkv, page, hd] f32 page sums; per block ppb K + ppb V pltpu.make_async_copy, "
+          "double-buffered; the last block of each (b, h) prefetches block 0 of the next (b, h) (slot = parity of the "
+          "global block counter), so the stream is continuous across grid steps with one cold start per call -- "
+          "mirroring paged_flash_attention_kernel's prefetch_next_block/compute_block_indices")
     s, b = 512, 8
     pps, ppb = layout_params(s, args.page_size, args.pages_per_block)
     rng = np.random.default_rng(DATA_SEED)
@@ -715,9 +759,10 @@ def main():
 
     if args.interpret:
         from jax.experimental.pallas import tpu as pltpu
-        interpret_ctx = pltpu.force_tpu_interpret_mode(pltpu.InterpretParams())
-        print("INTERPRET MODE: Pallas kernels run in TPU interpret mode on this backend; timings are meaningless "
-              "and no CSV row will be written", flush=True)
+        interpret_ctx = pltpu.force_tpu_interpret_mode(
+            pltpu.InterpretParams(detect_races=True, dma_execution_mode="eager"))
+        print("INTERPRET MODE: Pallas kernels run in TPU interpret mode on this backend (detect_races=True, "
+              "dma_execution_mode=eager); timings are meaningless and no CSV row will be written", flush=True)
     else:
         interpret_ctx = contextlib.nullcontext()
 
@@ -725,7 +770,7 @@ def main():
     with interpret_ctx:
         run(args, cells, variants, np, jax, jnp, time_op, csv_append, already_done)
     if not args.interpret:
-        print("\n=== K1 derates from", args.out, "(hoisted rows excluded) ===")
+        print("\n=== K1 derates from", args.out, "(hoisted rows excluded; mixed-residency ratios n/a) ===")
         summarize(args.out)
 
 
@@ -777,7 +822,26 @@ def run(args, cells, variants, np, jax, jnp, time_op, csv_append, already_done):
                     else:
                         raise SystemExit(msg)
 
-        times, vals, caveats = {}, {}, {}
+        if args.interpret and any(v.startswith("dma_") for v in todo):
+            # one un-chained call per table under the race detector (eager DMAs):
+            # the cross-grid-step prefetch must never land in a slot still being read
+            from jax._src.pallas.mosaic.interpret import interpret_pallas_call as _ipc
+            for v in ("dma_gather", "dma_seq"):
+                if v not in todo:
+                    continue
+                kp, vp, _ = variant_args(v, d)
+                pi = d["pi_shuf"] if v == "dma_gather" else d["pi_seq"]
+                out = jax.jit(functools.partial(call_dma_reduce, pages_per_compute_block=ppb, tag=f"{v}_race"))(kp, vp, pi)
+                got = float(jnp.sum(out))
+                want = float(jnp.sum(d["k"].astype(jnp.float32)) + jnp.sum(d["v"].astype(jnp.float32)))
+                raced = bool(_ipc.races is not None and _ipc.races.races_found)
+                rel = abs(got - want) / (abs(want) + 1e-6)
+                print(f"dma race check {v:10s} S={s} B={b}: races_found={raced} sum={got:.6g} expect={want:.6g} "
+                      f"rel={rel:.2e} -> {'OK' if (not raced and rel < 1e-3) else 'FAIL'}", flush=True)
+                if raced or rel >= 1e-3:
+                    raise SystemExit(f"K1 DMA RACE/SUM CHECK FAIL: {v} (see RACE DETECTED lines above)")
+
+        times, vals, caveats, resident = {}, {}, {}, {}
         for v in todo:
             fn_args = variant_args(v, d)
             by, fl = budget(v, s, b)
@@ -819,6 +883,7 @@ def run(args, cells, variants, np, jax, jnp, time_op, csv_append, already_done):
             csv_append(args.out, row)
             if not hoisted:
                 times[v] = per_step
+                resident[v] = vmem
                 if mat:
                     caveats[v] = extra / 1e6
             print(f"{v:16s} S={s:5d} B={b:3d}  {per_step * 1e6:9.2f} us/step  {gbs:7.0f} GB/s  {tflops:6.2f} TF/s"
@@ -851,27 +916,42 @@ def run(args, cells, variants, np, jax, jnp, time_op, csv_append, already_done):
                     rel = abs(vals[v] - expect) / (abs(expect) + 1e-6)
                     print(f"dma check {v:10s} S={s} B={b}: chain={vals[v]:.6g} expect={expect:.6g} rel={rel:.2e} -> "
                           f"{'OK' if rel < 1e-3 else 'MISMATCH (the DMA kernel did not read every page)'}", flush=True)
-        report_derates(s, b, times, caveats)
+        report_derates(s, b, times, caveats, resident)
         del d, progs
 
 
-def report_derates(s, b, t, caveats=None):
+DERATES = (
+    ("t_seq/t_dense", "paged_seq", "dense"),
+    ("t_shuffled/t_dense", "paged_shuffled", "dense"),
+    ("t_shuffled/t_seq", "paged_shuffled", "paged_seq"),
+    ("t_dma_gather/t_contig", "dma_gather", "contiguous_read"),
+    ("t_dma_gather/t_dma_seq", "dma_gather", "dma_seq"),
+    ("t_dma_seq/t_contig", "dma_seq", "contiguous_read"),
+    ("t_gather/t_contig", "gather_only", "contiguous_read"),
+    ("t_gather/t_gather_seq", "gather_only", "gather_seq"),
+)
+
+
+def report_derates(s, b, t, caveats=None, resident=None):
+    """One line of ratios for a cell. t: {variant: per-step seconds} (hoisted rows
+    already excluded); caveats: {variant: materialized MB/step}; resident:
+    {variant: vmem_resident flag}. A ratio whose two rows differ in residency is
+    a VMEM-bandwidth reading over an HBM-streaming one (or vice versa), not a
+    derate: it is printed as n/a with both flags instead of a number."""
     caveats = caveats or {}
+    resident = resident or {}
     parts = []
-
-    def ratio(label, num, den):
-        if num in t and den in t:
-            note = "".join(f" [{x} materialized +{caveats[x]:.0f} MB/step]" for x in (num, den) if x in caveats)
-            parts.append(f"{label}={t[num] / t[den]:.3f}{note}")
-
-    ratio("t_seq/t_dense", "paged_seq", "dense")
-    ratio("t_shuffled/t_dense", "paged_shuffled", "dense")
-    ratio("t_shuffled/t_seq", "paged_shuffled", "paged_seq")
-    ratio("t_dma_gather/t_contig", "dma_gather", "contiguous_read")
-    ratio("t_dma_gather/t_dma_seq", "dma_gather", "dma_seq")
-    ratio("t_dma_seq/t_contig", "dma_seq", "contiguous_read")
-    ratio("t_gather/t_contig", "gather_only", "contiguous_read")
-    ratio("t_gather/t_gather_seq", "gather_only", "gather_seq")
+    for label, num, den in DERATES:
+        if num not in t or den not in t:
+            continue
+        note = "".join(f" [{x} materialized +{caveats[x]:.0f} MB/step]" for x in (num, den) if x in caveats)
+        rn, rd = resident.get(num, 0), resident.get(den, 0)
+        if rn != rd:
+            parts.append(f"{label}=n/a [residency mismatch: {num} vmem_resident={rn}, {den} vmem_resident={rd}]{note}")
+            continue
+        if rn:
+            note = " [both VMEM-resident]" + note
+        parts.append(f"{label}={t[num] / t[den]:.3f}{note}")
     if parts:
         print(f"derates S={s} B={b}: " + "  ".join(parts), flush=True)
 
@@ -880,17 +960,18 @@ def summarize(path):
     import csv
     if not os.path.exists(path):
         return
-    cells, caveats = {}, {}
+    cells, caveats, resident = {}, {}, {}
     with open(path) as f:
         for r in csv.DictReader(f):
             if r.get("hoisted", "0") == "1":
                 continue
             key = (int(r["S"]), int(r["B"]))
             cells.setdefault(key, {})[r["variant"]] = float(r["per_step_us"])
+            resident.setdefault(key, {})[r["variant"]] = int(r.get("vmem_resident", "0") or 0)
             if r.get("materialized", "0") == "1":
                 caveats.setdefault(key, {})[r["variant"]] = float(r.get("body_extra_mb", 0) or 0)
     for (s, b), t in sorted(cells.items()):
-        report_derates(s, b, t, caveats.get((s, b)))
+        report_derates(s, b, t, caveats.get((s, b)), resident.get((s, b)))
 
 
 if __name__ == "__main__":
