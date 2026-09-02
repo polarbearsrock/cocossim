@@ -12,7 +12,12 @@ census → teardown, ~$3.
 - `probes/` — raw-JAX microbenchmarks (session 2): C1 array rows, C3
   saturation TFLOPS, C4 stream bandwidth, C5 VMEM cliff, B1 elementwise
   roofline + overhead intercept. All support `--dry-run` locally and are
-  resumable (points already in the CSV are skipped).
+  resumable (points already in the CSV are skipped). Tier-1 chained probes
+  (spec 3.1): `g_sweep.py` (G1-G3), `e1_chained.py` (E1),
+  `a1_attention.py` (A1: Pallas `flash_attention` prefill, MHA nh=nkv=32,
+  and Pallas `paged_attention` decode, GQA 32/8, page 16, sequential pages;
+  `--probe-api` prints the resolved kernel signatures and a CPU shape smoke
+  test; `--fallback-xla` is the only fallback and is off by default).
 - `holdout/dh_offline.py` — fixed-shape Qwen3-8B points via vLLM offline
   mode; maps 1:1 onto simulator `Transformer` runs. `--trace-dir` captures an
   xplane per point.
