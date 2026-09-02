@@ -1,0 +1,10 @@
+mode,seq,batch,rep,n_out,wall_s,model,trace,trace_steps,note
+prefill,512,1,0,1,0.01816686999995909,mistralai/Mistral-7B-v0.3,traces/prefill_512_1,1,
+prefill,2048,1,0,1,0.06552315800001907,mistralai/Mistral-7B-v0.3,traces/prefill_2048_1,1,
+prefill,512,8,0,1,0.13486992599996483,mistralai/Mistral-7B-v0.3,traces/prefill_512_8,1,
+prefill,2048,8,0,1,0.5498809140000276,mistralai/Mistral-7B-v0.3,traces/prefill_2048_8,1,
+decode,512,8,0,64,0.9966248509999787,mistralai/Mistral-7B-v0.3,traces/decode_512_8,8,wall includes ctx prefill + n_out steps
+decode,2048,32,0,64,3.527639233000059,mistralai/Mistral-7B-v0.3,traces/decode_2048_32,8,wall includes ctx prefill + n_out steps
+decode,8192,8,0,64,3.9756309299999657,mistralai/Mistral-7B-v0.3,traces/decode_8192_8,8,wall includes ctx prefill + n_out steps
+decode,2048,32,1,64,3.5315707919999113,mistralai/Mistral-7B-v0.3,,0,wall includes ctx prefill + n_out steps
+decode,2048,32,2,64,3.5370973519999325,mistralai/Mistral-7B-v0.3,,0,wall includes ctx prefill + n_out steps

@@ -1,0 +1,1073 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1788324461.604842 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_32/plugins/profile/2026_09_02_04_40_46
+I0000 00:00:1788324461.604881 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324461.604883 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324461.604901 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324461.630469 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324461.630496 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 25.612958ms for device: TPU v6 Lite
+I0000 00:00:1788324461.649405 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 44.54615ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_32/plugins/profile/2026_09_02_04_40_46
+I0000 00:00:1788324461.655546 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_32/plugins/profile/2026_09_02_04_40_46
+I0000 00:00:1788324461.655563 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324461.655566 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324461.655592 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324461.668063 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324461.668085 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 12.520057ms for device: TPU v6 Lite
+I0000 00:00:1788324463.761122 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 2.105644546s session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_32/plugins/profile/2026_09_02_04_40_46
+I0000 00:00:1788324464.245306 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_8/plugins/profile/2026_09_02_04_40_32
+I0000 00:00:1788324464.245348 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324464.245352 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324464.245379 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324464.251544 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324464.251558 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 6.206734ms for device: TPU v6 Lite
+I0000 00:00:1788324464.262162 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 16.861221ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_8/plugins/profile/2026_09_02_04_40_32
+I0000 00:00:1788324464.266862 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_8/plugins/profile/2026_09_02_04_40_32
+I0000 00:00:1788324464.266883 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324464.266886 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324464.266909 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324464.272525 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324464.272537 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 5.6511ms for device: TPU v6 Lite
+I0000 00:00:1788324465.118423 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 851.636843ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_2048_8/plugins/profile/2026_09_02_04_40_32
+I0000 00:00:1788324465.333482 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_4096_16/plugins/profile/2026_09_02_04_41_00
+I0000 00:00:1788324465.333527 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324465.333530 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324465.333558 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324465.343809 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324465.343824 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 10.294736ms for device: TPU v6 Lite
+I0000 00:00:1788324465.357148 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 23.698947ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_4096_16/plugins/profile/2026_09_02_04_41_00
+I0000 00:00:1788324465.362225 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_4096_16/plugins/profile/2026_09_02_04_41_00
+I0000 00:00:1788324465.362239 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324465.362242 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324465.362264 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324465.371657 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324465.371674 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 9.432381ms for device: TPU v6 Lite
+I0000 00:00:1788324467.139250 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 1.777178182s session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_4096_16/plugins/profile/2026_09_02_04_41_00
+I0000 00:00:1788324467.620078 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_1/plugins/profile/2026_09_02_04_40_14
+I0000 00:00:1788324467.620161 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324467.620165 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324467.620198 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324467.626129 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324467.626144 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 5.980272ms for device: TPU v6 Lite
+I0000 00:00:1788324467.637009 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 16.957951ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_1/plugins/profile/2026_09_02_04_40_14
+I0000 00:00:1788324467.644509 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_1/plugins/profile/2026_09_02_04_40_14
+I0000 00:00:1788324467.644533 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324467.644536 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324467.644561 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324467.650147 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324467.650163 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 5.627ms for device: TPU v6 Lite
+I0000 00:00:1788324468.717716 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 1.073350453s session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_1/plugins/profile/2026_09_02_04_40_14
+I0000 00:00:1788324469.044586 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_32/plugins/profile/2026_09_02_04_40_26
+I0000 00:00:1788324469.044645 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324469.044649 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324469.044682 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324469.057189 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324469.057210 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 12.561877ms for device: TPU v6 Lite
+I0000 00:00:1788324469.073621 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 29.138466ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_32/plugins/profile/2026_09_02_04_40_26
+I0000 00:00:1788324469.079695 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_32/plugins/profile/2026_09_02_04_40_26
+I0000 00:00:1788324469.079725 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324469.079740 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324469.079769 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324469.091125 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324469.091158 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 11.419341ms for device: TPU v6 Lite
+I0000 00:00:1788324471.329487 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 2.249967861s session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_32/plugins/profile/2026_09_02_04_40_26
+I0000 00:00:1788324471.855704 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_8/plugins/profile/2026_09_02_04_40_19
+I0000 00:00:1788324471.855741 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324471.855746 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324471.855773 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324471.861612 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324471.861625 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 5.880111ms for device: TPU v6 Lite
+I0000 00:00:1788324471.872387 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 16.783379ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_8/plugins/profile/2026_09_02_04_40_19
+I0000 00:00:1788324471.878923 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_8/plugins/profile/2026_09_02_04_40_19
+I0000 00:00:1788324471.878948 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324471.878952 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324471.878973 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324471.884436 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324471.884451 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 5.500419ms for device: TPU v6 Lite
+I0000 00:00:1788324472.841612 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 962.82952ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_512_8/plugins/profile/2026_09_02_04_40_19
+I0000 00:00:1788324473.086427 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_8192_8/plugins/profile/2026_09_02_04_41_15
+I0000 00:00:1788324473.086483 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324473.086487 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324473.086528 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324473.095264 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324473.095282 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 8.796467ms for device: TPU v6 Lite
+I0000 00:00:1788324473.107979 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 21.604486ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_8192_8/plugins/profile/2026_09_02_04_41_15
+I0000 00:00:1788324473.114456 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_8192_8/plugins/profile/2026_09_02_04_41_15
+I0000 00:00:1788324473.114482 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324473.114486 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324473.114510 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324473.122601 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324473.122620 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 8.134854ms for device: TPU v6 Lite
+I0000 00:00:1788324474.680557 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 1.566483671s session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/decode_8192_8/plugins/profile/2026_09_02_04_41_15
+I0000 00:00:1788324475.112654 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_1024_1/plugins/profile/2026_09_02_04_39_57
+I0000 00:00:1788324475.112712 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324475.112716 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324475.112748 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324475.116047 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324475.116063 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.347818ms for device: TPU v6 Lite
+I0000 00:00:1788324475.125111 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 12.525608ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_1024_1/plugins/profile/2026_09_02_04_39_57
+I0000 00:00:1788324475.131364 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_1024_1/plugins/profile/2026_09_02_04_39_57
+I0000 00:00:1788324475.131384 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324475.131387 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324475.131415 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324475.134393 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324475.134401 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.014656ms for device: TPU v6 Lite
+I0000 00:00:1788324475.503465 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 372.215128ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_1024_1/plugins/profile/2026_09_02_04_39_57
+I0000 00:00:1788324475.631038 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_1/plugins/profile/2026_09_02_04_39_59
+I0000 00:00:1788324475.631096 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324475.631101 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324475.631134 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324475.634535 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324475.634547 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.447398ms for device: TPU v6 Lite
+I0000 00:00:1788324475.642807 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 11.787803ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_1/plugins/profile/2026_09_02_04_39_59
+I0000 00:00:1788324475.648769 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_1/plugins/profile/2026_09_02_04_39_59
+I0000 00:00:1788324475.648786 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324475.648790 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324475.648812 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324475.651742 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324475.651751 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 2.962696ms for device: TPU v6 Lite
+I0000 00:00:1788324476.030940 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 382.292792ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_1/plugins/profile/2026_09_02_04_39_59
+I0000 00:00:1788324476.140385 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_4/plugins/profile/2026_09_02_04_40_07
+I0000 00:00:1788324476.140448 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324476.140452 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324476.140487 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324476.146004 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324476.146039 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 5.587799ms for device: TPU v6 Lite
+I0000 00:00:1788324476.156155 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 15.876575ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_4/plugins/profile/2026_09_02_04_40_07
+I0000 00:00:1788324476.167417 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_4/plugins/profile/2026_09_02_04_40_07
+I0000 00:00:1788324476.167438 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324476.167442 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324476.167470 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324476.171255 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324476.171267 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.82558ms for device: TPU v6 Lite
+I0000 00:00:1788324476.692238 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 525.051269ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_4/plugins/profile/2026_09_02_04_40_07
+I0000 00:00:1788324476.863987 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_8/plugins/profile/2026_09_02_04_40_10
+I0000 00:00:1788324476.864026 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324476.864030 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324476.864057 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324476.867455 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324476.867465 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.435538ms for device: TPU v6 Lite
+I0000 00:00:1788324476.875643 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 11.704883ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_8/plugins/profile/2026_09_02_04_40_10
+I0000 00:00:1788324476.883056 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_8/plugins/profile/2026_09_02_04_40_10
+I0000 00:00:1788324476.883080 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324476.883084 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324476.883108 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324476.886121 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324476.886133 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.049066ms for device: TPU v6 Lite
+I0000 00:00:1788324477.267474 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 384.546085ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_2048_8/plugins/profile/2026_09_02_04_40_10
+I0000 00:00:1788324477.389523 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_256_1/plugins/profile/2026_09_02_04_39_53
+I0000 00:00:1788324477.389565 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324477.389569 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324477.389597 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324477.392989 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324477.393003 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.434188ms for device: TPU v6 Lite
+I0000 00:00:1788324477.401399 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 11.920564ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_256_1/plugins/profile/2026_09_02_04_39_53
+I0000 00:00:1788324477.408544 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_256_1/plugins/profile/2026_09_02_04_39_53
+I0000 00:00:1788324477.408568 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324477.408572 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324477.408596 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324477.411591 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324477.411602 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.030367ms for device: TPU v6 Lite
+I0000 00:00:1788324477.809402 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 400.974913ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_256_1/plugins/profile/2026_09_02_04_39_53
+I0000 00:00:1788324477.957742 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_4096_1/plugins/profile/2026_09_02_04_40_01
+I0000 00:00:1788324477.957781 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324477.957786 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324477.957815 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324477.961171 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324477.961182 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.396549ms for device: TPU v6 Lite
+I0000 00:00:1788324477.969452 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 11.802114ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_4096_1/plugins/profile/2026_09_02_04_40_01
+I0000 00:00:1788324477.976487 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_4096_1/plugins/profile/2026_09_02_04_40_01
+I0000 00:00:1788324477.976507 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324477.976511 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324477.976538 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324477.979555 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324477.979563 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.053057ms for device: TPU v6 Lite
+I0000 00:00:1788324478.510250 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 533.934277ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_4096_1/plugins/profile/2026_09_02_04_40_01
+I0000 00:00:1788324478.620386 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_1/plugins/profile/2026_09_02_04_39_55
+I0000 00:00:1788324478.620450 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324478.620454 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324478.620490 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324478.624407 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324478.624424 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.970741ms for device: TPU v6 Lite
+I0000 00:00:1788324478.634344 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 13.964426ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_1/plugins/profile/2026_09_02_04_39_55
+I0000 00:00:1788324478.640517 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_1/plugins/profile/2026_09_02_04_39_55
+I0000 00:00:1788324478.640541 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324478.640545 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324478.640568 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324478.643334 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324478.643341 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 2.796445ms for device: TPU v6 Lite
+I0000 00:00:1788324479.036922 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 396.519509ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_1/plugins/profile/2026_09_02_04_39_55
+I0000 00:00:1788324479.147972 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_4/plugins/profile/2026_09_02_04_40_03
+I0000 00:00:1788324479.148035 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324479.148039 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324479.148063 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324479.151559 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324479.151573 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.53499ms for device: TPU v6 Lite
+I0000 00:00:1788324479.159925 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 11.980265ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_4/plugins/profile/2026_09_02_04_40_03
+I0000 00:00:1788324479.166266 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {group_by:program:2;use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_4/plugins/profile/2026_09_02_04_40_03
+I0000 00:00:1788324479.166284 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324479.166287 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324479.166306 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324479.169251 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324479.169259 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 2.972075ms for device: TPU v6 Lite
+I0000 00:00:1788324479.598101 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 431.999699ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_4/plugins/profile/2026_09_02_04_40_03
+I0000 00:00:1788324479.729514 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: framework_op_stats with options: {use_saved_result:1:0;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_8/plugins/profile/2026_09_02_04_40_05
+I0000 00:00:1788324479.729552 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: framework_op_stats
+I0000 00:00:1788324479.729556 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324479.729589 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324479.732931 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324479.732943 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.387668ms for device: TPU v6 Lite
+I0000 00:00:1788324479.741541 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool framework_op_stats: 12.087315ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_8/plugins/profile/2026_09_02_04_40_05
+I0000 00:00:1788324479.748940 4060330 xplane_to_tools_data_with_profile_processor.cc:189] serving tool: op_profile with options: {use_saved_result:1:0;group_by:program:2;} using ProfileProcessor session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_8/plugins/profile/2026_09_02_04_40_05
+I0000 00:00:1788324479.748967 4060330 xplane_to_tools_data_with_profile_processor.cc:235] Using local processing for tool: op_profile
+I0000 00:00:1788324479.748971 4060330 multi_xplanes_to_op_stats.cc:120] ConvertMultiXSpaceToCombinedOpStatsWithCache: Started
+I0000 00:00:1788324479.748996 4060330 multi_xplanes_to_op_stats.cc:130] ConvertMultiXSpaceToCombinedOpStatsWithCache: Cache hit, reading binary proto
+I0000 00:00:1788324479.751991 4060330 multi_xplanes_to_op_stats.cc:135] ConvertMultiXSpaceToCombinedOpStatsWithCache: Finished reading cache file.
+I0000 00:00:1788324479.752002 4060330 multi_xplanes_to_op_stats.cc:153] ConvertMultiXSpaceToCombinedOpStatsWithCache: Overall Finished in 3.031306ms for device: TPU v6 Lite
+I0000 00:00:1788324480.169565 4060330 xplane_to_tools_data_with_profile_processor.cc:240] Total time for tool op_profile: 420.789499ms session_id: /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/traces/prefill_512_8/plugins/profile/2026_09_02_04_40_05
+
+=== decode_2048_32  [per-step (--steady)]
+device total 1969.613 ms  idle 1.407 ms (0.07%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.231, MXU util 0.492
+join: 5840 op_profile units = 1969.613 ms (residual/synthetic 1.521 ms); framework_op_stats 1969.518 ms, matched by name 1968.024 ms, 97 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total   1813.159 ms   runs    8   per-run   226.645 ms   M=8192  [not in the step]
+  jit_run_model_impl(13093829241820036316)                 total     60.099 ms   runs    4   per-run    15.025 ms   M=16  [not in the step]
+  jit_run_model_impl(17170378518277036547)                 total     55.979 ms   runs    3   per-run    18.660 ms   M=32  [THE decode step program]
+  jit_run_model_impl(1781287550495973491)                  total     21.893 ms   runs    1   per-run    21.893 ms   M=256  [not in the step]
+  jit_run_compute_logits(3049682476373639203)              total      7.482 ms   runs    8   per-run     0.935 ms   M=32
+  jit_run_compute_logits(3204947090059167771)              total      4.077 ms   runs    4   per-run     1.019 ms   M=8  [not in the step]
+  jit_run_compute_logits(4256273703137603586)              total      3.367 ms   runs    4   per-run     0.842 ms   M=16  [not in the step]
+  IDLE                                                     total      1.407 ms   (0.07% of device time)
+  jit__substitute_placeholder_token(10609398805060076984)  total      0.384 ms   runs    3   per-run     0.128 ms   M=-
+  jit_sample(1722645291623532514)                          total      0.381 ms   runs    8   per-run     0.048 ms   M=-
+  jit__substitute_placeholder_token(4710070312948687076)   total      0.238 ms   runs    2   per-run     0.119 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(16325154681700980874)  total      0.229 ms   runs    2   per-run     0.114 ms   M=-  [not in the step]
+  jit_convert_element_type(14582398955329602726)           total      0.196 ms   runs    8   per-run     0.025 ms   M=-
+  jit__select_from_array_fn(15618320743662053630)          total      0.177 ms   runs    4   per-run     0.044 ms   M=-
+  jit__select_from_array_fn(12893667032393604982)          total      0.088 ms   runs    2   per-run     0.044 ms   M=-  [not in the step]
+  jit__select_from_array_fn(16409755008008296748)          total      0.088 ms   runs    2   per-run     0.044 ms   M=-  [not in the step]
+  jit_sample(11829861875147787113)                         total      0.082 ms   runs    4   per-run     0.021 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.057 ms   runs    4   per-run     0.014 ms   M=-
+  jit_convert_element_type(9886321184166089047)            total      0.041 ms   runs    4   per-run     0.010 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.036 ms   runs    4   per-run     0.009 ms   M=-
+  jit_split(12207423547872802170)                          total      0.023 ms   runs    4   per-run     0.006 ms   M=-
+  jit__substitute_placeholder_token(692990213588618890)    total      0.023 ms   runs    1   per-run     0.023 ms   M=-  [not in the step]
+  jit_split(13035715677043979638)                          total      0.015 ms   runs    3   per-run     0.005 ms   M=-
+  jit_split(16359886446927444749)                          total      0.012 ms   runs    2   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(15919439604652695095)                          total      0.012 ms   runs    2   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(16522703678939474019)                          total      0.012 ms   runs    2   per-run     0.006 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(17389081909521807369)  total      0.011 ms   runs    3   per-run     0.004 ms   M=-
+  jit_split(1576350259495070281)                           total      0.010 ms   runs    2   per-run     0.005 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(14240522654187898593)  total      0.007 ms   runs    2   per-run     0.004 ms   M=-  [not in the step]
+  jit__select_from_array_fn(8571713984566690794)           total      0.006 ms   runs    3   per-run     0.002 ms   M=-
+  jit_split(16271447644202801294)                          total      0.005 ms   runs    1   per-run     0.005 ms   M=-  [not in the step]
+  jit__select_from_array_fn(16151939702352742386)          total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(2061675857155259959)   total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(4258242409777110910)   total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__select_from_array_fn(1440210512174044069)           total      0.003 ms   runs    2   per-run     0.002 ms   M=-  [not in the step]
+  jit__select_from_array_fn(6497555900647111715)           total      0.003 ms   runs    2   per-run     0.001 ms   M=-  [not in the step]
+step: 19.910 ms device time per forward/step [decode: model program with 32<=M<=2x32 that ran most (n_steps=3) + its LM head/glue]; whole trace 1969.613 ms incl. idle 1.407 ms
+note: one-off prefill program jit_run_model_impl(13093829241820036316) covers 16 x 4 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+note: one-off prefill program jit_run_model_impl(17170378518277036547) covers 32 x 3 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+note: one-off prefill program jit_run_model_impl(1781287550495973491) covers 256 x 1 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               12.597   63.0%  0.041  0.650     656  1.00
+attention           5.963   29.8%    n/a    n/a     765  0.02
+norm                0.053    0.3%  0.002  0.389     454  1.00
+elementwise         0.135    0.7%    n/a    n/a      66  0.45
+data                1.086    5.4%    n/a    n/a    2101  0.11
+idle                0.088    0.4%    n/a    n/a       0  0.00
+other               0.075    0.4%  0.000  0.019     578  1.00
+  qkv               1.127    5.6%  0.054  0.033     324  1.00
+  o                 1.099    5.5%  0.037  0.677     108  1.00
+  gate_up           3.184   15.9%  0.038  0.695     108  1.00
+  mlp_fused         6.254   31.3%  0.039  0.708     108  1.00
+  head              0.934    4.7%  0.045  0.820       8  1.00
+    q               0.951    4.8%  0.043  0.027     108  1.00
+    kv              0.175    0.9%  0.117  0.064     216  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 2% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      9.438 ms  47.2%  [gemm       ] MXU 0.039 HBM 0.704  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      5.669 ms  28.3%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      1.099 ms   5.5%  [gemm       ] MXU 0.037 HBM 0.677  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.951 ms   4.8%  [gemm       ] MXU 0.043 HBM 0.027  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.934 ms   4.7%  [gemm       ] MXU 0.045 HBM 0.820  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.212 ms   1.1%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.187 ms   0.9%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_16_32-bkv_1024_51
+      0.175 ms   0.9%  [gemm       ] MXU 0.117 HBM 0.064  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.088 ms   0.4%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.076 ms   0.4%  [elementwise] MXU   n/a HBM   n/a  jit(_substitute_placeholder_token)/gather
+      0.060 ms   0.3%  [attention  ] MXU 0.000 HBM 0.159  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.051 ms   0.3%  [norm       ] MXU 0.002 HBM 0.405  jit(sample)/reduce
+      0.049 ms   0.2%  [data       ] MXU   n/a HBM   n/a  copy-done
+      0.044 ms   0.2%  [data       ] MXU 0.000 HBM 0.710  jit(convert_element_type)/convert_element_type
+      0.041 ms   0.2%  [attention  ] MXU 0.000 HBM 0.142  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+
+=== decode_2048_8  [per-step (--steady)]
+device total 576.663 ms  idle 1.165 ms (0.20%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.293, MXU util 0.421
+join: 2848 op_profile units = 576.663 ms (residual/synthetic 1.729 ms); framework_op_stats 576.625 ms, matched by name 574.923 ms, 21 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total    446.900 ms   runs    2   per-run   223.450 ms   M=8192  [not in the step]
+  jit_run_model_impl(13093829241820036316)                 total    116.288 ms   runs    8   per-run    14.536 ms   M=16  [THE decode step program]
+  jit_run_compute_logits(3204947090059167771)              total     11.819 ms   runs   10   per-run     1.182 ms   M=8
+  IDLE                                                     total      1.165 ms   (0.20% of device time)
+  jit__substitute_placeholder_token(16325154681700980874)  total      0.114 ms   runs    1   per-run     0.114 ms   M=-  [not in the step]
+  jit_sample(2798622342388047655)                          total      0.109 ms   runs   10   per-run     0.011 ms   M=-
+  jit__select_from_array_fn(16409755008008296748)          total      0.088 ms   runs    2   per-run     0.044 ms   M=-  [not in the step]
+  jit_convert_element_type(8273830540134977030)            total      0.080 ms   runs   10   per-run     0.008 ms   M=-
+  jit_split(16359886446927444749)                          total      0.045 ms   runs    8   per-run     0.006 ms   M=-
+  jit__substitute_placeholder_token(4258242409777110910)   total      0.030 ms   runs    8   per-run     0.004 ms   M=-
+  jit__select_from_array_fn(6497555900647111715)           total      0.012 ms   runs    8   per-run     0.002 ms   M=-
+  jit_split(16522703678939474019)                          total      0.012 ms   runs    2   per-run     0.006 ms   M=-  [not in the step]
+step: 15.748 ms device time per forward/step [decode: model program with 8<=M<=2x8 that ran most (n_steps=8) + its LM head/glue]; whole trace 576.663 ms incl. idle 1.165 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               12.440   78.4%  0.020  0.657    1738  1.00
+attention           2.321   14.6%    n/a    n/a    2040  0.04
+norm                0.009    0.1%  0.001  0.315    1178  1.00
+elementwise         0.005    0.0%  0.000  0.009      96  0.88
+data                0.905    5.7%    n/a    n/a    5380  0.04
+idle                0.117    0.7%    n/a    n/a       0  0.00
+other               0.067    0.4%  0.000  0.010    1496  1.00
+  qkv               1.059    6.7%  0.029  0.027     864  1.00
+  o                 1.054    6.6%  0.019  0.703     288  1.00
+  gate_up           3.041   19.2%  0.020  0.728     288  1.00
+  mlp_fused         6.105   38.5%  0.020  0.725     288  1.00
+  head              1.181    7.4%  0.009  0.645      10  1.00
+    q               0.907    5.7%  0.023  0.026     288  1.00
+    kv              0.153    1.0%  0.067  0.037     576  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 4% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      9.146 ms  57.7%  [gemm       ] MXU 0.020 HBM 0.726  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      1.993 ms  12.6%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      1.181 ms   7.4%  [gemm       ] MXU 0.009 HBM 0.645  jit(run_compute_logits)/TD,DV->TV/dot_general
+      1.054 ms   6.6%  [gemm       ] MXU 0.019 HBM 0.703  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.907 ms   5.7%  [gemm       ] MXU 0.023 HBM 0.026  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.234 ms   1.5%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_8_16-bkv_1024_512
+      0.213 ms   1.3%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.153 ms   1.0%  [gemm       ] MXU 0.067 HBM 0.037  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.117 ms   0.7%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.048 ms   0.3%  [attention  ] MXU 0.000 HBM 0.097  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.028 ms   0.2%  [attention  ] MXU 0.000 HBM 0.102  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.019 ms   0.1%  [data       ] MXU 0.001 HBM 0.004  jit(run_model_impl)/convert_element_type
+      0.017 ms   0.1%  [attention  ] MXU 0.000 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.014 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.49
+      0.011 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.21
+
+=== decode_4096_16  [per-step (--steady)]
+device total 2152.346 ms  idle 1.394 ms (0.06%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.211, MXU util 0.449
+join: 4385 op_profile units = 2152.346 ms (residual/synthetic 1.664 ms); framework_op_stats 2152.296 ms, matched by name 2150.658 ms, 95 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total   1993.078 ms   runs    8   per-run   249.135 ms   M=8192  [not in the step]
+  jit_run_model_impl(13093829241820036316)                 total    118.730 ms   runs    7   per-run    16.961 ms   M=16  [THE decode step program]
+  jit_run_model_impl(1799100770950880333)                  total     22.376 ms   runs    1   per-run    22.376 ms   M=64  [not in the step]
+  jit_run_compute_logits(3204947090059167771)              total      7.761 ms   runs    8   per-run     0.970 ms   M=8  [not in the step]
+  jit_run_compute_logits(4256273703137603586)              total      7.284 ms   runs    8   per-run     0.911 ms   M=16
+  IDLE                                                     total      1.394 ms   (0.06% of device time)
+  jit__substitute_placeholder_token(16325154681700980874)  total      0.458 ms   runs    4   per-run     0.114 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(4710070312948687076)   total      0.357 ms   runs    3   per-run     0.119 ms   M=-  [not in the step]
+  jit__select_from_array_fn(12893667032393604982)          total      0.177 ms   runs    4   per-run     0.044 ms   M=-  [not in the step]
+  jit__select_from_array_fn(16409755008008296748)          total      0.176 ms   runs    4   per-run     0.044 ms   M=-  [not in the step]
+  jit_sample(11829861875147787113)                         total      0.172 ms   runs    8   per-run     0.021 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.097 ms   runs    8   per-run     0.012 ms   M=-
+  jit_convert_element_type(9886321184166089047)            total      0.084 ms   runs    8   per-run     0.011 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.069 ms   runs    8   per-run     0.009 ms   M=-
+  jit_split(15919439604652695095)                          total      0.024 ms   runs    4   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(16522703678939474019)                          total      0.023 ms   runs    4   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(16359886446927444749)                          total      0.023 ms   runs    4   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(1576350259495070281)                           total      0.015 ms   runs    3   per-run     0.005 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(14240522654187898593)  total      0.015 ms   runs    4   per-run     0.004 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(4258242409777110910)   total      0.011 ms   runs    3   per-run     0.004 ms   M=-  [not in the step]
+  jit__select_from_array_fn(6497555900647111715)           total      0.006 ms   runs    4   per-run     0.002 ms   M=-  [not in the step]
+  jit_split(5053173068838984369)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit__select_from_array_fn(1440210512174044069)           total      0.005 ms   runs    3   per-run     0.002 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(12307506359868849297)  total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__select_from_array_fn(7379817005585780829)           total      0.002 ms   runs    1   per-run     0.002 ms   M=-  [not in the step]
+step: 17.925 ms device time per forward/step [decode: model program with 16<=M<=2x16 that ran most (n_steps=7) + its LM head/glue]; whole trace 2152.346 ms incl. idle 1.394 ms
+note: one-off prefill program jit_run_model_impl(13093829241820036316) covers 16 x 7 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+note: one-off prefill program jit_run_model_impl(1799100770950880333) covers 64 x 1 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               11.749   65.2%  0.022  0.696    1520  1.00
+attention           5.204   28.9%    n/a    n/a    1785  0.02
+norm                0.024    0.1%  0.001  0.365    1038  1.00
+elementwise         0.001    0.0%  0.000  0.000       7  1.00
+data                0.885    4.9%    n/a    n/a    4679  0.07
+idle                0.087    0.5%    n/a    n/a       0  0.00
+other               0.062    0.3%  0.000  0.006    1274  1.00
+  qkv               1.053    5.8%  0.029  0.027     756  1.00
+  o                 1.020    5.7%  0.020  0.726     252  1.00
+  gate_up           2.924   16.2%  0.021  0.757     252  1.00
+  mlp_fused         5.842   32.4%  0.021  0.758     252  1.00
+  head              0.910    5.1%  0.023  0.838       8  1.00
+    q               0.902    5.0%  0.023  0.026     252  1.00
+    kv              0.151    0.8%  0.068  0.037     504  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 2% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      8.766 ms  48.7%  [gemm       ] MXU 0.021 HBM 0.757  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      4.923 ms  27.3%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      1.020 ms   5.7%  [gemm       ] MXU 0.020 HBM 0.726  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.910 ms   5.1%  [gemm       ] MXU 0.023 HBM 0.838  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.902 ms   5.0%  [gemm       ] MXU 0.023 HBM 0.026  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.209 ms   1.2%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.188 ms   1.0%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_8_16-bkv_1024_512
+      0.151 ms   0.8%  [gemm       ] MXU 0.068 HBM 0.037  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.087 ms   0.5%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.048 ms   0.3%  [attention  ] MXU 0.000 HBM 0.097  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.028 ms   0.2%  [attention  ] MXU 0.000 HBM 0.104  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.022 ms   0.1%  [norm       ] MXU 0.002 HBM 0.400  jit(sample)/reduce
+      0.019 ms   0.1%  [data       ] MXU 0.001 HBM 0.004  jit(run_model_impl)/convert_element_type
+      0.019 ms   0.1%  [data       ] MXU 0.000 HBM 0.698  jit(convert_element_type)/convert_element_type
+      0.017 ms   0.1%  [attention  ] MXU 0.000 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+
+=== decode_512_1  [per-step (--steady)]
+device total 115.859 ms  idle 1.069 ms (0.92%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.647, MXU util 0.080
+join: 2930 op_profile units = 115.859 ms (residual/synthetic 1.595 ms); framework_op_stats 115.826 ms, matched by name 114.255 ms, 26 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(13093829241820036316)                 total     90.869 ms   runs    7   per-run    12.981 ms   M=16
+  jit_run_model_impl(9141530858610951510)                  total     15.476 ms   runs    1   per-run    15.476 ms   M=512  [not in the step]
+  jit_run_compute_logits(3204947090059167771)              total      8.184 ms   runs    8   per-run     1.023 ms   M=8
+  IDLE                                                     total      1.069 ms   (0.92% of device time)
+  jit_sample(2798622342388047655)                          total      0.105 ms   runs    8   per-run     0.013 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.069 ms   runs    8   per-run     0.009 ms   M=-
+  jit_split(16359886446927444749)                          total      0.040 ms   runs    7   per-run     0.006 ms   M=-
+  jit__substitute_placeholder_token(4258242409777110910)   total      0.026 ms   runs    7   per-run     0.004 ms   M=-
+  jit__select_from_array_fn(6497555900647111715)           total      0.011 ms   runs    7   per-run     0.002 ms   M=-
+  jit_split(2576724542629550116)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit__select_from_array_fn(3932988560470581353)           total      0.005 ms   runs    1   per-run     0.005 ms   M=-  [not in the step]
+step: 14.037 ms device time per forward/step [generic: programs with runs>=7]; whole trace 115.859 ms incl. idle 1.069 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               12.287   86.7%  0.020  0.665    1520  1.00
+attention           0.741    5.2%    n/a    n/a    1785  0.12
+norm                0.011    0.1%  0.001  0.276    1030  1.00
+elementwise         0.005    0.0%  0.000  0.010      84  0.88
+data                0.926    6.5%    n/a    n/a    4703  0.05
+idle                0.134    0.9%    n/a    n/a       0  0.00
+other               0.067    0.5%  0.000  0.010    1309  1.00
+  qkv               1.068    7.5%  0.029  0.027     756  1.00
+  o                 1.071    7.6%  0.019  0.691     252  1.00
+  gate_up           3.055   21.6%  0.020  0.724     252  1.00
+  mlp_fused         6.070   42.8%  0.020  0.729     252  1.00
+  head              1.022    7.2%  0.010  0.745       8  1.00
+    q               0.917    6.5%  0.022  0.025     252  1.00
+    kv              0.152    1.1%  0.067  0.037     504  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 12% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      9.125 ms  64.4%  [gemm       ] MXU 0.020 HBM 0.728  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      1.071 ms   7.6%  [gemm       ] MXU 0.019 HBM 0.691  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      1.022 ms   7.2%  [gemm       ] MXU 0.010 HBM 0.745  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.917 ms   6.5%  [gemm       ] MXU 0.022 HBM 0.025  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.459 ms   3.2%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.225 ms   1.6%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.188 ms   1.3%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_8_16-bkv_1024_512
+      0.152 ms   1.1%  [gemm       ] MXU 0.067 HBM 0.037  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.134 ms   0.9%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.048 ms   0.3%  [attention  ] MXU 0.000 HBM 0.097  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.028 ms   0.2%  [attention  ] MXU 0.000 HBM 0.102  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.020 ms   0.1%  [data       ] MXU 0.000 HBM 0.004  jit(run_model_impl)/convert_element_type
+      0.017 ms   0.1%  [attention  ] MXU 0.000 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.010 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.21
+      0.010 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.19
+
+=== decode_512_32  [per-step (--steady)]
+device total 555.861 ms  idle 1.207 ms (0.22%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.305, MXU util 0.440
+join: 5866 op_profile units = 555.861 ms (residual/synthetic 1.447 ms); framework_op_stats 555.817 ms, matched by name 554.396 ms, 106 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total    418.124 ms   runs    2   per-run   209.062 ms   M=8192  [not in the step]
+  jit_run_model_impl(17170378518277036547)                 total     82.898 ms   runs    5   per-run    16.580 ms   M=32  [THE decode step program]
+  jit_run_model_impl(13093829241820036316)                 total     27.312 ms   runs    2   per-run    13.656 ms   M=16  [not in the step]
+  jit_run_model_impl(1799100770950880333)                  total     16.669 ms   runs    1   per-run    16.669 ms   M=64  [not in the step]
+  jit_run_compute_logits(3049682476373639203)              total      5.605 ms   runs    7   per-run     0.801 ms   M=32
+  jit_run_compute_logits(3204947090059167771)              total      1.643 ms   runs    1   per-run     1.643 ms   M=8  [not in the step]
+  jit_run_compute_logits(4256273703137603586)              total      1.604 ms   runs    2   per-run     0.802 ms   M=16  [not in the step]
+  IDLE                                                     total      1.207 ms   (0.22% of device time)
+  jit_sample(1722645291623532514)                          total      0.266 ms   runs    7   per-run     0.038 ms   M=-
+  jit_convert_element_type(14582398955329602726)           total      0.145 ms   runs    7   per-run     0.021 ms   M=-
+  jit__substitute_placeholder_token(4710070312948687076)   total      0.119 ms   runs    1   per-run     0.119 ms   M=-  [not in the step]
+  jit__select_from_array_fn(15618320743662053630)          total      0.044 ms   runs    1   per-run     0.044 ms   M=-  [not in the step]
+  jit__select_from_array_fn(12893667032393604982)          total      0.044 ms   runs    1   per-run     0.044 ms   M=-  [not in the step]
+  jit_sample(11829861875147787113)                         total      0.042 ms   runs    2   per-run     0.021 ms   M=-  [not in the step]
+  jit_split(13035715677043979638)                          total      0.024 ms   runs    5   per-run     0.005 ms   M=-
+  jit_convert_element_type(9886321184166089047)            total      0.020 ms   runs    2   per-run     0.010 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(17389081909521807369)  total      0.019 ms   runs    5   per-run     0.004 ms   M=-
+  jit__select_from_array_fn(8571713984566690794)           total      0.011 ms   runs    5   per-run     0.002 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.011 ms   runs    1   per-run     0.011 ms   M=-  [not in the step]
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-  [not in the step]
+  jit_split(15919439604652695095)                          total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(16784564723855745001)                          total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(12207423547872802170)                          total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(16359886446927444749)                          total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit_split(1576350259495070281)                           total      0.005 ms   runs    1   per-run     0.005 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(5390677892574364774)   total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(14240522654187898593)  total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(2061675857155259959)   total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__select_from_array_fn(2153990067472953923)           total      0.002 ms   runs    1   per-run     0.002 ms   M=-  [not in the step]
+  jit__select_from_array_fn(1440210512174044069)           total      0.002 ms   runs    1   per-run     0.002 ms   M=-  [not in the step]
+  jit__select_from_array_fn(6497555900647111715)           total      0.001 ms   runs    1   per-run     0.001 ms   M=-  [not in the step]
+step: 17.450 ms device time per forward/step [decode: model program with 32<=M<=2x32 that ran most (n_steps=5) + its LM head/glue]; whole trace 555.861 ms incl. idle 1.207 ms
+note: one-off prefill program jit_run_model_impl(13093829241820036316) covers 16 x 2 GEMM rows < 16384 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+note: one-off prefill program jit_run_model_impl(1799100770950880333) covers 64 x 1 GEMM rows < 16384 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+class             time_ms   share    MXU    HBM     occ   cov
+gemm                9.991   56.9%  0.051  0.820    1087  1.00
+attention           6.632   37.7%    n/a    n/a    1275  0.02
+norm                0.027    0.2%  0.002  0.446     737  1.00
+elementwise         0.006    0.0%  0.000  0.031      60  0.88
+data                0.728    4.1%    n/a    n/a    3367  0.10
+idle                0.121    0.7%    n/a    n/a       0  0.00
+other               0.067    0.4%  0.000  0.015     930  1.00
+  qkv               1.073    6.1%  0.057  0.035     540  1.00
+  o                 0.864    4.9%  0.047  0.860     180  1.00
+  gate_up           2.438   13.9%  0.050  0.907     180  1.00
+  mlp_fused         4.816   27.4%  0.051  0.920     180  1.00
+  head              0.800    4.6%  0.053  0.957       7  1.00
+    q               0.900    5.1%  0.045  0.029     180  1.00
+    kv              0.173    1.0%  0.118  0.065     360  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 2% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      7.254 ms  41.3%  [gemm       ] MXU 0.051 HBM 0.916  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      6.337 ms  36.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.900 ms   5.1%  [gemm       ] MXU 0.045 HBM 0.029  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.864 ms   4.9%  [gemm       ] MXU 0.047 HBM 0.860  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.800 ms   4.6%  [gemm       ] MXU 0.053 HBM 0.957  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.187 ms   1.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_16_32-bkv_1024_51
+      0.174 ms   1.0%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.173 ms   1.0%  [gemm       ] MXU 0.118 HBM 0.065  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.121 ms   0.7%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.061 ms   0.3%  [attention  ] MXU 0.000 HBM 0.158  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.040 ms   0.2%  [attention  ] MXU 0.000 HBM 0.143  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.032 ms   0.2%  [data       ] MXU 0.001 HBM 0.005  jit(run_model_impl)/convert_element_type
+      0.024 ms   0.1%  [norm       ] MXU 0.002 HBM 0.486  jit(sample)/reduce
+      0.021 ms   0.1%  [data       ] MXU 0.000 HBM 0.858  jit(convert_element_type)/convert_element_type
+      0.012 ms   0.1%  [data       ] MXU 0.000 HBM 0.950  copy.2
+
+=== decode_512_8  [per-step (--steady)]
+device total 204.258 ms  idle 1.080 ms (0.53%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.434, MXU util 0.303
+join: 2842 op_profile units = 204.258 ms (residual/synthetic 1.482 ms); framework_op_stats 204.225 ms, matched by name 202.767 ms, 13 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(14231170170068692029)                 total     99.374 ms   runs    1   per-run    99.374 ms   M=4096  [not in the step]
+  jit_run_model_impl(13093829241820036316)                 total     95.745 ms   runs    7   per-run    13.678 ms   M=16  [THE decode step program]
+  jit_run_compute_logits(3204947090059167771)              total      7.779 ms   runs    8   per-run     0.972 ms   M=8
+  IDLE                                                     total      1.080 ms   (0.53% of device time)
+  jit_sample(2798622342388047655)                          total      0.104 ms   runs    8   per-run     0.013 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.070 ms   runs    8   per-run     0.009 ms   M=-
+  jit_split(16359886446927444749)                          total      0.041 ms   runs    7   per-run     0.006 ms   M=-
+  jit__substitute_placeholder_token(4258242409777110910)   total      0.026 ms   runs    7   per-run     0.004 ms   M=-
+  jit__select_from_array_fn(16456002993665936098)          total      0.023 ms   runs    1   per-run     0.023 ms   M=-  [not in the step]
+  jit__select_from_array_fn(6497555900647111715)           total      0.010 ms   runs    7   per-run     0.001 ms   M=-
+  jit_split(7182570267379131943)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+step: 14.683 ms device time per forward/step [decode: model program with 8<=M<=2x8 that ran most (n_steps=7) + its LM head/glue]; whole trace 204.258 ms incl. idle 1.080 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               11.690   78.9%  0.021  0.699    1520  1.00
+attention           2.056   13.9%    n/a    n/a    1785  0.04
+norm                0.011    0.1%  0.001  0.279    1030  1.00
+elementwise         0.005    0.0%  0.000  0.010      84  0.88
+data                0.854    5.8%    n/a    n/a    4703  0.05
+idle                0.135    0.9%    n/a    n/a       0  0.00
+other               0.068    0.5%  0.000  0.010    1309  1.00
+  qkv               1.059    7.1%  0.029  0.027     756  1.00
+  o                 1.011    6.8%  0.020  0.732     252  1.00
+  gate_up           2.905   19.6%  0.021  0.762     252  1.00
+  mlp_fused         5.743   38.8%  0.021  0.771     252  1.00
+  head              0.972    6.6%  0.011  0.784       8  1.00
+    q               0.907    6.1%  0.023  0.026     252  1.00
+    kv              0.151    1.0%  0.068  0.037     504  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 4% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      8.648 ms  58.4%  [gemm       ] MXU 0.021 HBM 0.768  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      1.774 ms  12.0%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      1.011 ms   6.8%  [gemm       ] MXU 0.020 HBM 0.732  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.972 ms   6.6%  [gemm       ] MXU 0.011 HBM 0.784  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.907 ms   6.1%  [gemm       ] MXU 0.023 HBM 0.026  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.209 ms   1.4%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.187 ms   1.3%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_8_16-bkv_1024_512
+      0.151 ms   1.0%  [gemm       ] MXU 0.068 HBM 0.037  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.135 ms   0.9%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.048 ms   0.3%  [attention  ] MXU 0.000 HBM 0.097  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.028 ms   0.2%  [attention  ] MXU 0.000 HBM 0.102  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.020 ms   0.1%  [data       ] MXU 0.000 HBM 0.004  jit(run_model_impl)/convert_element_type
+      0.017 ms   0.1%  [attention  ] MXU 0.000 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.010 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.9
+      0.010 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.7
+
+=== decode_8192_8  [per-step (--steady)]
+device total 2488.943 ms  idle 1.388 ms (0.06%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.182, MXU util 0.388
+join: 4333 op_profile units = 2488.943 ms (residual/synthetic 1.667 ms); framework_op_stats 2488.895 ms, matched by name 2487.254 ms, 77 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total   2325.960 ms   runs    8   per-run   290.745 ms   M=8192  [not in the step]
+  jit_run_model_impl(13093829241820036316)                 total    122.004 ms   runs    7   per-run    17.429 ms   M=16  [THE decode step program]
+  jit_run_model_impl(17170378518277036547)                 total     22.411 ms   runs    1   per-run    22.411 ms   M=32  [not in the step]
+  jit_run_compute_logits(3204947090059167771)              total     15.558 ms   runs   16   per-run     0.972 ms   M=8
+  IDLE                                                     total      1.388 ms   (0.06% of device time)
+  jit__substitute_placeholder_token(16325154681700980874)  total      0.801 ms   runs    7   per-run     0.114 ms   M=-
+  jit__select_from_array_fn(16409755008008296748)          total      0.352 ms   runs    8   per-run     0.044 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.197 ms   runs   16   per-run     0.012 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.136 ms   runs   16   per-run     0.008 ms   M=-
+  jit_split(16522703678939474019)                          total      0.047 ms   runs    8   per-run     0.006 ms   M=-
+  jit_split(16359886446927444749)                          total      0.041 ms   runs    7   per-run     0.006 ms   M=-
+  jit__substitute_placeholder_token(4258242409777110910)   total      0.026 ms   runs    7   per-run     0.004 ms   M=-
+  jit__select_from_array_fn(6497555900647111715)           total      0.011 ms   runs    7   per-run     0.002 ms   M=-
+  jit_split(11569531707584180700)                          total      0.006 ms   runs    1   per-run     0.006 ms   M=-  [not in the step]
+  jit__substitute_placeholder_token(18218428935664631955)  total      0.004 ms   runs    1   per-run     0.004 ms   M=-  [not in the step]
+  jit__select_from_array_fn(8368223888546944082)           total      0.002 ms   runs    1   per-run     0.002 ms   M=-  [not in the step]
+step: 18.598 ms device time per forward/step [decode: model program with 8<=M<=2x8 that ran most (n_steps=7) + its LM head/glue]; whole trace 2488.943 ms incl. idle 1.388 ms
+note: one-off prefill program jit_run_model_impl(13093829241820036316) covers 16 x 7 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+note: one-off prefill program jit_run_model_impl(17170378518277036547) covers 32 x 1 GEMM rows < 65536 = ctx x batch (partial prefill in the window); use the per-step numbers or --steady.
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               12.177   65.2%  0.020  0.671    1528  1.00
+attention           5.261   28.2%    n/a    n/a    1785  0.02
+norm                0.010    0.1%  0.001  0.295    1038  1.00
+elementwise         0.121    0.6%    n/a    n/a     143  0.39
+data                0.955    5.1%    n/a    n/a    4809  0.04
+idle                0.087    0.5%    n/a    n/a       0  0.00
+other               0.073    0.4%  0.000  0.014    1349  1.00
+  qkv               1.063    5.7%  0.029  0.027     756  1.00
+  o                 1.054    5.6%  0.019  0.702     252  1.00
+  gate_up           3.029   16.2%  0.020  0.730     252  1.00
+  mlp_fused         6.060   32.4%  0.020  0.731     252  1.00
+  head              0.972    5.2%  0.011  0.784      16  1.00
+    q               0.911    4.9%  0.022  0.026     252  1.00
+    kv              0.152    0.8%  0.067  0.037     504  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 2% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      9.089 ms  48.6%  [gemm       ] MXU 0.020 HBM 0.731  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      4.979 ms  26.6%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      1.054 ms   5.6%  [gemm       ] MXU 0.019 HBM 0.702  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.972 ms   5.2%  [gemm       ] MXU 0.011 HBM 0.784  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.911 ms   4.9%  [gemm       ] MXU 0.022 HBM 0.026  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      0.209 ms   1.1%  [data       ] MXU   n/a HBM   n/a  async-done [residual]
+      0.188 ms   1.0%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_8_16-bkv_1024_512
+      0.152 ms   0.8%  [gemm       ] MXU 0.067 HBM 0.037  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.087 ms   0.5%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.075 ms   0.4%  [elementwise] MXU   n/a HBM   n/a  jit(_substitute_placeholder_token)/gather
+      0.048 ms   0.3%  [attention  ] MXU 0.000 HBM 0.097  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.044 ms   0.2%  [data       ] MXU   n/a HBM   n/a  copy-done
+      0.037 ms   0.2%  [elementwise] MXU 0.000 HBM 0.001  jit(_substitute_placeholder_token)/scatter
+      0.028 ms   0.2%  [attention  ] MXU 0.000 HBM 0.102  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.020 ms   0.1%  [data       ] MXU 0.000 HBM 0.004  jit(run_model_impl)/convert_element_type
+
+=== prefill_1024_1  [per-step (--steady)]
+device total 27.910 ms  idle 0.743 ms (2.66%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.421, MXU util 0.539
+join: 1444 op_profile units = 27.910 ms (residual/synthetic 0.001 ms); framework_op_stats 27.910 ms, matched by name 27.909 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(17925009691743823697)                 total     26.338 ms   runs    1   per-run    26.338 ms   M=1024
+  jit_run_compute_logits(3204947090059167771)              total      0.796 ms   runs    1   per-run     0.796 ms   M=8
+  IDLE                                                     total      0.743 ms   (2.66% of device time)
+  jit_sample(2798622342388047655)                          total      0.010 ms   runs    1   per-run     0.010 ms   M=-
+  jit__select_from_array_fn(16970910082476565507)          total      0.009 ms   runs    1   per-run     0.009 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(6773877983825375796)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+step: 27.167 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 27.910 ms incl. idle 0.743 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               22.373   80.2%  0.673  0.452     253  1.00
+attention           4.063   14.6%    n/a    n/a     219  0.28
+norm                0.023    0.1%  0.001  0.128     147  1.00
+elementwise         0.003    0.0%  0.000  0.013       3  1.00
+data                0.413    1.5%  0.004  0.683     665  0.98
+idle                0.743    2.7%    n/a    n/a       0  0.00
+other               0.292    1.0%  0.003  0.078     152  1.00
+  qkv               3.764   13.5%  0.521  0.143     108  1.00
+  o                 1.601    5.7%  0.817  0.576      36  1.00
+  gate_up          10.328   37.0%  0.759  0.480      72  1.00
+  down              5.885   21.1%  0.667  0.498      36  1.00
+  head              0.795    2.8%  0.013  0.958       1  1.00
+    q               2.482    8.9%  0.527  0.072      36  1.00
+    kv              1.282    4.6%  0.511  0.280      72  1.00
+  note: only 28% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+     16.213 ms  58.1%  [gemm       ] MXU 0.726 HBM 0.487  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      2.730 ms   9.8%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+      2.482 ms   8.9%  [gemm       ] MXU 0.527 HBM 0.072  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      1.601 ms   5.7%  [gemm       ] MXU 0.817 HBM 0.576  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      1.282 ms   4.6%  [gemm       ] MXU 0.511 HBM 0.280  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.805 ms   2.9%  [attention  ] MXU 0.000 HBM 0.344  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.795 ms   2.8%  [gemm       ] MXU 0.013 HBM 0.958  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.743 ms   2.7%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.267 ms   1.0%  [attention  ] MXU 0.000 HBM 0.691  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.205 ms   0.7%  [data       ] MXU 0.004 HBM 0.025  jit(run_model_impl)/convert_element_type
+      0.187 ms   0.7%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.124 ms   0.4%  [data       ] MXU 0.000 HBM 0.041  jit(run_model_impl)/jit(_take)/gather
+      0.073 ms   0.3%  [attention  ] MXU 0.007 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.063 ms   0.2%  [data       ] MXU 0.010 HBM 0.000  jit(run_model_impl)/concatenate
+      0.013 ms   0.0%  [norm       ] MXU 0.000 HBM 0.000  jit(run_model_impl)/rsqrt
+
+=== prefill_2048_1  [per-step (--steady)]
+device total 55.661 ms  idle 0.874 ms (1.57%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.257, MXU util 0.541
+join: 1445 op_profile units = 55.661 ms (residual/synthetic 0.003 ms); framework_op_stats 55.659 ms, matched by name 55.658 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(4864102955468880756)                  total     53.955 ms   runs    1   per-run    53.955 ms   M=2048
+  IDLE                                                     total      0.874 ms   (1.57% of device time)
+  jit_run_compute_logits(3204947090059167771)              total      0.795 ms   runs    1   per-run     0.795 ms   M=8
+  jit__select_from_array_fn(7568113832896159000)           total      0.012 ms   runs    1   per-run     0.012 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.011 ms   runs    1   per-run     0.011 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(5580943350948952960)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+step: 54.787 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 55.661 ms incl. idle 0.874 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               43.627   78.4%  0.690  0.279     253  1.00
+attention           9.904   17.8%    n/a    n/a     219  0.21
+norm                0.027    0.0%  0.002  0.110     147  1.00
+elementwise         0.001    0.0%  0.000  0.032       3  1.00
+data                0.766    1.4%  0.004  0.418     665  0.93
+idle                0.874    1.6%    n/a    n/a       0  0.00
+other               0.461    0.8%  0.004  0.098     153  1.00
+  qkv              10.344   18.6%  0.379  0.104     108  1.00
+  o                 2.945    5.3%  0.888  0.376      36  1.00
+  gate_up          18.551   33.3%  0.845  0.298      72  1.00
+  down             10.993   19.7%  0.714  0.334      36  1.00
+  head              0.794    1.4%  0.013  0.959       1  1.00
+    q               7.728   13.9%  0.338  0.046      36  1.00
+    kv              2.616    4.7%  0.501  0.274      72  1.00
+  note: only 21% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+     29.544 ms  53.1%  [gemm       ] MXU 0.797 HBM 0.312  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      7.728 ms  13.9%  [gemm       ] MXU 0.338 HBM 0.046  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      7.644 ms  13.7%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+      2.945 ms   5.3%  [gemm       ] MXU 0.888 HBM 0.376  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      2.616 ms   4.7%  [gemm       ] MXU 0.501 HBM 0.274  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      1.551 ms   2.8%  [attention  ] MXU 0.000 HBM 0.357  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.874 ms   1.6%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.794 ms   1.4%  [gemm       ] MXU 0.013 HBM 0.959  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.470 ms   0.8%  [attention  ] MXU 0.000 HBM 0.784  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.391 ms   0.7%  [data       ] MXU 0.004 HBM 0.026  jit(run_model_impl)/convert_element_type
+      0.223 ms   0.4%  [data       ] MXU 0.000 HBM 0.046  jit(run_model_impl)/jit(_take)/gather
+      0.187 ms   0.3%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.089 ms   0.2%  [data       ] MXU 0.014 HBM 0.000  jit(run_model_impl)/concatenate
+      0.050 ms   0.1%  [attention  ] MXU 0.019 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.013 ms   0.0%  [norm       ] MXU 0.000 HBM 0.000  jit(run_model_impl)/rsqrt
+
+=== prefill_2048_4  [per-step (--steady)]
+device total 224.965 ms  idle 0.937 ms (0.42%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.211, MXU util 0.535
+join: 1352 op_profile units = 224.965 ms (residual/synthetic 0.000 ms); framework_op_stats 224.965 ms, matched by name 224.965 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total    223.165 ms   runs    1   per-run   223.165 ms   M=8192
+  IDLE                                                     total      0.937 ms   (0.42% of device time)
+  jit_run_compute_logits(3204947090059167771)              total      0.795 ms   runs    1   per-run     0.795 ms   M=8
+  jit__select_from_array_fn(16409755008008296748)          total      0.044 ms   runs    1   per-run     0.044 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.010 ms   runs    1   per-run     0.010 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(16522703678939474019)                          total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+step: 224.029 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 224.965 ms incl. idle 0.937 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm              175.620   78.1%  0.685  0.202     253  1.00
+attention          41.599   18.5%    n/a    n/a     219  0.29
+norm                0.053    0.0%  0.003  0.056     147  1.00
+elementwise         0.001    0.0%  0.000  0.032       3  1.00
+data                4.705    2.1%  0.003  0.726     611  0.98
+idle                0.937    0.4%    n/a    n/a       0  0.00
+other               2.050    0.9%  0.004  0.811     116  1.00
+  qkv              25.152   11.2%  0.624  0.203     108  1.00
+  o                17.423    7.7%  0.600  0.212      36  1.00
+  gate_up          81.717   36.3%  0.768  0.163      72  1.00
+  down             50.533   22.5%  0.621  0.248      36  1.00
+  head              0.795    0.4%  0.013  0.958       1  1.00
+    q              16.874    7.5%  0.620  0.131      36  1.00
+    kv              8.278    3.7%  0.633  0.350      72  1.00
+  note: only 29% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+    132.250 ms  58.8%  [gemm       ] MXU 0.712 HBM 0.195  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+     29.389 ms  13.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+     17.423 ms   7.7%  [gemm       ] MXU 0.600 HBM 0.212  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+     16.874 ms   7.5%  [gemm       ] MXU 0.620 HBM 0.131  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      8.476 ms   3.8%  [attention  ] MXU 0.000 HBM 0.433  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      8.278 ms   3.7%  [gemm       ] MXU 0.633 HBM 0.350  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      3.356 ms   1.5%  [attention  ] MXU 0.000 HBM 0.879  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      1.976 ms   0.9%  [data       ] MXU 0.003 HBM 0.772  jit(run_model_impl)/convert_element_type
+      1.527 ms   0.7%  [data       ] MXU 0.003 HBM 0.966  jit(run_model_impl)/concatenate
+      1.036 ms   0.5%  [data       ] MXU 0.000 HBM 0.119  jit(run_model_impl)/jit(_take)/gather
+      0.937 ms   0.4%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.795 ms   0.4%  [gemm       ] MXU 0.013 HBM 0.958  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.200 ms   0.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.177 ms   0.1%  [attention  ] MXU 0.022 HBM 0.174  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.071 ms   0.0%  [data       ] MXU 0.000 HBM 0.580  copy.868
+
+=== prefill_2048_8  [per-step (--steady)]
+device total 448.858 ms  idle 1.001 ms (0.22%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.211, MXU util 0.536
+join: 1352 op_profile units = 448.858 ms (residual/synthetic 0.001 ms); framework_op_stats 448.857 ms, matched by name 448.857 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(442272627454783628)                   total    446.128 ms   runs    2   per-run   223.064 ms   M=8192
+  jit_run_compute_logits(3204947090059167771)              total      1.590 ms   runs    2   per-run     0.795 ms   M=8
+  IDLE                                                     total      1.001 ms   (0.22% of device time)
+  jit__select_from_array_fn(16409755008008296748)          total      0.089 ms   runs    2   per-run     0.044 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.021 ms   runs    2   per-run     0.011 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.016 ms   runs    2   per-run     0.008 ms   M=-
+  jit_split(16522703678939474019)                          total      0.012 ms   runs    2   per-run     0.006 ms   M=-
+step: 447.856 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 448.858 ms incl. idle 1.001 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm              351.054   78.2%  0.685  0.202     506  1.00
+attention          83.181   18.5%    n/a    n/a     438  0.29
+norm                0.107    0.0%  0.003  0.056     294  1.00
+elementwise         0.002    0.0%  0.000  0.032       6  1.00
+data                9.413    2.1%  0.003  0.735    1222  0.98
+idle                1.001    0.2%    n/a    n/a       0  0.00
+other               4.099    0.9%  0.004  0.811     232  1.00
+  qkv              50.280   11.2%  0.624  0.203     216  1.00
+  o                34.827    7.8%  0.601  0.212      72  1.00
+  gate_up         163.425   36.4%  0.768  0.163     144  1.00
+  down            100.933   22.5%  0.622  0.248      72  1.00
+  head              1.589    0.4%  0.013  0.958       2  1.00
+    q              33.733    7.5%  0.620  0.131      72  1.00
+    kv             16.547    3.7%  0.633  0.350     144  1.00
+  note: only 29% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+    264.358 ms  58.9%  [gemm       ] MXU 0.712 HBM 0.196  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+     58.760 ms  13.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+     34.827 ms   7.8%  [gemm       ] MXU 0.601 HBM 0.212  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+     33.733 ms   7.5%  [gemm       ] MXU 0.620 HBM 0.131  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+     16.960 ms   3.8%  [attention  ] MXU 0.000 HBM 0.432  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+     16.547 ms   3.7%  [gemm       ] MXU 0.633 HBM 0.350  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      6.705 ms   1.5%  [attention  ] MXU 0.000 HBM 0.880  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      3.953 ms   0.9%  [data       ] MXU 0.003 HBM 0.772  jit(run_model_impl)/convert_element_type
+      3.052 ms   0.7%  [data       ] MXU 0.003 HBM 0.967  jit(run_model_impl)/concatenate
+      2.075 ms   0.5%  [data       ] MXU 0.000 HBM 0.118  jit(run_model_impl)/jit(_take)/gather
+      1.589 ms   0.4%  [gemm       ] MXU 0.013 HBM 0.958  jit(run_compute_logits)/TD,DV->TV/dot_general
+      1.001 ms   0.2%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.400 ms   0.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.354 ms   0.1%  [attention  ] MXU 0.022 HBM 0.174  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.141 ms   0.0%  [data       ] MXU 0.000 HBM 0.582  copy.868
+
+=== prefill_256_1  [per-step (--steady)]
+device total 15.181 ms  idle 0.671 ms (4.42%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.633, MXU util 0.248
+join: 1408 op_profile units = 15.181 ms (residual/synthetic 0.001 ms); framework_op_stats 15.180 ms, matched by name 15.180 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(1781287550495973491)                  total     13.185 ms   runs    1   per-run    13.185 ms   M=256
+  jit_run_compute_logits(3204947090059167771)              total      1.295 ms   runs    1   per-run     1.295 ms   M=8
+  IDLE                                                     total      0.671 ms   (4.42% of device time)
+  jit_sample(2798622342388047655)                          total      0.011 ms   runs    1   per-run     0.011 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit__select_from_array_fn(16452865577248450783)          total      0.005 ms   runs    1   per-run     0.005 ms   M=-
+  jit_split(10343719184723168047)                          total      0.005 ms   runs    1   per-run     0.005 ms   M=-
+step: 14.509 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 15.181 ms incl. idle 0.671 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               12.006   79.1%  0.314  0.698     217  1.00
+attention           1.272    8.4%    n/a    n/a     219  0.27
+norm                0.010    0.1%  0.002  0.297     147  1.00
+elementwise         0.002    0.0%  0.000  0.018       4  1.00
+data                1.067    7.0%    n/a    n/a     665  0.11
+idle                0.671    4.4%    n/a    n/a       0  0.00
+other               0.152    1.0%  0.002  0.039     151  1.00
+  qkv               1.667   11.0%  0.294  0.093     108  1.00
+  o                 1.027    6.8%  0.318  0.762      36  1.00
+  gate_up           2.687   17.7%  0.365  0.824      36  1.00
+  mlp_fused         5.331   35.1%  0.368  0.838      36  1.00
+  head              1.295    8.5%  0.008  0.588       1  1.00
+    q               1.149    7.6%  0.285  0.057      36  1.00
+    kv              0.518    3.4%  0.316  0.173      72  1.00
+  note: mlp_fused = one D->F projection fused with the F->D projection in a single HLO fusion; gate/up vs down are not separable there (gate_up+down+mlp_fused = whole MLP).
+  note: only 27% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      8.018 ms  52.8%  [gemm       ] MXU 0.367 HBM 0.833  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      1.295 ms   8.5%  [gemm       ] MXU 0.008 HBM 0.588  jit(run_compute_logits)/TD,DV->TV/dot_general
+      1.149 ms   7.6%  [gemm       ] MXU 0.285 HBM 0.057  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      1.027 ms   6.8%  [gemm       ] MXU 0.318 HBM 0.762  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.739 ms   4.9%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_128_128-bkv_1024_
+      0.671 ms   4.4%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.518 ms   3.4%  [gemm       ] MXU 0.316 HBM 0.173  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.226 ms   1.5%  [attention  ] MXU 0.000 HBM 0.306  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.187 ms   1.2%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.115 ms   0.8%  [attention  ] MXU 0.000 HBM 0.399  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.064 ms   0.4%  [data       ] MXU 0.003 HBM 0.020  jit(run_model_impl)/convert_element_type
+      0.044 ms   0.3%  [data       ] MXU   n/a HBM   n/a  copy-done.38
+      0.037 ms   0.2%  [data       ] MXU   n/a HBM   n/a  copy-done.37
+      0.032 ms   0.2%  [data       ] MXU   n/a HBM   n/a  copy-done.36
+      0.029 ms   0.2%  [data       ] MXU   n/a HBM   n/a  copy-done.35
+
+=== prefill_4096_1  [per-step (--steady)]
+device total 119.296 ms  idle 0.921 ms (0.77%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.199, MXU util 0.504
+join: 1357 op_profile units = 119.296 ms (residual/synthetic 0.000 ms); framework_op_stats 119.296 ms, matched by name 119.296 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(14231170170068692029)                 total    117.532 ms   runs    1   per-run   117.532 ms   M=4096
+  IDLE                                                     total      0.921 ms   (0.77% of device time)
+  jit_run_compute_logits(3204947090059167771)              total      0.796 ms   runs    1   per-run     0.796 ms   M=8
+  jit__select_from_array_fn(16456002993665936098)          total      0.023 ms   runs    1   per-run     0.023 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.010 ms   runs    1   per-run     0.010 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(7182570267379131943)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+step: 118.375 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 119.296 ms incl. idle 0.921 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               86.775   72.7%  0.693  0.246     253  1.00
+attention          29.357   24.6%    n/a    n/a     219  0.14
+norm                0.042    0.0%  0.002  0.071     147  1.00
+elementwise         0.001    0.0%  0.000  0.028       3  1.00
+data                1.451    1.2%  0.004  0.177     615  0.97
+idle                0.921    0.8%    n/a    n/a       0  0.00
+other               0.748    0.6%  0.005  0.120     117  1.00
+  qkv              12.593   10.6%  0.623  0.229     108  1.00
+  o                 7.230    6.1%  0.723  0.204      36  1.00
+  gate_up          40.742   34.2%  0.770  0.217      72  1.00
+  down             25.415   21.3%  0.618  0.289      36  1.00
+  head              0.795    0.7%  0.013  0.958       1  1.00
+    q               8.542    7.2%  0.612  0.170      36  1.00
+    kv              4.052    3.4%  0.646  0.354      72  1.00
+  note: only 14% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+     66.157 ms  55.5%  [gemm       ] MXU 0.711 HBM 0.245  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+     25.189 ms  21.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+      8.542 ms   7.2%  [gemm       ] MXU 0.612 HBM 0.170  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      7.230 ms   6.1%  [gemm       ] MXU 0.723 HBM 0.204  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      4.052 ms   3.4%  [gemm       ] MXU 0.646 HBM 0.354  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      3.054 ms   2.6%  [attention  ] MXU 0.000 HBM 0.362  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.921 ms   0.8%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.848 ms   0.7%  [attention  ] MXU 0.000 HBM 0.870  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.795 ms   0.7%  [gemm       ] MXU 0.013 HBM 0.958  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.756 ms   0.6%  [data       ] MXU 0.004 HBM 0.000  jit(run_model_impl)/convert_element_type
+      0.472 ms   0.4%  [data       ] MXU 0.000 HBM 0.046  jit(run_model_impl)/jit(_take)/gather
+      0.187 ms   0.2%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.150 ms   0.1%  [data       ] MXU 0.017 HBM 0.000  jit(run_model_impl)/concatenate
+      0.078 ms   0.1%  [attention  ] MXU 0.024 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.036 ms   0.0%  [data       ] MXU 0.000 HBM 0.574  copy.868
+
+=== prefill_512_1  [per-step (--steady)]
+device total 17.019 ms  idle 0.713 ms (4.19%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.585, MXU util 0.442
+join: 1445 op_profile units = 17.019 ms (residual/synthetic 0.001 ms); framework_op_stats 17.019 ms, matched by name 17.018 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(9141530858610951510)                  total     15.477 ms   runs    1   per-run    15.477 ms   M=512
+  jit_run_compute_logits(3204947090059167771)              total      0.800 ms   runs    1   per-run     0.800 ms   M=8
+  IDLE                                                     total      0.713 ms   (4.19% of device time)
+  jit_sample(2798622342388047655)                          total      0.011 ms   runs    1   per-run     0.011 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(2576724542629550116)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+  jit__select_from_array_fn(3932988560470581353)           total      0.005 ms   runs    1   per-run     0.005 ms   M=-
+step: 16.306 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 17.019 ms incl. idle 0.713 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               13.889   81.6%  0.542  0.618     253  1.00
+attention           1.980   11.6%    n/a    n/a     219  0.30
+norm                0.011    0.1%  0.002  0.277     147  1.00
+elementwise         0.003    0.0%  0.000  0.015       4  1.00
+data                0.225    1.3%  0.004  1.332     665  0.90
+idle                0.713    4.2%    n/a    n/a       0  0.00
+other               0.199    1.2%  0.003  0.058     152  1.00
+  qkv               2.844   16.7%  0.345  0.095     108  1.00
+  o                 1.046    6.1%  0.625  0.790      36  1.00
+  gate_up           5.511   32.4%  0.711  0.803      72  1.00
+  down              3.688   21.7%  0.532  0.624      36  1.00
+  head              0.800    4.7%  0.013  0.952       1  1.00
+    q               2.050   12.0%  0.319  0.044      36  1.00
+    kv              0.795    4.7%  0.412  0.226      72  1.00
+  note: only 30% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+      9.199 ms  54.1%  [gemm       ] MXU 0.640 HBM 0.731  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      2.050 ms  12.0%  [gemm       ] MXU 0.319 HBM 0.044  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      1.190 ms   7.0%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+      1.046 ms   6.1%  [gemm       ] MXU 0.625 HBM 0.790  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      0.800 ms   4.7%  [gemm       ] MXU 0.013 HBM 0.952  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.795 ms   4.7%  [gemm       ] MXU 0.412 HBM 0.226  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      0.713 ms   4.2%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.410 ms   2.4%  [attention  ] MXU 0.000 HBM 0.337  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.187 ms   1.1%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.181 ms   1.1%  [attention  ] MXU 0.000 HBM 0.509  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.103 ms   0.6%  [data       ] MXU 0.004 HBM 0.025  jit(run_model_impl)/convert_element_type
+      0.053 ms   0.3%  [data       ] MXU 0.000 HBM 0.048  jit(run_model_impl)/jit(_take)/gather
+      0.035 ms   0.2%  [data       ] MXU 0.009 HBM 0.000  jit(run_model_impl)/concatenate
+      0.015 ms   0.1%  [data       ] MXU   n/a HBM   n/a  copy-done.151
+      0.010 ms   0.1%  [attention  ] MXU 0.024 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+
+=== prefill_512_4  [per-step (--steady)]
+device total 51.777 ms  idle 0.915 ms (1.77%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.276, MXU util 0.581
+join: 1445 op_profile units = 51.777 ms (residual/synthetic 0.003 ms); framework_op_stats 51.776 ms, matched by name 51.774 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(4864102955468880756)                  total     50.032 ms   runs    1   per-run    50.032 ms   M=2048
+  IDLE                                                     total      0.915 ms   (1.77% of device time)
+  jit_run_compute_logits(3204947090059167771)              total      0.795 ms   runs    1   per-run     0.795 ms   M=8
+  jit__select_from_array_fn(7568113832896159000)           total      0.012 ms   runs    1   per-run     0.012 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.010 ms   runs    1   per-run     0.010 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(5580943350948952960)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+step: 50.863 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 51.777 ms incl. idle 0.915 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               43.616   84.2%  0.690  0.279     253  1.00
+attention           5.991   11.6%    n/a    n/a     219  0.35
+norm                0.027    0.1%  0.002  0.110     147  1.00
+elementwise         0.001    0.0%  0.000  0.032       3  1.00
+data                0.766    1.5%  0.004  0.419     665  0.93
+idle                0.915    1.8%    n/a    n/a       0  0.00
+other               0.462    0.9%  0.004  0.098     153  1.00
+  qkv              10.343   20.0%  0.379  0.104     108  1.00
+  o                 2.945    5.7%  0.888  0.376      36  1.00
+  gate_up          18.539   35.8%  0.846  0.298      72  1.00
+  down             10.994   21.2%  0.714  0.334      36  1.00
+  head              0.794    1.5%  0.013  0.959       1  1.00
+    q               7.728   14.9%  0.338  0.046      36  1.00
+    kv              2.615    5.1%  0.501  0.274      72  1.00
+  note: only 35% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+     29.534 ms  57.0%  [gemm       ] MXU 0.797 HBM 0.312  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      7.728 ms  14.9%  [gemm       ] MXU 0.338 HBM 0.046  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      3.731 ms   7.2%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+      2.945 ms   5.7%  [gemm       ] MXU 0.888 HBM 0.376  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      2.615 ms   5.1%  [gemm       ] MXU 0.501 HBM 0.274  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      1.551 ms   3.0%  [attention  ] MXU 0.000 HBM 0.357  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.915 ms   1.8%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.794 ms   1.5%  [gemm       ] MXU 0.013 HBM 0.959  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.470 ms   0.9%  [attention  ] MXU 0.000 HBM 0.784  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.391 ms   0.8%  [data       ] MXU 0.004 HBM 0.026  jit(run_model_impl)/convert_element_type
+      0.223 ms   0.4%  [data       ] MXU 0.000 HBM 0.046  jit(run_model_impl)/jit(_take)/gather
+      0.188 ms   0.4%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.089 ms   0.2%  [data       ] MXU 0.014 HBM 0.000  jit(run_model_impl)/concatenate
+      0.050 ms   0.1%  [attention  ] MXU 0.019 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.013 ms   0.0%  [norm       ] MXU 0.000 HBM 0.000  jit(run_model_impl)/rsqrt
+
+=== prefill_512_8  [per-step (--steady)]
+device total 101.149 ms  idle 0.896 ms (0.89%)  peaks: HBM 1638 GB/s, VMEM rd 23296, VMEM wr 16128 GB/s, MXU 946.7 TFLOP/s;  D=4096
+trace-level (root node, all traffic incl. async prefetch DMAs): HBM util 0.235, MXU util 0.595
+join: 1357 op_profile units = 101.149 ms (residual/synthetic 0.000 ms); framework_op_stats 101.148 ms, matched by name 101.148 ms, 0 ops disagree >1us
+programs (per-run = rawTime/runs; runs = occurrences of the HLO ops inside):
+  jit_run_model_impl(14231170170068692029)                 total     99.411 ms   runs    1   per-run    99.411 ms   M=4096
+  IDLE                                                     total      0.896 ms   (0.89% of device time)
+  jit_run_compute_logits(3204947090059167771)              total      0.795 ms   runs    1   per-run     0.795 ms   M=8
+  jit__select_from_array_fn(16456002993665936098)          total      0.023 ms   runs    1   per-run     0.023 ms   M=-
+  jit_sample(2798622342388047655)                          total      0.011 ms   runs    1   per-run     0.011 ms   M=-
+  jit_convert_element_type(8273830540134977030)            total      0.008 ms   runs    1   per-run     0.008 ms   M=-
+  jit_split(7182570267379131943)                           total      0.006 ms   runs    1   per-run     0.006 ms   M=-
+step: 100.252 ms device time per forward/step [prefill: one forward = whole trace minus IDLE]; whole trace 101.149 ms incl. idle 0.896 ms
+class             time_ms   share    MXU    HBM     occ   cov
+gemm               86.764   85.8%  0.693  0.246     253  1.00
+attention          11.247   11.1%    n/a    n/a     219  0.35
+norm                0.042    0.0%  0.002  0.071     147  1.00
+elementwise         0.001    0.0%  0.000  0.033       3  1.00
+data                1.450    1.4%  0.004  0.191     615  0.97
+idle                0.896    0.9%    n/a    n/a       0  0.00
+other               0.748    0.7%  0.005  0.120     117  1.00
+  qkv              12.592   12.4%  0.623  0.229     108  1.00
+  o                 7.233    7.2%  0.723  0.204      36  1.00
+  gate_up          40.738   40.3%  0.770  0.217      72  1.00
+  down             25.408   25.1%  0.618  0.289      36  1.00
+  head              0.794    0.8%  0.013  0.959       1  1.00
+    q               8.540    8.4%  0.612  0.170      36  1.00
+    kv              4.052    4.0%  0.646  0.354      72  1.00
+  note: only 35% of attention time has an XProf cost model (the Pallas ragged_paged_attention custom-call reports flops/bytes = 0); MXU/HBM are n/a below 50% coverage. DMA -done ops (weight prefetch) have no HBM bytes either.
+top 15 ops:
+     66.146 ms  65.4%  [gemm       ] MXU 0.712 HBM 0.245  jit(run_model_impl)/JaxLinear/mn,np->mp/dot_general
+      8.540 ms   8.4%  [gemm       ] MXU 0.612 HBM 0.170  jit(run_model_impl)/JaxEinsum/TD,DNH->TNH/dot_general
+      7.233 ms   7.2%  [gemm       ] MXU 0.723 HBM 0.204  jit(run_model_impl)/JaxEinsum/TNH,NHD->TD/dot_general
+      7.078 ms   7.0%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAm-p_32-bq_256_128-bkv_1024_
+      4.052 ms   4.0%  [gemm       ] MXU 0.646 HBM 0.354  jit(run_model_impl)/JaxEinsum/TD,DKH->TKH/dot_general
+      3.055 ms   3.0%  [attention  ] MXU 0.000 HBM 0.362  jit(run_model_impl)/jit(ragged_paged_attention)/reshape
+      0.896 ms   0.9%  [idle       ] MXU   n/a HBM   n/a  IDLE
+      0.847 ms   0.8%  [attention  ] MXU 0.000 HBM 0.870  jit(run_model_impl)/jit(ragged_paged_attention)/transpose
+      0.794 ms   0.8%  [gemm       ] MXU 0.013 HBM 0.959  jit(run_compute_logits)/TD,DV->TV/dot_general
+      0.756 ms   0.7%  [data       ] MXU 0.004 HBM 0.000  jit(run_model_impl)/convert_element_type
+      0.471 ms   0.5%  [data       ] MXU 0.000 HBM 0.046  jit(run_model_impl)/jit(_take)/gather
+      0.188 ms   0.2%  [attention  ] MXU   n/a HBM   n/a  jit(run_model_impl)/jit(ragged_paged_attention)/RPAd-p_32-bq_1_1-bkv_4096_4096
+      0.150 ms   0.1%  [data       ] MXU 0.017 HBM 0.000  jit(run_model_impl)/concatenate
+      0.078 ms   0.1%  [attention  ] MXU 0.024 HBM 0.000  jit(run_model_impl)/jit(ragged_paged_attention)/concatenate
+      0.036 ms   0.0%  [data       ] MXU 0.000 HBM 0.573  copy.868
+
+wrote /data2/s2chitni/.tmp/tpuv6e_results/fidelity/tier2_qwen/census_qwen.csv

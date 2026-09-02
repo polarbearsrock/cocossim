@@ -1,0 +1,25 @@
+mode,seq,batch,rep,n_out,wall_s,model,trace,trace_steps,note
+prefill,256,1,0,1,0.017663559999959944,Qwen/Qwen3-8B,traces/prefill_256_1,1,
+prefill,512,1,0,1,0.019593979999967814,Qwen/Qwen3-8B,traces/prefill_512_1,1,
+prefill,1024,1,0,1,0.030894461000002593,Qwen/Qwen3-8B,traces/prefill_1024_1,1,
+prefill,2048,1,0,1,0.059209471000031044,Qwen/Qwen3-8B,traces/prefill_2048_1,1,
+prefill,4096,1,0,1,0.12394861100005983,Qwen/Qwen3-8B,traces/prefill_4096_1,1,
+prefill,512,4,0,1,0.05582102100004249,Qwen/Qwen3-8B,traces/prefill_512_4,1,
+prefill,512,8,0,1,0.1067516110000497,Qwen/Qwen3-8B,traces/prefill_512_8,1,
+prefill,2048,4,0,1,0.23119459299994105,Qwen/Qwen3-8B,traces/prefill_2048_4,1,
+prefill,2048,8,0,1,0.45581516499999,Qwen/Qwen3-8B,traces/prefill_2048_8,1,
+decode,512,1,0,64,0.917407128999912,Qwen/Qwen3-8B,traces/decode_512_1,8,wall includes ctx prefill + n_out steps
+decode,512,8,0,64,1.0404073910000307,Qwen/Qwen3-8B,traces/decode_512_8,8,wall includes ctx prefill + n_out steps
+decode,512,32,0,64,1.5429718359999924,Qwen/Qwen3-8B,traces/decode_512_32,8,wall includes ctx prefill + n_out steps
+decode,2048,8,0,64,1.497981823000032,Qwen/Qwen3-8B,traces/decode_2048_8,8,wall includes ctx prefill + n_out steps
+decode,2048,32,0,64,3.278476211999987,Qwen/Qwen3-8B,traces/decode_2048_32,8,wall includes ctx prefill + n_out steps
+decode,4096,16,0,64,3.4812876459999416,Qwen/Qwen3-8B,traces/decode_4096_16,8,wall includes ctx prefill + n_out steps
+decode,8192,8,0,64,3.801176403999989,Qwen/Qwen3-8B,traces/decode_8192_8,8,wall includes ctx prefill + n_out steps
+prefill,512,1,1,1,0.019616200000086792,Qwen/Qwen3-8B,,0,
+prefill,2048,1,1,1,0.0590492720000384,Qwen/Qwen3-8B,,0,
+decode,512,8,1,64,1.0383369319999929,Qwen/Qwen3-8B,,0,wall includes ctx prefill + n_out steps
+decode,2048,32,1,64,3.2823341120000578,Qwen/Qwen3-8B,,0,wall includes ctx prefill + n_out steps
+prefill,512,1,2,1,0.019317999999998392,Qwen/Qwen3-8B,,0,
+prefill,2048,1,2,1,0.059076591000007284,Qwen/Qwen3-8B,,0,
+decode,512,8,2,64,1.0411755129999847,Qwen/Qwen3-8B,,0,wall includes ctx prefill + n_out steps
+decode,2048,32,2,64,3.281609360999937,Qwen/Qwen3-8B,,0,wall includes ctx prefill + n_out steps
