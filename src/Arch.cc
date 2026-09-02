@@ -282,6 +282,7 @@ RuntimeStats_t *Arch::get_cycles(TimeBasedEnqueue &time_enqueues) {
           total_frontier--;
 
           state->j = job;
+          opspan_note_dispatch(job->op_class);// OPSPAN first (State.h)
           job->started = true;// stops -dbuf prefetch issue for this job
           LOG_TO_WAVEFORM(STAT_ID(JOB_IDX, state->vcd_idx), job->job_idx);
           state->init();

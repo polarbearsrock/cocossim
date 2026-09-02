@@ -1562,5 +1562,55 @@ else
   bad "V35c rc=$rc fin_eq=${fin_eq:-?}"
 fi
 
+# V36: per-op-class wall-clock span (fidelity spec section 4, 'per-op-class
+# time'): OPSPAN <class> first <cycle> last <cycle> after the ACCTC lines,
+# one per class with any job. Convention pinned here: 'first' is gcycles at
+# the dispatch of the class's first job (dispatch runs at the top of the
+# loop before gcycles++, so the very first dispatch is at data_overhead ==
+# 0 by default), 'last' is gcycles at the TO_IDLE_CLEANUP of the class's
+# last job (increment() runs after gcycles++, and the loop exits right after
+# that completion with Cycles == gcycles), so last == Cycles exactly.
+# V36a: a single Matmul is one class (OTHER), first 0, last == Cycles.
+printf 'Matmul 512 512 512\n' > "$WORK/v36a.txt"
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v36a.txt" -o "$WORK/v36a_s.txt" > "$WORK/v36a.log" 2>&1
+n_span=$(grep -c '^OPSPAN ' "$WORK/v36a_s.txt")
+cyc=$(cycles_of "$WORK/v36a_s.txt")
+sp_first=$(awk '/^OPSPAN OTHER /{print $4}' "$WORK/v36a_s.txt")
+sp_last=$(awk '/^OPSPAN OTHER /{print $6}' "$WORK/v36a_s.txt")
+if [ "$n_span" -eq 1 ] && [ "${sp_first:-x}" = "0" ] && [ -n "$cyc" ] && [ "${sp_last:-x}" = "$cyc" ]; then
+  ok "V36a OPSPAN OTHER first 0 last $sp_last == Cycles $cyc (one line)"
+else
+  bad "V36a OPSPAN lines=$n_span first=${sp_first:-?} last=${sp_last:-?} Cycles=${cyc:-?}"
+fi
+# V36b: fused transformer layer has one span per class in dependency order
+# (QKV before ATTN before O before GATE_UP before DOWN) and no span ends
+# after the run.
+printf 'Transformer 1 256 4 4 512 128 0 1\n' > "$WORK/v36b.txt"
+"$BIN" -c 1 -sa_sz 256 -f 1 -fuse_attn 1 -fuse_vpu 1 -i "$WORK/v36b.txt" -o "$WORK/v36b_s.txt" > "$WORK/v36b.log" 2>&1
+cyc=$(cycles_of "$WORK/v36b_s.txt")
+span_first() { awk -v c="$2" '$1=="OPSPAN" && $2==c {print $4}' "$1"; }
+missing=""
+for cls in QKV ATTN O GATE_UP DOWN VPU_NORM VPU_EW; do
+  [ -z "$(span_first "$WORK/v36b_s.txt" "$cls")" ] && missing="$missing $cls"
+done
+f_qkv=$(span_first "$WORK/v36b_s.txt" QKV); f_attn=$(span_first "$WORK/v36b_s.txt" ATTN)
+f_o=$(span_first "$WORK/v36b_s.txt" O); f_gu=$(span_first "$WORK/v36b_s.txt" GATE_UP)
+f_dn=$(span_first "$WORK/v36b_s.txt" DOWN)
+n_late=$(awk -v c="${cyc:-0}" '$1=="OPSPAN" && ($6 > c || $4 > $6) {n++} END{print n+0}' "$WORK/v36b_s.txt")
+if [ -z "$missing" ] && [ "$f_qkv" -lt "$f_attn" ] && [ "$f_attn" -lt "$f_o" ] && \
+   [ "$f_o" -lt "$f_gu" ] && [ "$f_gu" -lt "$f_dn" ] && [ "$n_late" -eq 0 ]; then
+  ok "V36b OPSPAN classes present, QKV<ATTN<O<GATE_UP<DOWN ($f_qkv<$f_attn<$f_o<$f_gu<$f_dn), all last <= Cycles $cyc"
+else
+  bad "V36b missing=[$missing] firsts qkv=$f_qkv attn=$f_attn o=$f_o gu=$f_gu dn=$f_dn late=$n_late Cycles=$cyc"
+fi
+# V36c: -data_overhead shifts the first dispatch, so the span starts there.
+"$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -data_overhead 500 -i "$WORK/v36a.txt" -o "$WORK/v36c_s.txt" > "$WORK/v36c.log" 2>&1
+sp_first=$(awk '/^OPSPAN OTHER /{print $4}' "$WORK/v36c_s.txt")
+if [ "${sp_first:-x}" = "500" ]; then
+  ok "V36c OPSPAN OTHER first == 500 under -data_overhead 500"
+else
+  bad "V36c OPSPAN OTHER first=${sp_first:-?} (want 500)"
+fi
+
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
 exit "$FAIL"

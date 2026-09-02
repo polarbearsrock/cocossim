@@ -115,6 +115,16 @@ int main(int argc, char **argv) {
   // one per OpClass (Job.h) with any nonzero counter, whose busy/underfilled/
   // memstall columns sum to the unit's ACCT values exactly (idle is per-unit).
   // Jobs not created by the Transformer composite report as class OTHER.
+  // SCHEMA 3 additive line (fidelity benchmark spec section 4, per-op-class
+  // time): after the ACCT/ACCTC/OPBOUND block, one line per OpClass that ran
+  // at least one job,
+  //   OPSPAN <class> first <cycle> last <cycle>
+  // where first is gcycles at the dispatch of the class's first job (the
+  // first dispatch of a run is at -data_overhead, 0 by default) and last is
+  // gcycles at the completion of its last job; the class that finishes the
+  // run has last == Cycles exactly (State.h). The span is wall-clock, so
+  // overlapping classes overlap here too; it is the simulator-side quantity
+  // compared with per-kernel wall time, not a sum of busy cycles.
   fprintf(f, "SCHEMA 3\n");
   for (int p = 0; p < periods; ++p) {
     fprintf(f, "Cycles %llu\n", res[p].cycles);
@@ -152,6 +162,13 @@ int main(int argc, char **argv) {
       // -op_overhead charges, and the per-unit kernel count silicon pays.
       fprintf(f, "OPBOUND %s %d %llu\n", s->get_ty_string().c_str(), i,
               (unsigned long long) s->op_boundaries);
+    }
+    // Per-op-class wall-clock span (see the SCHEMA comment above). Like the
+    // ACCT block, cumulative across periods: exact at periods == 1.
+    for (int c = 0; c < N_OP_CLASSES; ++c) {
+      if (opspan_jobs[c] == 0) continue;
+      fprintf(f, "OPSPAN %s first %llu last %llu\n", OP_CLASS_NAMES[c],
+              (unsigned long long) opspan_first[c], (unsigned long long) opspan_last[c]);
     }
   }
 

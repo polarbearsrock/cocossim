@@ -13,6 +13,28 @@
 #include "global.h"
 #include <stdexcept>
 
+// Per-op-class span bookkeeping (State.h). A class with opspan_jobs == 0
+// has no span; the first dispatch of a class initialises its 'first' (a
+// class's first dispatch always precedes its first completion, so a zero
+// job count at dispatch time identifies the class's first job).
+uint64_t opspan_first[N_OP_CLASSES] = {};
+uint64_t opspan_last[N_OP_CLASSES] = {};
+uint64_t opspan_jobs[N_OP_CLASSES] = {};
+static uint64_t opspan_dispatched[N_OP_CLASSES] = {};
+
+void opspan_note_dispatch(int op_class) {
+  if (op_class < 0 || op_class >= N_OP_CLASSES) op_class = OP_OTHER;
+  if (opspan_dispatched[op_class] == 0 || gcycles < opspan_first[op_class])
+    opspan_first[op_class] = gcycles;
+  opspan_dispatched[op_class]++;
+}
+
+void opspan_note_complete(int op_class) {
+  if (op_class < 0 || op_class >= N_OP_CLASSES) op_class = OP_OTHER;
+  if (gcycles > opspan_last[op_class]) opspan_last[op_class] = gcycles;
+  opspan_jobs[op_class]++;
+}
+
 // A job owns exactly [addr_hold, addr_hold + alloc_size). Walking past it
 // silently overlaps the next bump-allocated job, and concurrent units then
 // issue a read and a write to the same address, which deadlocks DRAMSim3's

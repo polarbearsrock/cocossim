@@ -45,6 +45,7 @@
   jobs_finished++;                                          \
   total_idle++;                                             \
   n_idle_units[get_ty_idx()] += 1;                \
+  opspan_note_complete(j->op_class);                        \
   for (auto *child: j->children) {                          \
     child->rem_deps -= 1;                                   \
     if (child->rem_deps == 0) {                             \
@@ -58,6 +59,21 @@
 
 
 using enqueue_job_f_t = std::function<void(Job *)>;
+
+// Per-op-class wall-clock span (fidelity benchmark spec section 4, 'per-op-
+// class time'; stats line OPSPAN, main.cc): opspan_first[c] is gcycles at
+// the dispatch of the first job of class c (Arch.cc dispatch loop, which
+// runs before that cycle's gcycles++ -- so the first job of a run starts at
+// data_overhead_cycles), opspan_last[c] is gcycles at the completion
+// (TO_IDLE_CLEANUP, which runs inside increment() after gcycles++) of the
+// last job of class c. Because the simulation loop exits right after the
+// final completion, the last span's 'last' equals the Cycles line exactly.
+// opspan_jobs[c] counts completions so main.cc prints only classes that ran.
+extern uint64_t opspan_first[N_OP_CLASSES];
+extern uint64_t opspan_last[N_OP_CLASSES];
+extern uint64_t opspan_jobs[N_OP_CLASSES];
+void opspan_note_dispatch(int op_class);
+void opspan_note_complete(int op_class);
 
 struct State {
   int sz = 0;      // Size of the functional array
