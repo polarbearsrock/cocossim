@@ -72,6 +72,18 @@ def sim_class_us(r, sim_cls, unit):
     return {"sa": sa, "vpu": vpu, "both": max(sa, vpu)}[unit], float(r[f"span_{sim_cls}_us"])
 
 
+def sim_class_us_extrap(v, sim_cls, unit, layers):
+    """Per-class time of the whole model from the l1/l2/lh triplet: L x the
+    marginal per-layer class time (l2 - l1) for layer classes, and the head
+    run minus the 1-layer run for HEAD. Spans are not extrapolated (0)."""
+    t1, _ = sim_class_us(v["l1"], sim_cls, unit)
+    t2, _ = sim_class_us(v["l2"], sim_cls, unit)
+    th, _ = sim_class_us(v["lh"], sim_cls, unit)
+    if sim_cls == "HEAD":
+        return max(th - t1, 0.0), 0.0
+    return max(t2 - t1, 0.0) * layers, 0.0
+
+
 def extrap(v, layers):
     """Session-3 method from the l1/l2/lh triplet; None if incomplete."""
     if not all(k in v for k in ("l1", "l2", "lh")):
@@ -122,8 +134,6 @@ def main():
             full = float(v["full"]["us"]) / 1e3; sim_method = "full"
         else:  # full run still in flight: score the triplet extrapolation, flagged
             full = ext; sim_method = "extrap" if ext is not None else "none"
-            if "lh" in v:
-                v = dict(v, full=v["lh"])  # per-class shares from the 1-layer+head run
         ws = sorted(wall[k])
         w_ms = ws[len(ws) // 2] * 1e3
         if mode == "decode":
@@ -146,14 +156,18 @@ def main():
                    dev_ms=dev, dev_busy_ms=busy, wall_ms=w_ms, n_wall=len(ws), err_dev=err_dev, err_busy=err_busy,
                    verdict=vd, steps=steps.get(k, 0))
         # per-class attribution
-        if c and "full" in v:
+        have_triplet = all(x in v for x in ("l1", "l2", "lh"))
+        if c and ("full" in v or have_triplet):
             print(f"    {'class':12s} {'silicon_ms':>10s} {'sim_ms':>8s} {'sim_span':>8s} {'delta_ms':>9s}")
             unm = 0.0
             mlp = {"si": 0.0, "sm": 0.0}
             for label, ccls, scls, unit in CLASS_MAP:
                 si = sum(c.get(("gemm_class", x), 0.0) + (c.get(("bucket", x), 0.0) if x in ("attention", "norm", "elementwise") else 0.0)
                          for x in ccls)
-                sm_us, span_us = sim_class_us(v["full"], scls, unit)
+                if "full" in v:
+                    sm_us, span_us = sim_class_us(v["full"], scls, unit)
+                else:
+                    sm_us, span_us = sim_class_us_extrap(v, scls, unit, layers)
                 sm, sp = sm_us / 1e3, span_us / 1e3
                 print(f"    {label:12s} {si:10.3f} {sm:8.3f} {sp:8.3f} {sm - si:+9.3f}")
                 row[f"si_{label}_ms"] = si; row[f"sim_{label}_ms"] = sm; row[f"sim_{label}_span_ms"] = sp

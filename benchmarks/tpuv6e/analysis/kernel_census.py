@@ -87,12 +87,26 @@ expression (see classify_gemm):
 
 Per-step device time: for each program, runs = time-weighted mode of the
 `occurrences` of the HLO ops inside it (all equal for an unrolled program),
-per-run = rawTime / runs. n_steps = runs of the most-executed
-jit_run_model_impl program. The step = sum of per-run times of every program
-that ran >= n_steps times (model, LM head, sampling, glue); programs that ran
-fewer times (the one-off prefill that precedes a decode window) are listed
-separately. Whole-trace device total and the IDLE share are printed beside
-it. --steady restricts the census itself to that per-step view.
+per-run = rawTime / runs. Which programs form "the step" depends on the point
+(parsed from a `prefill|decode_<seq>_<batch>` name; without one the generic
+rule applies: n_steps = runs of the most-executed jit_run_model_impl program
+and every program that ran >= n_steps times is in the step):
+  prefill  the forward is ONE step however vLLM chunked it: with
+           max_num_batched_tokens = 8192 a 16384-token prompt batch runs the
+           model program twice (M = 8192 each), so the step is the whole trace
+           minus IDLE (tier-2 Qwen traces, 2026-09-01).
+  decode   vLLM pads the decode token count to a bucket (batch 8 runs as an
+           M = 16 program) and, while a long context is still being prefilled
+           in 8192-token chunks, interleaves mixed steps in which only part of
+           the batch decodes (M = 8192 chunk programs ran as often as the
+           decode steps in decode_2048_32, and M = 16 partial-batch steps sat
+           beside the M = 32 ones). The step is therefore the model program
+           with batch <= M <= 2 x batch that ran most (its runs = n_steps),
+           plus the LM-head program with M = batch and the sampling glue that
+           ran >= n_steps times; chunk programs and partial-batch programs are
+           listed as [not in the step]. IDLE is spread over every model run.
+Whole-trace device total and the IDLE share are printed beside the step.
+--steady restricts the census itself to that per-step view.
 
 Usage:
   kernel_census.py TRACE [TRACE ...] [--per-class] [--steady] [--csv out.csv]
@@ -436,6 +450,30 @@ def census(point, xplanes, steady=False):
     n_steps = max((runs[p][0] for p in model_progs), default=0)
     idle_time = programs.get("IDLE", {}).get("time", 0.0)
     total_time = _m(root)["time"]
+    mo = re.match(r"(prefill|decode)_(\d+)_(\d+)", point or "")
+    mode = mo.group(1) if mo else None
+    batch = int(mo.group(3)) if mo else None
+    step_prog = None            # decode: the padded-batch model program that IS the step
+    total_model_runs = sum(runs[p][0] for p in model_progs) or 1
+    if mode == "prefill":
+        n_steps = 1             # one forward, however many chunks vLLM ran
+    elif mode == "decode":
+        dec = [p for p in model_progs if runs[p][1] is not None and batch <= runs[p][1] <= 2 * batch]
+        if dec:
+            step_prog = max(dec, key=lambda p: runs[p][0])
+            n_steps = runs[step_prog][0]
+
+    def prog_scale(name):
+        """1/runs for programs in the step, 0 for the rest (see module doc)."""
+        r, M = runs.get(name, (0, None))
+        if mode == "prefill":
+            return 1.0
+        if step_prog is not None:
+            if name.startswith("jit_run_model_impl"):
+                return 1.0 / r if name == step_prog else 0.0
+            if name.startswith("jit_run_compute_logits"):
+                return 1.0 / r if (M == batch and r >= n_steps) else 0.0
+        return (1.0 / r) if (r and r >= n_steps) else 0.0
 
     # per-unit classification
     for u in units:
@@ -447,9 +485,8 @@ def census(point, xplanes, steady=False):
         if not steady:
             return 1.0
         if u.bucket == "idle":
-            return 1.0 / n_steps if n_steps else 1.0
-        r = runs.get(u.program, (0, None))[0]
-        return (1.0 / r) if (r and r >= n_steps) else 0.0
+            return 1.0 if mode == "prefill" else 1.0 / (total_model_runs if mode == "decode" else (n_steps or 1))
+        return prog_scale(u.program)
 
     buckets = collections.defaultdict(ClassAcc)
     gclasses = collections.defaultdict(ClassAcc)
@@ -479,6 +516,7 @@ def census(point, xplanes, steady=False):
 
     return dict(point=point, xplanes=xplanes, root=_m(root), peaks=peaks, peak_flops=peak_flops,
                 units=units, programs=programs, runs=runs, n_steps=n_steps, model_progs=model_progs,
+                mode=mode, batch=batch, step_prog=step_prog, prog_scale=prog_scale,
                 idle_time=idle_time, total_time=total_time, grand=grand, D=D, steady=steady,
                 buckets=buckets, gclasses=gclasses, gsubs=gsubs, per_op=per_op, fw=fw,
                 join=dict(fw_total_us=fw_total, matched_us=matched, mismatches=mism,
@@ -545,14 +583,20 @@ def print_report(res, per_class, top):
             print(f"  {'IDLE':56s} total {m['time']/1e9:10.3f} ms   ({100*m['time']/res['total_time']:.2f}% of device time)")
             continue
         per = m["time"] / runs if runs else float("nan")
-        in_step = runs >= n and n > 0
+        s = res["prog_scale"](name) if runs else 0.0
+        in_step = s > 0
         if in_step:
-            step += per
-        tag = "" if in_step else "  [one-off: not part of the step]"
+            step += m["time"] * s
+        tag = "" if in_step else "  [not in the step]"
+        if in_step and name == res["step_prog"]:
+            tag = "  [THE decode step program]"
         print(f"  {name[:56]:56s} total {m['time']/1e9:10.3f} ms   runs {runs:4d}   per-run {per/1e9:9.3f} ms"
               f"   M={M if M is not None else '-'}{tag}")
-    print(f"step: {step/1e9:.3f} ms device time per forward/step (n_steps={n}, sum of per-run over programs with "
-          f"runs>={n}); whole trace {res['total_time']/1e9:.3f} ms incl. idle {res['idle_time']/1e9:.3f} ms")
+    rule = ("prefill: one forward = whole trace minus IDLE" if res["mode"] == "prefill" else
+            f"decode: model program with {res['batch']}<=M<=2x{res['batch']} that ran most (n_steps={n}) + its LM head/glue"
+            if res["step_prog"] else f"generic: programs with runs>={n}")
+    print(f"step: {step/1e9:.3f} ms device time per forward/step [{rule}]; whole trace {res['total_time']/1e9:.3f} ms "
+          f"incl. idle {res['idle_time']/1e9:.3f} ms")
     res["step_ms"] = step / 1e9
 
     # completeness hint from the point name
