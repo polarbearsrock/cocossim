@@ -16,14 +16,36 @@ PREFILL (query length = context, causal):
   so every element of every out is live, and the jit returns the full-array
   sum of the final q -- nothing can be sliced or hoisted (spec 5.2: a step
   that returned one element let XLA reduce a GEMM to a single dot product
-  and report 100 PFLOP/s). This carry adds NO XLA glue between kernel calls
-  (at most a root copy of out into the loop-carry buffer; the XProf trace's
-  glue_us column shows it). The first version (--carry sum, kept as an
-  explicit option) used q_next = q + (out.sum(-1, f32) * 1e-3)[..., None],
-  whose XLA fusion streams three full [B,nh,S,hd] arrays through HBM per
-  step (read out, read q, write q_next) -- 20-90 % of the kernel's own time
-  at the prefill cells, all charged to the kernel. Do not use it for
-  attribution; it is retained only so the two can be compared on silicon.
+  and report 100 PFLOP/s). This carry adds NO XLA fusion between kernel
+  calls. The first version (--carry sum, kept as an explicit option) used
+  q_next = q + (out.sum(-1, f32) * 1e-3)[..., None], whose XLA fusion
+  streams three full [B,nh,S,hd] arrays through HBM per step (read out,
+  read q, write q_next) -- 20-90 % of the kernel's own time at the prefill
+  cells, all charged to the kernel. Do not use it for attribution; it is
+  retained only so the two can be compared on silicon.
+  Chain FORM (--chain-form scan|unroll, comma list sweeps; default scan):
+    scan   = lax.scan over CHAIN steps (rule 1). The scan body is exactly
+             one pallas_call, but XLA's while loop keeps its state in one
+             buffer that the body parameter and the body root must share,
+             and a custom call cannot write its output over its own operand
+             (flash_attention's pallas_call declares no input/output
+             aliasing), so copy insertion adds a root copy of out
+             [B,nh,S,hd] into the loop-carry buffer: two extra full-array
+             passes per step OUTSIDE the kernel (~200 us at (512,32) against
+             a >= 328 us kernel; +37 % at (2048,8); +13 % at (8192,1)) that
+             the wall-clock per_step_us still contains.
+    unroll = a Python for-loop of CHAIN kernel calls inside the SAME single
+             jit: out_i is the direct operand of call_{i+1}, there is no
+             loop state, hence no carry copy; the host-dispatch
+             amortization rule (1) intends is identical (one dispatch per
+             timed call). Chain honesty is unchanged: every element of
+             every out feeds the next call and the jit returns the
+             full-array sum of the last one.
+    Run both (--chain-form scan,unroll) and compare per_step_us and the
+    trace's glue_us: their difference IS the carry copy. Neither form can
+    be verified on CPU JAX (CPU XLA rewrites bf16 dots), so the session
+    decides which one the scorer uses; chain_form is a CSV column and part
+    of the resumability key and the trace directory name (_unroll suffix).
   FLOPs: the kernel SKIPS kv blocks strictly above the diagonal
   (below_or_on_diag on the (block_q, block_k_major) grid), so the FLOPs it
   actually executes are flops_done = 4*B*nh*hd*block_q*block_k_major *
@@ -63,10 +85,25 @@ DECODE (query length 1):
   grid is (cores, B, nkv) with the nh/nkv-head query group as the q block,
   so every page is DMA'd exactly once per step: hbm_bytes == bytes,
   kv_fetch_factor = 1. FLOPs = 4*B*S*nh*hd.
-  Note (kernel contract): with nh/nkv = 4 groups (not a multiple of 8) the
-  kernel reshapes q to [B,nh,1,hd] and launches it in f32; the output is
-  cast back to bf16. q/out bytes are counted at the API dtype (bf16); they
-  are < 0.1 % of the KV bytes at every cell.
+  q dtype (--decode-q-dtype f32|bf16, default f32): with nh/nkv = 4 groups
+  (not a multiple of 8) the kernel's Python wrapper reshapes q to
+  [B,nh,1,hd] and launches the pallas_call with q in FLOAT32
+  (q.astype(q_dtype_for_kernel_launch)), then casts the output back to
+  q.dtype. With a bf16 carry that puts two XLA convert_element_type
+  kernels in the scan body per step (bf16->f32 [B,nh,1,hd] before the
+  pallas_call, f32->bf16 after; verified in the jaxpr), each carrying the
+  ~7-9 us fixed launch cost H1 measured -- more than the kernel's whole
+  expected time at the six decode cells whose KV is < 128 MiB (1.3-41 us
+  at plate). With the carry generated in float32 [B,nh,hd] both converts
+  are no-ops and disappear from the scan body (verified in the jaxpr; the
+  kernel casts its q block to f32 internally anyway, so the numerics are
+  identical). The two reshapes [B,nh,hd] <-> [B,nh,1,hd] remain and may be
+  relayout copies on TPU (the kernel forces a <1x128> layout); they show
+  up in the trace's glue_us. q/out bytes are counted at the carry dtype
+  (4 B with f32); they are < 0.2 % of the KV bytes at every cell. q_dtype
+  is a CSV column and part of the resumability key; --decode-q-dtype bf16
+  reproduces the converted variant (trace dir suffix _qbf16). Prefill q
+  is always bf16 (the flash kernel runs its MXU dots in the q dtype).
 
 Chain honesty (both modes): the scan carry is the live data the next step
 depends on, every kernel output element influences it, the jit returns a
@@ -89,7 +126,21 @@ gets kernel_us = sum(pallas total_self_time) / chain, trace_step_us = all
 device self time / chain, glue_us = trace_step_us - kernel_us, and
 kernel_gbs / kernel_tflops / kernel_mfu computed from kernel_us. Without
 xprof on the VM those columns stay blank and `--annotate` fills them
-offline from the same trace directory (writes <out>.kernel.csv).
+offline from the same trace directory (writes <out>.kernel.csv; run it
+with --out <out>.rejected.csv as well to annotate refused rows).
+The trace is captured BEFORE the sanity gate, so a refused row reaches
+<out>.rejected.csv with its trace directory and kernel_* columns: the
+trace is the arbiter for exactly those rows.
+
+WHICH COLUMNS TO READ. per_step_us and the gbs / tflops / mfu / hbm_gbs
+derived from it are WALL-CLOCK figures: median chained-call time / chain,
+which contains whatever XLA runs around the kernel each step (the scan
+carry copy, the decode reshapes, the final reduce / chain). kernel_us and
+kernel_gbs / kernel_tflops / kernel_mfu are the KERNEL's own device time
+from the trace and are the primary attribution whenever present; the
+`attribution` column says which the row has ("xprof" when kernel_us is
+filled, "wall" otherwise) so a blank kernel_us is never silently read as
+the kernel's number. The brief's column names are kept for the scorer.
 
 Every kernel call goes through a wrapper that logs the exact call
 signature used. --probe-api prints the resolved import paths, signatures
@@ -101,16 +152,18 @@ with the exception text; there is NO silent fallback. --fallback-xla
 the same paged KV gathered contiguously) ONLY when the Pallas kernel raises,
 and records kernel=xla_* in the row.
 
-Resumable: points whose key fields (cell, kernel config, carry, chain) are
-already in --out are skipped.
+Resumable: points whose key fields (cell, kernel config, carry, chain,
+chain_form, q_dtype) are already in --out are skipped.
 
 Usage: a1_attention.py [--mode prefill|decode|both] [--out a1_attention.csv]
          [--trace DIR] [--dry-run] [--probe-api] [--annotate] [--chain 8]
-         [--carry out|sum] [--cells 512x1,2048x8] [--block 512[,256,...]]
+         [--carry out|sum] [--chain-form scan[,unroll]] [--decode-q-dtype f32|bf16]
+         [--cells 512x1,2048x8] [--block 512[,256,...]]
          [--ppcb 16[,8,...]] [--page-size 16] [--fallback-xla]
---block / --ppcb accept comma lists (the config is part of the CSV key), so
-the block-size choice can be swept in the same (cheap) session: the whole
-default 15-point session is < 1 s of device time at peak/plate.
+--block / --ppcb / --chain-form accept comma lists (the config is part of
+the CSV key), so the block-size choice and the chain form can be swept in
+the same (cheap) session: the whole default 15-point session is < 1 s of
+device time at peak/plate.
 """
 import argparse
 import csv
@@ -137,6 +190,10 @@ KERNEL_PAGED = "pallas_paged_attention"
 KERNEL_XLA_PREFILL = "xla_dot_product_attention"
 KERNEL_XLA_DECODE = "xla_gqa_einsum"
 CARRIES = ("out", "sum")
+CHAIN_FORMS = ("scan", "unroll")
+Q_DTYPES = {"f32": "float32", "bf16": "bfloat16"}   # --decode-q-dtype -> numpy/jnp dtype name
+ITEMSIZE = {"float32": 4, "bfloat16": 2}
+PREFILL_Q_DTYPE = "bfloat16"
 
 # Columns derived from the XProf trace (blank when no trace / no xprof).
 TRACE_COLS = ("kernel_us", "kernel_gbs", "kernel_tflops", "kernel_mfu", "glue_us", "trace_step_us",
@@ -184,9 +241,9 @@ def prefill_budget(S, B, block_q, block_k_major):
     }
 
 
-def decode_budget(S, B, page_size):
+def decode_budget(S, B, page_size, q_dtype="float32"):
     kv = B * S * NKV_DECODE * HD * 2 * 2
-    q = B * NH * HD * 2
+    q = B * NH * HD * ITEMSIZE[q_dtype]          # q and out at the carry dtype
     pps = S // page_size
     return {
         "flops_full": 4.0 * B * S * NH * HD, "flops_done": 4.0 * B * S * NH * HD,
@@ -234,11 +291,26 @@ def _cell_filter(spec):
     return out
 
 
+def _chain_forms(args):
+    forms = [f.strip() for f in str(getattr(args, "chain_form", "scan")).split(",") if f.strip()]
+    for f in forms:
+        if f not in CHAIN_FORMS:
+            raise ValueError(f"--chain-form {f!r}: choose from {CHAIN_FORMS}")
+    return forms
+
+
+def decode_q_dtype(args):
+    return Q_DTYPES[getattr(args, "decode_q_dtype", "f32")]
+
+
 def points_for(mode, args):
-    """One point per (cell x kernel config). --block / --ppcb accept comma
-    lists so the block-size choice can be swept in the same (cheap) session;
-    the config is part of the resumability key."""
+    """One point per (cell x kernel config x chain form). --block / --ppcb /
+    --chain-form accept comma lists so the block-size choice and the chain
+    form can be swept in the same (cheap) session; each is part of the
+    resumability key. cfg carries chain_form and q_dtype for the run."""
     want = _cell_filter(getattr(args, "cells", None))
+    forms = _chain_forms(args)
+    qdt = decode_q_dtype(args)
     pts = []
     if mode in ("prefill", "both"):
         for (S, B) in PREFILL_CELLS:
@@ -250,10 +322,12 @@ def points_for(mode, args):
                 if b in seen:      # min(block, S) collapses e.g. 512 and 1024 at S=512
                     continue
                 seen.add(b)
-                pts.append(("prefill", S, B,
-                            dict(block_q=b, block_k_major=b, block_k=b, block_b=1,
-                                 fa_path="single_step" if b == S else "online"),
-                            prefill_budget(S, B, b, b)))
+                for form in forms:
+                    pts.append(("prefill", S, B,
+                                dict(block_q=b, block_k_major=b, block_k=b, block_b=1,
+                                     fa_path="single_step" if b == S else "online",
+                                     chain_form=form, q_dtype=PREFILL_Q_DTYPE),
+                                prefill_budget(S, B, b, b)))
     if mode in ("decode", "both"):
         for (S, B) in DECODE_CELLS:
             if want is not None and (S, B) not in want:
@@ -263,8 +337,11 @@ def points_for(mode, args):
                 if S % args.page_size or pps % ppcb:
                     raise ValueError(f"S={S}: page_size {args.page_size} must divide S and "
                                      f"pages_per_compute_block {ppcb} must divide pages_per_seq {pps}")
-                pts.append(("decode", S, B, dict(page_size=args.page_size, ppcb=ppcb, pages_per_seq=pps),
-                            decode_budget(S, B, args.page_size)))
+                for form in forms:
+                    pts.append(("decode", S, B,
+                                dict(page_size=args.page_size, ppcb=ppcb, pages_per_seq=pps,
+                                     chain_form=form, q_dtype=qdt),
+                                decode_budget(S, B, args.page_size, qdt)))
     return pts
 
 
@@ -277,18 +354,24 @@ def cfg_suffix(mode, cfg):
 
 def point_name(mode, S, B, cfg, carry):
     """Trace directory name and [kernel-call] log tag: cell + kernel config
-    (+ the carry when it is not the default), so a --block / --ppcb sweep
-    never writes two configs' xplanes into one directory or suppresses the
-    second config's call-signature line."""
+    (+ the carry / chain form / decode q dtype when not the default), so a
+    sweep never writes two configs' xplanes into one directory or
+    suppresses the second config's call-signature line."""
     n = f"A1_{mode}_S{S}_B{B}_{cfg_suffix(mode, cfg)}"
     if carry != "out":
         n += f"_carry{carry}"
+    if cfg.get("chain_form", "scan") != "scan":
+        n += f"_{cfg['chain_form']}"
+    if mode == "decode" and cfg.get("q_dtype", "float32") != "float32":
+        n += "_q" + ("bf16" if cfg["q_dtype"] == "bfloat16" else cfg["q_dtype"])
     return n
 
 
 def key_fields(mode, S, B, cfg, chain, carry):
-    """Resumability key: the cell plus the kernel config and carry that produced it."""
-    k = {"mode": mode, "S": S, "B": B, "nh": NH, "nkv": nkv_of(mode), "hd": HD, "chain": chain, "carry": carry}
+    """Resumability key: the cell plus the kernel config, carry, chain form
+    and q dtype that produced it."""
+    k = {"mode": mode, "S": S, "B": B, "nh": NH, "nkv": nkv_of(mode), "hd": HD, "chain": chain, "carry": carry,
+         "chain_form": cfg.get("chain_form", "scan"), "q_dtype": cfg.get("q_dtype", PREFILL_Q_DTYPE)}
     if mode == "prefill":
         k.update(block_q=cfg["block_q"], block_k=cfg["block_k"])
     else:
@@ -381,39 +464,56 @@ def _next_carry(q, out, carry):
     return q + (out * 1e-3).astype(q.dtype)                      # decode [B,nh,hd]
 
 
-def make_prefill_chain(chain, block_sizes, sm_scale, tag, carry="out", use_xla=False):
+def _run_chain(step, q0, chain, chain_form):
+    """CHAIN dependent kernel calls inside the enclosing jit.
+    scan:   lax.scan carry (rule 1; the while loop's state buffer forces a
+            root copy of each step's output, see module docstring).
+    unroll: Python for-loop -- out_i is the direct operand of call_{i+1},
+            no loop state, no copy. Same single dispatch per timed call."""
+    import jax
+    assert chain_form in CHAIN_FORMS, chain_form
+    if chain_form == "scan":
+        qf, _ = jax.lax.scan(lambda q, _: (step(q), None), q0, None, length=chain)
+        return qf
+    q = q0
+    for _ in range(chain):
+        q = step(q)
+    return q
+
+
+def make_prefill_chain(chain, block_sizes, sm_scale, tag, carry="out", use_xla=False, chain_form="scan"):
     import jax
     import jax.numpy as jnp
     assert carry in CARRIES, carry
 
     @jax.jit
     def jchain(q0, k, v):
-        def step(q, _):
+        def step(q):
             if use_xla:
                 out = call_xla_prefill(q, k, v, sm_scale=sm_scale, tag=tag)
             else:
                 out = call_flash(q, k, v, block_sizes=block_sizes, sm_scale=sm_scale, tag=tag)
-            return _next_carry(q, out, carry), None
-        qf, _ = jax.lax.scan(step, q0, None, length=chain)
+            return _next_carry(q, out, carry)
+        qf = _run_chain(step, q0, chain, chain_form)
         return jnp.sum(qf.astype(jnp.float32))
     return jchain
 
 
-def make_decode_chain(chain, ppcb, megacore_mode, tag, carry="out", use_xla=False):
+def make_decode_chain(chain, ppcb, megacore_mode, tag, carry="out", use_xla=False, chain_form="scan"):
     import jax
     import jax.numpy as jnp
     assert carry in CARRIES, carry
 
     @jax.jit
     def jchain(q0, k_pages, v_pages, lengths, page_indices):
-        def step(q, _):
+        def step(q):
             if use_xla:
                 out = call_xla_decode(q, k_pages, v_pages, lengths, page_indices, tag=tag)
             else:
                 out = call_paged(q, k_pages, v_pages, lengths, page_indices,
                                  ppcb=ppcb, megacore_mode=megacore_mode, tag=tag)
-            return _next_carry(q, out, carry), None
-        qf, _ = jax.lax.scan(step, q0, None, length=chain)
+            return _next_carry(q, out, carry)
+        qf = _run_chain(step, q0, chain, chain_form)
         return jnp.sum(qf.astype(jnp.float32))
     return jchain
 
@@ -429,14 +529,17 @@ def prefill_inputs(S, B, key):
     return q, k, v
 
 
-def decode_inputs(S, B, page_size, key):
+def decode_inputs(S, B, page_size, key, q_dtype="float32"):
+    """q at the carry dtype (default float32: paged_attention launches its
+    kernel with q in f32 for nh/nkv = 4 groups, so an f32 carry makes the
+    wrapper's two converts no-ops); K/V pages always bf16."""
     import jax
     import jax.numpy as jnp
     import numpy as np
     kq, kk, kv = jax.random.split(key, 3)
     pps = S // page_size
     num_pages = B * pps
-    q = (jax.random.normal(kq, (B, NH, HD), jnp.float32) * 0.1).astype(jnp.bfloat16)
+    q = (jax.random.normal(kq, (B, NH, HD), jnp.float32) * 0.1).astype(jnp.dtype(q_dtype))
     k_pages = (jax.random.normal(kk, (NKV_DECODE, num_pages, page_size, HD), jnp.float32) * 0.1).astype(jnp.bfloat16)
     v_pages = (jax.random.normal(kv, (NKV_DECODE, num_pages, page_size, HD), jnp.float32) * 0.1).astype(jnp.bfloat16)
     lengths = jnp.full((B,), S, dtype=jnp.int32)
@@ -508,16 +611,20 @@ def trace_kernel_time(trace_dir, chain):
 
 
 def trace_columns(stats, bud):
-    """CSV columns derived from trace_kernel_time's stats (all blank if None)."""
+    """CSV columns derived from trace_kernel_time's stats (all blank if None).
+    `attribution` names which figures the row has: 'xprof' when kernel_us is
+    filled (kernel_* are the kernel's own device time), 'wall' when only the
+    wall-clock per_step_us / gbs / tflops / mfu are available."""
     if not stats:
-        return {c: "" for c in TRACE_COLS}
+        return {**{c: "" for c in TRACE_COLS}, "attribution": "wall"}
     ks = stats["kernel_us"] * 1e-6
     ktf = bud["flops_done"] / ks / 1e12 if ks > 0 else ""
     return {"kernel_us": stats["kernel_us"],
             "kernel_gbs": bud["hbm_bytes"] / ks / 1e9 if ks > 0 else "",
             "kernel_tflops": ktf, "kernel_mfu": (ktf / PEAK_TFLOPS) if ktf != "" else "",
             "glue_us": stats["glue_us"], "trace_step_us": stats["trace_step_us"],
-            "pallas_rows": len(stats["pallas_rows"]), "pallas_occurrences": stats["pallas_occurrences"]}
+            "pallas_rows": len(stats["pallas_rows"]), "pallas_occurrences": stats["pallas_occurrences"],
+            "attribution": "xprof"}
 
 
 def annotate_from_traces(stats_or_none, name, err):
@@ -538,13 +645,17 @@ def budget_of_row(row):
     S, B = int(row["S"]), int(row["B"])
     if row["mode"] == "prefill":
         return prefill_budget(S, B, int(row["block_q"]), int(row["block_k_major"]))
-    return decode_budget(S, B, int(row["page_size"]))
+    return decode_budget(S, B, int(row["page_size"]), row.get("q_dtype") or "bfloat16")
 
 
 def cfg_of_row(row):
+    """Config dict for point_name() from a CSV row (rows from the round-1
+    layout without chain_form / q_dtype get the values that layout used)."""
+    common = dict(chain_form=row.get("chain_form") or "scan",
+                  q_dtype=row.get("q_dtype") or (PREFILL_Q_DTYPE if row["mode"] == "prefill" else "bfloat16"))
     if row["mode"] == "prefill":
-        return dict(block_q=int(row["block_q"]), block_k=int(row["block_k"]))
-    return dict(page_size=int(row["page_size"]), ppcb=int(row["ppcb"]))
+        return dict(block_q=int(row["block_q"]), block_k=int(row["block_k"]), **common)
+    return dict(page_size=int(row["page_size"]), ppcb=int(row["ppcb"]), **common)
 
 
 def annotate(args):
@@ -581,16 +692,19 @@ def annotate(args):
 # ----------------------------------------------------------------------------
 
 def dry_run(points, args):
-    print(f"A1 attention probe: chain {args.chain}, carry {args.carry}, hd {HD}, nh {NH}, "
-          f"prefill nkv {NH} (MHA), decode nkv {NKV_DECODE} (GQA), page_size {args.page_size}, "
-          f"pages_per_compute_block {args.ppcb}, block {args.block}")
+    print(f"A1 attention probe: chain {args.chain}, carry {args.carry}, chain_form {args.chain_form}, "
+          f"hd {HD}, nh {NH}, prefill nkv {NH} (MHA, q bf16), decode nkv {NKV_DECODE} (GQA, q {decode_q_dtype(args)}), "
+          f"page_size {args.page_size}, pages_per_compute_block {args.ppcb}, block {args.block}")
     print(f"peak {PEAK_TFLOPS:.0f} TF/s, plate {PLATE_GBS:.0f} GB/s, VMEM {VMEM_BYTES / 2**20:.0f} MiB; "
           f"bytes_MB = algorithmic minimum (q+k+v+out | KV+q+out), hbm_MB = what the kernel moves "
-          f"(prefill re-fetches K/V kvx times per head), t_plate/exp_us use hbm_MB")
+          f"(prefill re-fetches K/V kvx times per head), t_plate/exp_us use hbm_MB; "
+          f"carry_MB = the per-step scan-carry copy (2 passes over out) the scan form adds OUTSIDE the "
+          f"kernel, copy_us its cost at plate (0 for unroll)")
     total = 0.0
-    hdr = (f"{'mode':7s} {'S':>5s} {'B':>3s} {'nkv':>3s}  {'kernel':24s} {'cfg':28s} "
+    hdr = (f"{'mode':7s} {'S':>5s} {'B':>3s} {'nkv':>3s}  {'kernel':24s} {'cfg':28s} {'form':6s} "
            f"{'flops_full':>11s} {'flops_done':>11s} {'frac':>5s} {'bytes_MB':>9s} {'kv_MB':>8s} "
-           f"{'kvx':>5s} {'hbm_MB':>8s} {'t_peak_us':>10s} {'t_plate_us':>10s} {'exp_us':>10s} {'vmem?':>5s}")
+           f"{'kvx':>5s} {'hbm_MB':>8s} {'t_peak_us':>10s} {'t_plate_us':>10s} {'exp_us':>10s} "
+           f"{'carry_MB':>8s} {'copy_us':>8s} {'vmem?':>5s}")
     print(hdr)
     for (mode, S, B, cfg, bud) in points:
         t_peak, _, t_plate, t_exp = expected_step_s(bud)
@@ -598,14 +712,17 @@ def dry_run(points, args):
         cfgs = (f"bq={cfg['block_q']} bk={cfg['block_k']} {cfg['fa_path']}" if mode == "prefill"
                 else f"ps={cfg['page_size']} ppcb={cfg['ppcb']} pps={cfg['pages_per_seq']}")
         fits = bud["bytes"] < VMEM_BYTES
-        print(f"{mode:7s} {S:5d} {B:3d} {nkv_of(mode):3d}  {kernel:24s} {cfgs:28s} "
+        carry_b = 2 * bud["q_bytes"] if cfg["chain_form"] == "scan" else 0
+        copy_us = carry_b / (PLATE_GBS * 1e9) * 1e6
+        print(f"{mode:7s} {S:5d} {B:3d} {nkv_of(mode):3d}  {kernel:24s} {cfgs:28s} {cfg['chain_form']:6s} "
               f"{bud['flops_full']:11.3e} {bud['flops_done']:11.3e} {bud['causal_frac']:5.3f} "
               f"{bud['bytes'] / 1e6:9.1f} {bud['kv_bytes'] / 1e6:8.1f} "
               f"{bud['kv_fetch_factor']:5.2f} {bud['hbm_bytes'] / 1e6:8.1f} "
-              f"{t_peak * 1e6:10.1f} {t_plate * 1e6:10.1f} {t_exp * 1e6:10.1f} {'yes' if fits else 'no':>5s}")
-        total += t_exp * args.chain * (args.reps + 1)
-    print(f"{len(points)} points; expected device time at peak/plate for (reps+1)*chain calls: "
-          f"{total:.1f} s (reps {args.reps}); traces and compile add to that")
+              f"{t_peak * 1e6:10.1f} {t_plate * 1e6:10.1f} {t_exp * 1e6:10.1f} "
+              f"{carry_b / 1e6:8.1f} {copy_us:8.1f} {'yes' if fits else 'no':>5s}")
+        total += (t_exp + copy_us * 1e-6) * args.chain * (args.reps + 1)
+    print(f"{len(points)} points; expected device time at peak/plate (+ scan carry copies) for (reps+1)*chain "
+          f"calls: {total:.1f} s (reps {args.reps}); traces and compile add to that")
 
 
 def probe_api(points, args):
@@ -626,8 +743,11 @@ def probe_api(points, args):
         print(f"xprof importable ({xprof.__file__}): kernel_us will be filled in-run from each trace")
     except ImportError:
         print("xprof NOT importable here: kernel_us stays blank in-run; fill it offline with --annotate")
-    print(f"chain carry: {args.carry} (see docstring; 'out' = kernel output is the next q, no XLA glue)")
-    print("shape smoke test (jax.eval_shape through each kernel's own validation; nothing executes):")
+    print(f"chain carry: {args.carry} (see docstring; 'out' = kernel output is the next q, no XLA glue); "
+          f"chain form(s): {args.chain_form}; decode q dtype: {decode_q_dtype(args)}")
+    print("shape smoke test (jax.eval_shape through each kernel's own validation; nothing executes); "
+          "'body' lists the primitives the chain runs per step besides the pallas_call (jaxpr, nested jits "
+          "flattened) -- the XLA glue the wall-clock per_step_us contains:")
     ok = True
     for (mode, S, B, cfg, bud) in points:
         tag = point_name(mode, S, B, cfg, args.carry)
@@ -639,29 +759,63 @@ def probe_api(points, args):
                 spec = jax.ShapeDtypeStruct((B, NH, S, HD), jnp.bfloat16)
                 o = jax.eval_shape(lambda q, k, v: call_flash(q, k, v, block_sizes=bs, sm_scale=sm, tag=tag),
                                    spec, spec, spec)
-                ch = make_prefill_chain(args.chain, bs, sm, tag, carry=args.carry)
-                r = jax.eval_shape(ch, spec, spec, spec)
+                ch = make_prefill_chain(args.chain, bs, sm, tag, carry=args.carry, chain_form=cfg["chain_form"])
+                ins = (spec, spec, spec)
                 assert o.shape == (B, NH, S, HD) and o.dtype == jnp.bfloat16, o
             else:
                 pps = cfg["pages_per_seq"]
-                qs = jax.ShapeDtypeStruct((B, NH, HD), jnp.bfloat16)
+                qdt = jnp.dtype(cfg["q_dtype"])
+                qs = jax.ShapeDtypeStruct((B, NH, HD), qdt)
                 ks = jax.ShapeDtypeStruct((NKV_DECODE, B * pps, cfg["page_size"], HD), jnp.bfloat16)
                 ls = jax.ShapeDtypeStruct((B,), jnp.int32)
                 ps = jax.ShapeDtypeStruct((B, pps), jnp.int32)
                 o = jax.eval_shape(lambda q, k, v, l, p: call_paged(q, k, v, l, p, ppcb=cfg["ppcb"],
                                                                      megacore_mode=args.megacore, tag=tag),
                                    qs, ks, ks, ls, ps)
-                ch = make_decode_chain(args.chain, cfg["ppcb"], args.megacore, tag, carry=args.carry)
-                r = jax.eval_shape(ch, qs, ks, ks, ls, ps)
-                assert o.shape == (B, NH, HD) and o.dtype == jnp.bfloat16, o
+                ch = make_decode_chain(args.chain, cfg["ppcb"], args.megacore, tag, carry=args.carry,
+                                       chain_form=cfg["chain_form"])
+                ins = (qs, ks, ks, ls, ps)
+                assert o.shape == (B, NH, HD) and o.dtype == qdt, o
+            r = jax.eval_shape(ch, *ins)
             assert r.shape == () and r.dtype == jnp.float32, r
-            print(f"  OK   {mode:7s} S={S:5d} B={B:3d} {cfg_suffix(mode, cfg):16s} kernel out {o.dtype}{list(o.shape)}"
-                  f"  chain -> {r.dtype}[]  kvx {bud['kv_fetch_factor']:.2f}")
+            body = chain_body_primitives(jax.make_jaxpr(ch)(*ins).jaxpr, cfg["chain_form"])
+            print(f"  OK   {mode:7s} S={S:5d} B={B:3d} {cfg_suffix(mode, cfg):16s} {cfg['chain_form']:6s} "
+                  f"kernel out {o.dtype}{list(o.shape)}  chain -> {r.dtype}[]  kvx {bud['kv_fetch_factor']:.2f}"
+                  f"  body: {body}")
         except Exception as e:  # noqa: BLE001 - report every failing cell, then exit non-zero
             ok = False
             print(f"  FAIL {mode:7s} S={S:5d} B={B:3d} {cfg_suffix(mode, cfg):16s} {type(e).__name__}: {e}")
     if not ok:
         sys.exit(1)
+
+
+def chain_body_primitives(jaxpr, chain_form):
+    """Names of the primitives one chain step runs (the scan body for the
+    scan form; the whole jit for the unroll form, so they appear CHAIN
+    times), with nested jit / custom_vjp wrappers flattened. Diagnostic
+    only: shows the XLA converts / reshapes around the pallas_call."""
+    def flat(j, out):
+        for e in j.eqns:
+            if e.primitive.name == "scan" and chain_form == "scan":
+                flat(e.params["jaxpr"].jaxpr, out)
+                out.append("<scan>")
+            elif e.primitive.name in ("jit", "pjit", "closed_call", "custom_vjp_call", "custom_jvp_call"):
+                inner = e.params.get("jaxpr") or e.params.get("call_jaxpr") or e.params.get("fun_jaxpr")
+                inner = getattr(inner, "jaxpr", inner)
+                if inner is None:
+                    out.append(e.primitive.name)
+                else:
+                    flat(inner, out)
+            else:
+                out.append(e.primitive.name)
+        return out
+    names = flat(jaxpr, [])
+    if chain_form == "scan" and "<scan>" in names:
+        names = names[:names.index("<scan>")]          # the body only
+    counts = {}
+    for n in names:
+        counts[n] = counts.get(n, 0) + 1
+    return " ".join(f"{n}x{c}" if c > 1 else n for n, c in counts.items())
 
 
 # ----------------------------------------------------------------------------
@@ -686,6 +840,12 @@ def main():
     ap.add_argument("--carry", default="out", choices=CARRIES,
                     help="scan carry: 'out' (kernel output is the next q; no XLA glue) or 'sum' "
                          "(q + sum(out)*1e-3 broadcast; 3 extra array passes per step, kept for comparison)")
+    ap.add_argument("--chain-form", default="scan",
+                    help="scan (lax.scan; rule 1) or unroll (Python loop of CHAIN calls in the same jit, no "
+                         "loop-carry copy); comma list runs both (part of the CSV key)")
+    ap.add_argument("--decode-q-dtype", default="f32", choices=tuple(Q_DTYPES),
+                    help="decode q / carry dtype; f32 (default) makes paged_attention's wrapper converts "
+                         "no-ops, bf16 reproduces the converted variant")
     ap.add_argument("--cells", default=None, help="restrict to cells, e.g. 512x1,2048x8 (SxB)")
     ap.add_argument("--block", default="512",
                     help="prefill block_q = block_k_major = block_k = min(block, S); multiple of 128; "
@@ -717,12 +877,14 @@ def main():
     from common import time_op, csv_append, already_done
 
     print(f"jax {jax.__version__} backend {jax.default_backend()} devices {jax.devices()}", flush=True)
-    print(f"carry {args.carry}; chain {args.chain}; reps {args.reps}", flush=True)
+    print(f"carry {args.carry}; chain {args.chain}; chain_form {args.chain_form}; "
+          f"decode q dtype {decode_q_dtype(args)}; reps {args.reps}", flush=True)
     key = jax.random.PRNGKey(0)
     rejected = os.path.splitext(args.out)[0] + ".rejected.csv"
 
     for (mode, S, B, cfg, bud) in points:
         nkv = nkv_of(mode)
+        form = cfg["chain_form"]
         name = point_name(mode, S, B, cfg, args.carry)
         tag = name
         kernel = KERNEL_FLASH if mode == "prefill" else KERNEL_PAGED
@@ -735,21 +897,24 @@ def main():
                                block_k=cfg["block_k"], block_b=cfg["block_b"])
             sm = HD ** -0.5
             q, k, v = prefill_inputs(S, B, key)
-            jchain = make_prefill_chain(args.chain, bs, sm, tag, carry=args.carry)
+            jchain = make_prefill_chain(args.chain, bs, sm, tag, carry=args.carry, chain_form=form)
             fn = lambda: jchain(q, k, v)  # noqa: E731
-            fb = (lambda: make_prefill_chain(args.chain, bs, sm, tag + "_xla", carry=args.carry, use_xla=True),
+            fb = (lambda: make_prefill_chain(args.chain, bs, sm, tag + "_xla", carry=args.carry, use_xla=True,
+                                             chain_form=form),
                   KERNEL_XLA_PREFILL)
             cfg_cols = {"block_q": cfg["block_q"], "block_k_major": cfg["block_k_major"], "block_k": cfg["block_k"],
                         "fa_path": cfg["fa_path"], "page_size": "", "ppcb": ""}
         else:
-            q, k_pages, v_pages, lengths, page_indices = decode_inputs(S, B, cfg["page_size"], key)
-            jchain = make_decode_chain(args.chain, cfg["ppcb"], args.megacore, tag, carry=args.carry)
+            q, k_pages, v_pages, lengths, page_indices = decode_inputs(S, B, cfg["page_size"], key, cfg["q_dtype"])
+            jchain = make_decode_chain(args.chain, cfg["ppcb"], args.megacore, tag, carry=args.carry,
+                                       chain_form=form)
             fn = lambda: jchain(q, k_pages, v_pages, lengths, page_indices)  # noqa: E731
             fb = (lambda: make_decode_chain(args.chain, cfg["ppcb"], args.megacore, tag + "_xla",
-                                            carry=args.carry, use_xla=True),
+                                            carry=args.carry, use_xla=True, chain_form=form),
                   KERNEL_XLA_DECODE)
             cfg_cols = {"block_q": "", "block_k_major": "", "block_k": "", "fa_path": "",
                         "page_size": cfg["page_size"], "ppcb": cfg["ppcb"]}
+        cfg_cols.update(chain_form=form, q_dtype=cfg["q_dtype"])
 
         def timed(fn):
             # One extra (compiling) call whose value is checked: the chain
@@ -791,15 +956,10 @@ def main():
                "kv_fetch_factor": bud["kv_fetch_factor"], "carry": args.carry,
                "flops_full": bud["flops_full"], "flops_done": bud["flops_done"],
                "causal_frac": bud["causal_frac"], **cfg_cols}
-        if over and not fits_vmem:
-            reason = (f"{tflops:.0f} TF/s / {hbm_gbs:.0f} GB/s (on hbm_bytes {bud['hbm_bytes'] / 1e6:.0f} MB; "
-                      f"{gbs:.0f} GB/s on the {bud['bytes'] / 1e6:.0f} MB minimum) exceeds 1.05x peak/plate "
-                      f"with a {bud['bytes'] / 1e6:.0f} MB working set (> VMEM)")
-            print(f"SANITY FAIL {name}: {reason} -- work was elided or the fetch model is wrong "
-                  f"(check the trace); row NOT written to {args.out} (kept in {rejected})", flush=True)
-            csv_append(rejected, {**row, "reason": reason})
-            continue
 
+        # The trace is captured BEFORE the sanity gate: a refused row is
+        # exactly the one whose trace (kernel_us / kernel_gbs) is the arbiter,
+        # so it must exist and its columns go into the rejected row too.
         stats = None
         trace_dir = ""
         if args.trace:
@@ -815,9 +975,20 @@ def main():
             annotate_from_traces(stats, name, err)
         row.update(trace_columns(stats, bud))
         row["trace_dir"] = trace_dir
-        csv_append(args.out, row)
         ks = f"  kernel {stats['kernel_us']:.2f} us (glue {stats['glue_us']:.2f})" if stats else ""
-        print(f"{mode:7s} S={S:5d} B={B:3d} nkv={nkv:2d} {kernel:24s} {row['per_step_us']:10.2f} us/step  "
+
+        if over and not fits_vmem:
+            reason = (f"{tflops:.0f} TF/s / {hbm_gbs:.0f} GB/s (on hbm_bytes {bud['hbm_bytes'] / 1e6:.0f} MB; "
+                      f"{gbs:.0f} GB/s on the {bud['bytes'] / 1e6:.0f} MB minimum) exceeds 1.05x peak/plate "
+                      f"with a {bud['bytes'] / 1e6:.0f} MB working set (> VMEM)")
+            where = f"trace {trace_dir}{ks}" if trace_dir else "no --trace given: re-run this cell with --trace DIR"
+            print(f"SANITY FAIL {name}: {reason} -- work was elided or the fetch model is wrong "
+                  f"({where}); row NOT written to {args.out} (kept in {rejected})", flush=True)
+            csv_append(rejected, {**row, "reason": reason})
+            continue
+
+        csv_append(args.out, row)
+        print(f"{mode:7s} S={S:5d} B={B:3d} nkv={nkv:2d} {kernel:24s} {form:6s} {row['per_step_us']:10.2f} us/step  "
               f"{tflops:7.1f} TF/s  {gbs:7.0f} GB/s min  {hbm_gbs:7.0f} GB/s hbm{ks}"
               f"{'  [VMEM-resident]' if vmem else ''}", flush=True)
 

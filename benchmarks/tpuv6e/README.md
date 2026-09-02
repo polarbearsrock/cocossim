@@ -30,8 +30,24 @@ census → teardown, ~$3.
   (`A1_prefill_S2048_B1_bq512_bk512`) and, when `xprof` is importable, the
   row gets `kernel_us` / `glue_us` / `kernel_gbs` / `kernel_tflops` from the
   trace's `pallas_call` rows; otherwise `--annotate --out CSV --trace DIR`
-  fills them offline into `<out>.kernel.csv`. Rows refused by the sanity
-  gate go to `<out>.rejected.csv` with a reason.
+  fills them offline into `<out>.kernel.csv`. The trace is captured before
+  the sanity gate, so rows refused into `<out>.rejected.csv` keep their
+  trace directory and `kernel_*` columns (the trace is the arbiter for
+  exactly those rows; `--annotate --out <out>.rejected.csv` works too).
+  Read the columns as: `per_step_us` and its `gbs` / `tflops` / `mfu` are
+  wall-clock per step and include the XLA glue around the kernel;
+  `kernel_*` are the kernel's own device time and are primary when present
+  (`attribution` = `xprof` vs `wall`). Two switches isolate that glue:
+  `--chain-form scan,unroll` runs the chain as `lax.scan` (whose while
+  loop copies the [B,nh,S,hd] output into the loop-carry buffer every
+  step -- a custom call cannot write over its own operand) and as a Python
+  loop of CHAIN calls in one jit (no carry, no copy); their `per_step_us`
+  difference is that copy. `--decode-q-dtype f32` (default) generates the
+  decode q/carry in float32 so `paged_attention`'s wrapper converts
+  (bf16->f32 before the kernel, f32->bf16 after, ~7-9 us launch cost each)
+  become no-ops; `--probe-api` prints the per-step primitives of each
+  chain body so the remaining glue (two reshapes) is visible before the
+  session.
 - `holdout/dh_offline.py` — fixed-shape Qwen3-8B points via vLLM offline
   mode; maps 1:1 onto simulator `Transformer` runs. `--trace-dir` captures an
   xplane per point.
