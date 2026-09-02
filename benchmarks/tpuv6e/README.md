@@ -48,6 +48,11 @@ census → teardown, ~$3.
   become no-ops; `--probe-api` prints the per-step primitives of each
   chain body so the remaining glue (two reshapes) is visible before the
   session.
+  Also `k1_kv_gather.py`, i.e. `k1_kv_gather.py` (K1: `jax.experimental.pallas.ops.tpu.paged_attention`
+  sequential vs shuffled block table vs dense XLA vs raw `jnp.take`
+  gather/contiguous read; `--probe-api` prints the resolved kernel
+  signature and a layout/shape smoke test without a TPU; every compiled
+  program is checked for work hoisted out of the scan loop).
 - `holdout/dh_offline.py` — fixed-shape Qwen3-8B points via vLLM offline
   mode; maps 1:1 onto simulator `Transformer` runs. `--trace-dir` captures an
   xplane per point.
