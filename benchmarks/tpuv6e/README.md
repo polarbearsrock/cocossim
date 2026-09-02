@@ -17,9 +17,10 @@ census → teardown, ~$3.
   mode; maps 1:1 onto simulator `Transformer` runs. `--trace-dir` captures an
   xplane per point.
 - `analysis/kernel_census.py` — xplane trace → phase-class breakdown
-  (gemm/attention/norm/elementwise/data/idle/other), comparable to the
-  simulator's ACCT lines. Local venv: `/data2/s2chitni/venvs/tpu-analysis`
-  (`pip install xprof`).
+  (gemm/attention/norm/elementwise/data/idle/other), per-class MXU/HBM
+  utilization, simulator op classes (`--per-class`), per-step device time,
+  CSV export; see "Census v2" below. Local venv:
+  `/data2/s2chitni/venvs/tpu-analysis` (`pip install xprof`).
 
 ## Session runbook
 
@@ -49,6 +50,100 @@ benchmarks/tpuv6e/teardown.sh        # ALWAYS - on-demand bills ~$3/hr
   `AttributeError` after `stop_trace` is cosmetic.
 - Launching detached over ssh needs `< /dev/null` + `disown` or the session
   hangs.
+
+## Census v2 (`analysis/kernel_census.py`, spec S5)
+
+```
+source /data2/s2chitni/venvs/tpu-analysis/bin/activate
+kernel_census.py $RESULTS_DIR/dh_traces --per-class --csv census.csv   # every point under a parent dir
+kernel_census.py $RESULTS_DIR/dh_traces/decode_512_8 --per-class --steady   # per-step view of a decode window
+kernel_census.py --selftest                                             # asserts on the stored prefill_512_1 (+decode_512_8)
+```
+
+Inputs: XProf's `framework_op_stats` (op types, cross-check) and `op_profile`
+byProgram tree (all time and utilization). Trace paths may be relative to the
+cwd; a parent dir yields one point per sub-dir.
+
+**Table / CSV columns** (`--csv` writes one row per point × class):
+`point, class, time_ms, share, mxu_util, hbm_util, occurrences, kind,
+costmodel_cov, steps, scope`. `kind` is `bucket` (gemm/attention/norm/
+elementwise/data/idle/other, shares sum to 1), `gemm_class` (qkv, o,
+gate_up, down, mlp_fused, head, gemm_other — sum to the gemm bucket) or
+`gemm_sub` (q, kv — breakdown of qkv); filter on `kind` before summing.
+`occurrences` = HLO-op executions in the class over the trace. `mxu_util` =
+Σflops/Σtime/946.7 TFLOP/s and `hbm_util` = Σbytes[0]/Σtime/1638 GB/s over
+the ops that have an XProf cost model; `costmodel_cov` is the share of the
+class time those ops cover and the utilization is blank below 50 %. The
+Pallas `ragged_paged_attention` custom-call has no cost model (flops = bytes
+= 0), so attention utilization is never available from XProf. `scope` is
+`trace` (whole window) or `step` (`--steady`: each program divided by its run
+count, one-off programs dropped, idle/n_steps).
+
+**Bandwidth triple** (`op_profile` `bandwidthUtils[3]`), confirmed on every
+node of all six stored traces: `bandwidthUtils[i] = rawBytesAccessedArray[i]
+/ rawTime / peak_i` with peak = [1638 GB/s, 23296 GB/s, 16128 GB/s] — index 0
+is **HBM read+write**, 1 is on-chip (VMEM) read, 2 is on-chip write. Evidence:
+weight-streaming MLP fusions (100–200 MB of weights per call) sit at 0.81–0.92
+in entry 0 and < 0.01 in entry 1, whereas the q projection, whose 33.5 MB
+weight XLA prefetches into VMEM with an async `copy-start/copy-done` pair,
+shows 0.04–0.06 in entry 0 and its weight bytes in entry 1 (the prefetch's
+HBM bytes are booked on the ~1 µs `copy-start`, which is why `*-start` ops
+are excluded from class utilization). The `flops` field is **not** a
+utilization: it is `rawFlops / 946.7 TFLOP/s / root time` (a share of the
+whole trace), so per-op MXU utilization has to be recomputed from
+`rawFlops/rawTime`. Both peaks are re-derived from the root node of each
+trace and asserted by `--selftest` (which also checks: bucket shares sum to
+1 ± 1e-6, Σunits == device total, join agreement with `framework_op_stats`,
+gemm MXU > 0.3 (observed 0.31 on prefill_512_1), gemm HBM entry 0 > 0.5
+(observed 0.69), MLP entry 0 > 0.5 with entry 1 < 0.1, q entry 0 < 0.2 with
+entry 1 > entry 0, idle utilization == 0, program run counts).
+
+**Join** `op_profile` → `framework_op_stats`: a unit (an HLO op or fusion,
+the first node below a category; `X and its duplicate(s)` groups are
+expanded) carries `xla.provenance`, the JAX op name XLA stored as the
+fusion's metadata (e.g. `jit(run_model_impl)/JaxLinear/mn,np->mp/
+dot_general`, trailing `:` stripped); ops without provenance (`copy-done.N`,
+`async-done.N`, `IDLE`) are listed under their HLO name. The framework row's
+self time equals the sum of its units to the µs. xprof caps children at 100
+per node, so categories with more distinct ops (`async-done` on decode
+windows, ~1.5 % of time) get a synthetic `[residual]` unit carrying the
+category's class so that Σunits == device total exactly.
+
+**Gemm classes** are inferred per unit: `run_compute_logits`/`TD,DV->TV` →
+head; `JaxEinsum TD,DNH->TNH` → q and `TD,DKH->TKH` → kv (k and v are
+separate fusions; together `qkv`); `TNH,NHD->TD` → o; `JaxLinear mn,np->mp`
+by the weight shapes in the fusion (D from the q/o weights): only a `[D,F]`
+weight → gate_up, only `[F,D]` → down, both → `mlp_fused`. XLA fuses one
+D→F projection with the F→D projection into a single fusion on the batch-1
+prefill and on the decode programs, so gate/up vs down **cannot** be
+separated there — compare gate_up + down + mlp_fused against the
+simulator's gate_up + down. The batched-prefill program keeps them apart
+(gate_up = 2 fusions/layer, down = 1). RMSNorm and the SiLU·up product are
+epilogues of these fusions on silicon (`norm`/`elementwise` ≈ 0.1 %).
+
+**Per-step device time**: for every program, runs = time-weighted mode of
+the `occurrences` of the HLO ops inside it (`framework_op_stats.occurrences`
+is the same number: the max over an op's HLO instances, i.e. program runs,
+not kernel launches), per-run = rawTime/runs. n_steps = runs of the
+most-executed `jit_run_model_impl`; the step = Σ per-run over programs with
+runs ≥ n_steps (model + LM head + sampling + glue). One-off programs (the
+prefill that opens a decode window) and the IDLE share are printed beside
+the whole-trace total. decode_512_8: 63 steps, 14.570 ms/step (model 13.451,
+head 1.087) out of 972.3 ms; decode_2048_32: 23.030 ms/step.
+
+**Caveat — what the stored session-3 traces contain.** Every single-prefill
+trace (`prefill_{512,2048}_{1,8}`) holds exactly one execution of a model
+program with M = 256 × batch GEMM rows, whatever the prompt length:
+prefill_512_1 and prefill_2048_1 share the program id and the FLOP count
+(3.57 TFLOP = 256 tokens of Qwen3-8B), the batch-8 pair share M = 2048.
+256 is the RPA kernel's KV page size (`RPAm-p_256-…`), i.e. the signature of
+a prefix-cache hit that recomputes only the last page — not a profiler cut
+(the 972 ms / 14k-op decode window is captured whole). Only the attention
+time grows with context. So the prefill totals are **not** a forward and the
+whole-trace totals of the decode windows include the same partial prefill;
+trust only the per-step (occurrences/avg_time, `--steady`) numbers, and
+re-capture prefill points as short windows with prefix caching verified off
+(spec §2). The census prints a WARNING whenever M × runs < seq × batch.
 
 ## Measurement discipline (spec §4)
 
