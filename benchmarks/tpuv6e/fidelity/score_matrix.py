@@ -22,6 +22,15 @@ def verdict(err):
     return "PASS" if a <= 0.10 else ("CONDITIONAL" if a <= 0.25 else "FAIL")
 
 
+def band(r):
+    """Per-step [p10, p90] in us: slope-method rows carry it directly; the
+    original H1 rows carry per-call p10_s/p90_s to be divided by the chain."""
+    if r.get("per_step_p10_us") not in (None, ""):
+        return float(r["per_step_p10_us"]), float(r["per_step_p90_us"])
+    c = int(r["chain"])
+    return float(r["p10_s"]) / c * 1e6, float(r["p90_s"]) / c * 1e6
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sim_csv")
@@ -43,7 +52,7 @@ def main():
         if not s:
             continue
         si = float(r["per_step_us"]); sm = float(s["us"])
-        p10 = float(r["p10_s"]) / int(r["chain"]) * 1e6; p90 = float(r["p90_s"]) / int(r["chain"]) * 1e6
+        p10, p90 = band(r)
         err = (sm - si) / si
         rows.append(dict(cell=r["cell"], label=r["label"], shape=f"{r['M']}x{r['K']}x{r['N']}",
                          si_us=si, si_p10=p10, si_p90=p90, sim_us=sm, err=err,
@@ -60,7 +69,7 @@ def main():
         if not s:
             continue
         si = float(r["per_step_us"]); sm = float(s["us"])
-        p10 = float(r["p10_s"]) / int(r["chain"]) * 1e6; p90 = float(r["p90_s"]) / int(r["chain"]) * 1e6
+        p10, p90 = band(r)
         err = (sm - si) / si
         vmem = int(r["bytes_moved"]) < VMEM_BYTES
         rows.append(dict(cell="E1v" if vmem else "E1", label=r["op"], shape=f"n={r['n']}", si_us=si, si_p10=p10, si_p90=p90,

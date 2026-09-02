@@ -54,7 +54,9 @@ def main():
             continue
         si = fnum(r, "per_step_us"); sm = float(s["attn_us"])
         chain = fnum(r, "chain", default=1)
-        p10 = fnum(r, "p10_s", default=0) / chain * 1e6; p90 = fnum(r, "p90_s", default=0) / chain * 1e6
+        # slope-method rows carry a per-step band; older rows a per-call one
+        p10 = fnum(r, "per_step_p10_us", default=fnum(r, "p10_s", default=0) / chain * 1e6)
+        p90 = fnum(r, "per_step_p90_us", default=fnum(r, "p90_s", default=0) / chain * 1e6)
         err = (sm - si) / si
         vm = int(fnum(r, "vmem_resident", default=0))
         note = "silicon KV fits VMEM" if vm else ""
