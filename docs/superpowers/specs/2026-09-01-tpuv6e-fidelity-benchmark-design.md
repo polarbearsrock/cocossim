@@ -413,6 +413,40 @@ experiments claim (state the regime explicitly: model sizes, batch and
 context ranges). **CONDITIONAL-GO** otherwise, listing the excluded regime.
 **NO-GO** if any D cell fails with an unexplained mechanism.
 
+### 7.1 Fit and verdict (2026-09-01)
+
+**Fit** (`fidelity/fit_tier2.py`, Qwen device times; every combo in
+`results/fidelity/fit2/`):
+
+| combo | Qwen MAPE | bias | P/C/F | Mistral holdout MAPE | bias |
+|---|---|---|---|---|---|
+| priors | 14.8% | −10.6% | 6/7/3 | 18.8% | −17.0% |
+| `-op_overhead` 4000 / 8000 / 12000 | 14.9 / 14.3 / 13.5% | −9.7 / −8.3 / −6.2% | 5/8/3 … 7/8/1 | — | — |
+| `-dram_enq 15 -op_overhead 12250` (§6.1 fit) | 13.9% | −8.4% | 6/9/1 | — | — |
+| `-dram_enq 10` | 10.9% | +6.4% | 10/4/2 | 17.7% | −1.1% |
+| `-dram_enq 12` | 10.8% | −4.2% | 6/10/0 | 16.1% | −11.0% |
+| **`-dram_enq 12 -data_overhead 1750000`** | **9.2%** | **−0.2%** | **10/6/0** | **15.4%** | **−7.1%** |
+
+The per-op core stall (`-op_overhead`) is not the right mechanism for the
+in-model loss: with cross-op prefetch the DRAM keeps streaming through a
+core stall, so decode moved by only 3 points even at 12000 cycles. The
+sustained-bandwidth cap (`-dram_enq 12`, ≈ 1.15 TB/s in a weight-bound
+step) plus the fixed 1 ms per forward that XLA's copy/layout kernels cost
+(census class `data`) reproduce Qwen with no bias and improve the holdout
+in the same direction; `configs/tpuv6e_fitted.sh` carries them. The
+§6.1 numbers are superseded.
+
+**Verdict per regime** (fitted config):
+
+| regime | Qwen | Mistral (holdout) | verdict |
+|---|---|---|---|
+| decode, context 512–2048, batch 1–32 | −6 … +7% | −5 … +6% | GO |
+| single-sequence prefill 512–2048 | −6 … +4% | −5 … −10% | GO |
+| batched prefill 2048 × 4/8 | −4 … −5% | −24% (wrapper path) | GO (native-JAX path) |
+| batched short prefill 512 × 4/8 | −12 … −15% | −35% | CONDITIONAL |
+| decode, context ≥ 4k (4096×16, 8192×8) | +18 … +21% | +23% | CONDITIONAL, fix §6.3 item 2 |
+| prefill ≥ 4k tokens per sequence | +21% | — | NO-GO until §6.3 item 3 (attention) is fixed |
+
 ## 8. Hardware sessions (on-demand v6e-1, us-east5, ≤ $50 each)
 
 | session | content | est. |

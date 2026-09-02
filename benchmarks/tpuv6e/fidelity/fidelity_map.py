@@ -75,19 +75,24 @@ def panel_a1(ax, rows):
 
 
 def panel_tier2(ax, labelled):
-    names = None
+    """Bars keyed by point name so grids of different sizes line up."""
+    key = lambda r: (r["mode"] != "prefill", int(r["seq"]), int(r["batch"]))
+    pts = {}
+    for _, rows in labelled:
+        for r in rows:
+            if r.get("err_dev") not in (None, ""):
+                pts[key(r)] = f"{r['mode'][0]} {r['seq']}x{r['batch']}"
+    order = sorted(pts)
+    pos = {k: j for j, k in enumerate(order)}
     width = 0.8 / max(1, len(labelled))
     for i, (label, rows) in enumerate(labelled):
         rows = [r for r in rows if r.get("err_dev") not in (None, "")]
-        rows.sort(key=lambda r: (r["mode"] != "prefill", int(r["seq"]), int(r["batch"])))
-        if names is None:
-            names = [f"{r['mode'][0]} {r['seq']}x{r['batch']}" for r in rows]
-        xs = [j + i * width for j in range(len(rows))]
-        ax.bar(xs, [100 * float(r["err_dev"]) for r in rows], width=width, label=label)
+        ax.bar([pos[key(r)] + i * width for r in rows], [100 * float(r["err_dev"]) for r in rows],
+               width=width, label=label)
     bands(ax)
-    if names:
-        ax.set_xticks([j + 0.4 - width / 2 for j in range(len(names))])
-        ax.set_xticklabels(names, rotation=60, fontsize=6)
+    if order:
+        ax.set_xticks([j + 0.4 - width / 2 for j in range(len(order))])
+        ax.set_xticklabels([pts[k] for k in order], rotation=60, fontsize=6)
     ax.set_title("Tier 2: whole model vs per-step device time\n(p = prefill seq x batch, d = decode context x batch)", fontsize=10)
     ax.legend(fontsize=7)
 

@@ -204,3 +204,71 @@ iteration discarded; medians over ≥20 reps with p10/p90 recorded. HLO/kernel
 names captured via the trace (the census keys on them). Raw traces + CSVs
 land in `$RESULTS_DIR`, never in git; the extracted CSVs that feed the fit
 get committed under `benchmarks/tpuv6e/results/` once a session is accepted.
+
+## Fidelity results (2026-09-01; spec §6.3, figure `results/fidelity/fidelity_map.png`)
+
+Three concurrent on-demand v6e-1 VMs (tier-1 probes, Qwen3-8B grid,
+Mistral-7B-v0.3 grid; ~72 VM-minutes total). Error = (sim − silicon) /
+silicon on device time; PASS ≤ 10%, CONDITIONAL ≤ 25%.
+
+**Fitted config** `configs/tpuv6e_fitted.sh` = priors + `-dram_enq 12
+-data_overhead 1750000`, chosen on the Qwen device times by
+`fidelity/fit_tier2.py` (`results/fidelity/fit2/sim_*.csv` hold every
+combo tried) and checked on Mistral, which never entered the fit:
+
+| | Qwen3-8B (fit set, 16 pts) | Mistral-7B (holdout, 7 pts) |
+|---|---|---|
+| priors | MAPE 14.8%, bias −10.6%, 6 PASS / 7 COND / 3 FAIL | MAPE 18.8%, bias −17% |
+| fitted | MAPE 9.2%, bias −0.2%, 10 PASS / 6 COND / 0 FAIL | MAPE 15.4%, bias −7%, 4 PASS / 2 COND / 1 FAIL |
+
+The two terms are physical, not free parameters: silicon sustains
+~1.15 TB/s of weight streaming *inside* a model step (isolated chained
+GEMMs reach 1.33–1.38), and XLA's layout/copy kernels cost 0.8–1.2 ms per
+decode step on both models (census class `data`). A per-op core stall
+(`-op_overhead`, up to 12000 cycles) was tried first and moved decode by
+only 3 points: the DRAM keeps prefetching through a core stall, so a
+stall is hidden in a memory-bound step.
+
+**Where the simulator is right** (fitted): weight-bound decode at
+512–2048 context (Qwen −6…+7%, Mistral −5…+6%), single-sequence prefill
+at 512–2048 tokens (−6…+4%), batched prefill at 2048×4/×8 (−4…−5%), the
+big isolated GEMM streams (G3 q/gate/up/down ±8%), tier-1 8192³ and 4096³
+(−11/+12%).
+
+**Where it is wrong, and why** (see spec §6.3 for the attribution):
+
+1. *Prefill attention at S ≥ 2048*: sim 1.6–2.2× too slow (A1: +88% at
+   S 2048 B 1; in-model +21% at 4096×1). The head_dim-128 contraction
+   half-fills the 256-deep array and every (head, q-tile) is a separate
+   job. Mechanism fix, not a knob.
+2. *Decode attention*: vLLM's `ragged_paged_attention` costs ≈ 20 µs +
+   ~5 µs per sequence per layer at short context, but streams KV at
+   ≈ 1.6 TB/s at long context; the sim's per-head KV jobs are
+   demand-fetched (excluded from `-dbuf`) at ≈ 0.9 TB/s. Under the fitted
+   bandwidth this shows as +16…+23% at 4096×16 / 8192×8. Fix: let the KV
+   sweep prefetch (one-line policy change in `Arch.cc`) plus a per-
+   sequence attention cost.
+3. *Batched short prefill* (512×4, 512×8): −12…−15% on Qwen; Mistral −35%
+   at 512×8 because its vLLM path (PyTorch wrapper, `step_fun_impl`)
+   spends 14 ms of a 129 ms forward in data movement and 20 ms in
+   attention that the native-JAX Qwen path does not.
+4. *Mid-M GEMMs* (512–2048 rows at K = N = 4096/8192): sim +13…+37% too
+   slow; silicon overlaps the weight stream with compute where the sim's
+   SA time ≈ stream + compute. Small squares (1024³ +66%). Only visible
+   in tier 1; masked in tier 2 by items 1 and 3.
+5. *Write-heavy elementwise streams*: sim −15…−25% too fast (silicon
+   1.16 TB/s vs 1.5); VMEM-resident sizes (< 2²⁵ elements) are not an HBM
+   cell at all on silicon.
+
+**Probe caveats**: the A1 decode and K1 probes time the legacy Pallas
+`paged_attention` kernel, which is 4–9× slower per KV byte than the RPA
+kernel the models run; they are kernel-relative data (K1: page shuffling
+costs nothing, ratio 1.00). K1's per-step numbers carry ~14 µs of host
+floor (chain 8, plain `time_op`); the ratios do not.
+
+**Go/no-go** (spec §7): GO for utilization experiments in the weight-
+streaming and mid-length-prefill regimes with `tpuv6e_fitted.sh`, quoting
+±10% (Qwen) / ±15% (a model on the other vLLM path). NO-GO until items 1–2
+are fixed for experiments whose answer hinges on attention time: long-
+sequence prefill (≥ 4k tokens per sequence) or long-context batched
+decode (≥ 4k × 16).
