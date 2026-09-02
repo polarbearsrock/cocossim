@@ -1,0 +1,6 @@
+dram_enq=32 op_overhead=0                objective=0.1899  PASS 39/84  E1:0.303  G1:0.218  G2:0.134  G3:0.186
+dram_enq=15 op_overhead=0                objective=0.1935  PASS 47/84  E1:0.298  G1:0.220  G2:0.104  G3:0.196
+dram_enq=32 op_overhead=12250            objective=0.1160  PASS 39/84  E1:0.283  G1:0.153  G2:0.187  G3:0.087
+dram_enq=15 op_overhead=12250            objective=0.1040  PASS 54/84  E1:0.279  G1:0.144  G2:0.126  G3:0.082
+dram_enq=32 op_overhead=15750            objective=0.1341  PASS 36/84  E1:0.278  G1:0.197  G2:0.209  G3:0.105
+dram_enq=15 op_overhead=15750            objective=0.1163  PASS 50/84  E1:0.274  G1:0.181  G2:0.149  G3:0.092
