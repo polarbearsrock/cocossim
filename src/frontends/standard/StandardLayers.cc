@@ -234,11 +234,12 @@ JobPair MatmulAct(const ArchConfig &a_config, const LayerConfig &l_config) {
   }
 
   if (a_config.ws) {
-    JobList matmul_layers;
-    for (int kb = 0; kb < std::max(1, int(std::ceil(float(K) / a_config.sa_sz_allo))); ++kb) {
-      JobList part = createSAJobs(M, a_config.sa_sz_allo, N, a_config.sa_sz_allo);
-      matmul_layers.insert(matmul_layers.end(), part.begin(), part.end());
-    }
+    // WS: same builder as Matmul. The executing SysArrayState is weight-
+    // stationary and tiles K itself (loop_row_tiles = ceil(K / sz)), so the
+    // job must be a WS-flagged M x K x N job whose window is sized by the WS
+    // formula. A K-block loop of OS-flagged jobs (the old code) gets an
+    // OS-sized window that the WS walk overruns (V29).
+    JobList matmul_layers = createWSJobs(a_config, M, K, N, "MatmulAct WS");
     JobList act_layer = {new VectorUnit::VecUnitJob(1, M * K, true, {{VectorUnit::VPUPhase::BROADCAST, 1}})};
 
     connectJobLists(matmul_layers, act_layer);
@@ -274,11 +275,8 @@ JobPair ActMatmul(const ArchConfig &a_config, const LayerConfig &l_config) {
   JobList act_layer = {new VectorUnit::VecUnitJob(1, M * K, true, {{VectorUnit::VPUPhase::BROADCAST, 1}})};
 
   if (a_config.ws) {
-    JobList matmul_layers;
-    for (int kb = 0; kb < std::max(1, K / a_config.sa_sz_allo); ++kb) {
-      JobList part = createSAJobs(M, a_config.sa_sz_allo, N, a_config.sa_sz_allo);
-      matmul_layers.insert(matmul_layers.end(), part.begin(), part.end());
-    }
+    // WS: same builder as Matmul (see MatmulAct for why).
+    JobList matmul_layers = createWSJobs(a_config, M, K, N, "ActMatmul WS");
     connectJobLists(act_layer, matmul_layers);
 
     return {act_layer, matmul_layers};
@@ -837,6 +835,8 @@ JobCreate_f getLayerLambda(const std::string &layer_type) {
     return Conv;
   if (layer_type == "MatmulAct")
     return MatmulAct;
+  if (layer_type == "ActMatmul")
+    return ActMatmul;
   if (layer_type == "Softmax")
     return Softmax;
   if (layer_type == "Activation")

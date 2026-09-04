@@ -191,9 +191,9 @@ Arch* StandardParser::make_arch() {
     exit(1);
   }
   if (ws == 1 && dbuf_lookahead > 0) {
-    // The WS charge sites never consume prefetch credit, and MatmulAct /
-    // ActMatmul build OS-flagged jobs even under WS, so issued beats would
-    // be pure extra traffic until the budget silently stalls the prefetcher.
+    // The WS charge sites never consume prefetch credit, so issued beats
+    // would be pure extra traffic until the budget silently stalls the
+    // prefetcher.
     std::cerr << "Note: -dbuf is OS-only; ignoring -dbuf " << dbuf_lookahead
               << " in WS mode" << std::endl;
     dbuf_lookahead = 0;

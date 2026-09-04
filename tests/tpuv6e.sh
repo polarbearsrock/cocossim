@@ -881,11 +881,9 @@ else
   bad "V27d sub-beat $fa vs $fb, tiny-fused $ga vs $gb (want equal pairs)"
 fi
 
-# V27e: WS mode never consumes prefetch credit (and MatmulAct/ActMatmul
-# build OS-flagged jobs that the WS state machine executes), so -dbuf must
-# be forced off with a note: traffic invariant and the note names the flag.
-# (MatmulAct itself crashes under -ws 1 today -- OS-sized window, WS walk --
-# a pre-existing bug outside this test's scope; plain Matmul is the vehicle.)
+# V27e: WS mode never consumes prefetch credit, so -dbuf must be forced off
+# with a note: traffic invariant and the note names the flag. (Plain Matmul
+# is the vehicle; MatmulAct/ActMatmul under -ws 1 are V39's subject.)
 printf 'Matmul 64 64 128\n' > "$WORK/v27h.txt"
 "$BIN" -c 1 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -dbuf 0 -i "$WORK/v27h.txt" -o "$WORK/v27h0_s.txt" > "$WORK/v27h0.log" 2>&1
 "$BIN" -c 1 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -dbuf 8 -i "$WORK/v27h.txt" -o "$WORK/v27h8_s.txt" > "$WORK/v27h8.log" 2>&1
@@ -1738,6 +1736,29 @@ if [ "$r3" -eq 1 ] && grep -q 'kv_block_latency' "$WORK/v38d.log" && [ "$r4" -eq
   ok "V38c -kv_block_latency -1 / -kv_block 0 rejected"
 else
   bad "V38c rc=$r3/$r4"
+fi
+
+# V39: MatmulAct / ActMatmul must run under -ws 1. Their WS branches used to
+# build OS-flagged jobs (window sized by sys_job_alloc_bytes' OS formula, K
+# clamped to sa_sz, one job per K-block) that the WS state machine then
+# walked with the WS pattern -- activation-panel + array-tile prefetch,
+# per-column-tile array re-reads, then the whole M x N output write. At this
+# shape that walk is 768 beats into a 388-beat window: check_in_bounds threw
+# and the run aborted. (ActMatmul was also unregistered in getLayerLambda.)
+# Both must exit 0 with every job finished; each layer is >= 1 SA job + 1 VPU
+# job, so the total must be >= 2.
+printf 'MatmulAct 64 64 128\n' > "$WORK/v39a.txt"
+printf 'ActMatmul 64 64 128\n' > "$WORK/v39b.txt"
+"$BIN" -c 1 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v39a.txt" -o "$WORK/v39a_s.txt" > "$WORK/v39a.log" 2>&1; ra=$?
+"$BIN" -c 1 -ws 1 -sa_sz 64 -vu_sz 64 -f 1 -i "$WORK/v39b.txt" -o "$WORK/v39b_s.txt" > "$WORK/v39b.log" 2>&1; rb=$?
+fa=$(grep -ao 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v39a.log" | tail -1 | grep -o '[0-9]*/[0-9]*$')
+fb=$(grep -ao 'Jobs finished: [0-9]*/[0-9]*' "$WORK/v39b.log" | tail -1 | grep -o '[0-9]*/[0-9]*$')
+if [ "$ra" -eq 0 ] && [ "$rb" -eq 0 ] \
+   && [ -n "$fa" ] && [ "${fa%/*}" = "${fa#*/}" ] && [ "${fa#*/}" -ge 2 ] \
+   && [ -n "$fb" ] && [ "${fb%/*}" = "${fb#*/}" ] && [ "${fb#*/}" -ge 2 ]; then
+  ok "V39 MatmulAct/ActMatmul run to completion under -ws 1 (finished $fa, $fb)"
+else
+  bad "V39 MatmulAct rc=$ra finished=${fa:-?}; ActMatmul rc=$rb finished=${fb:-?}"
 fi
 
 echo "==== $PASS passed, $FAIL failed (outputs in $WORK)"
