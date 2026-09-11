@@ -1,0 +1,27 @@
+{
+  "actual_native_command": [
+    "/data2/s2chitni/.tmp/cocossim-attention-hjm48x3g/build/compute_ratio",
+    "--scope",
+    "full",
+    "--batch",
+    "64",
+    "--seq",
+    "1024",
+    "--sa",
+    "144",
+    "--vpus",
+    "288,144,72,36,18,9,6,4,3,2,1",
+    "--nonlinear-costs",
+    "1,4",
+    "--out",
+    "/data2/s2chitni/.tmp/cocossim-attention-hjm48x3g/corrected_sweep"
+  ],
+  "native_exit_code": 0,
+  "validation_command": [
+    "/data2/s2chitni/.tmp/cocossim-attention-hjm48x3g/build/compute_ratio",
+    "--selftest"
+  ],
+  "validation_exit_code": 0,
+  "validation_stdout": "PASS: native timings and clock isolation, tail tiles, attention scope, two-SA attention group, hand schedule, and 50 event/cycle schedule comparisons",
+  "note": "Native run executed directly; Python plot-only step renders its CSVs."
+}

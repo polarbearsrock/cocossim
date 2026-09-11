@@ -1,0 +1,54 @@
+{
+  "source_revision": "cd1f270ac83ab329377bbb2249a2b67b17cde278",
+  "configure": [
+    "cmake",
+    "-S",
+    "/data2/s2chitni/.tmp/cocossim_ratio_N8rhBp",
+    "-B",
+    "/data2/s2chitni/.tmp/cocossim_ratio_N8rhBp/build",
+    "-DCOCOSSIM_SOURCE=/data2/s2chitni/cocossim-official",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_CXX_COMPILER=/usr/bin/g++"
+  ],
+  "build": [
+    "cmake",
+    "--build",
+    "/data2/s2chitni/.tmp/cocossim_ratio_N8rhBp/build",
+    "-j",
+    "4"
+  ],
+  "validation_command": [
+    "/data2/s2chitni/.tmp/cocossim_ratio_N8rhBp/build/compute_ratio",
+    "--selftest"
+  ],
+  "validation_exit_code": 0,
+  "validation_stdout": "PASS: native timings, tail tiles, hand schedule, and 50 event/cycle schedule comparisons",
+  "pilot": {
+    "batch": 1,
+    "seq": 128,
+    "vpus": [
+      2,
+      1
+    ],
+    "nonlinear_cost": 1,
+    "exit_code": 0
+  },
+  "sweep_command": [
+    "/data2/s2chitni/.tmp/cocossim_ratio_N8rhBp/build/compute_ratio",
+    "--batch",
+    "64",
+    "--seq",
+    "1024",
+    "--sa",
+    "144",
+    "--vpus",
+    "288,144,72,36,18,9,6,4,3,2,1",
+    "--nonlinear-costs",
+    "1,4",
+    "--out",
+    "/data2/s2chitni/.tmp/cocossim_ratio_N8rhBp/results"
+  ],
+  "sweep_exit_code": 0,
+  "sweep_rows": 22,
+  "notes": "Commands and validation stdout recorded from this session after successful execution. No simulator source files were modified."
+}

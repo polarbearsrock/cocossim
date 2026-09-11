@@ -1,0 +1,3 @@
+nonlinear=1 VPU=1 MAC:VOP=16:1 cycles=1226311168 ms=645.427
+nonlinear=4 VPU=1 MAC:VOP=16:1 cycles=1226312704 ms=645.428
+Complete. Native timing shapes: 16
