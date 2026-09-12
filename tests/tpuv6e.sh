@@ -1730,6 +1730,29 @@ if [ -n "$h0" ] && [ -n "$h1" ] && [ "$dd1" -ge 288000 ] && [ "$dd1" -le 352000 
 else
   bad "V38b deltas $dd1 / $dd2 (want ~320000 / ~640000), ATTN memstall ${ms0:-?} -> ${ms1:-?}, prefill $p0 -> $p1"
 fi
+# V38d: the floors are WALL time, not absorbable by cross-op prefetch. On
+# silicon the attention kernel owns the DMA engine during its fixed cost,
+# so nothing streams ahead for the next GEMM; under -dbuf the model's
+# prefetcher would otherwise keep filling the next ops' weights through the
+# stall and hide it (measured: 4k of a nominal 35k cycles per layer at
+# -dbuf 48). While a systolic array sits in an attention floor (either
+# knob), -dbuf issue pauses. Same 2-layer decode as V38a with -dbuf 48:
+# -attn_overhead 5000 still adds >= 90% of 2 x 5000, and -kv_block_latency
+# on the V38b shape with -dbuf 48 still adds >= 90% of its nominal.
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -fuse_vpu 1 -dbuf 48 -dbuf_tile 1 -i "$WORK/v25d.txt" -o "$WORK/v38f0_s.txt" > "$WORK/v38f0.log" 2>&1
+"$BIN" -c 2 -n_vpu 1 -sa_sz 256 -vu_sz 512 -mxu_macs_per_pe 2 -f 1 -ws 0 -buf_mb 128 -dram_enq 32 \
+  -fuse_attn 1 -fuse_vpu 1 -dbuf 48 -dbuf_tile 1 -attn_overhead 5000 -i "$WORK/v25d.txt" -o "$WORK/v38f1_s.txt" > "$WORK/v38f1.log" 2>&1
+"$BIN" $F38 -dbuf 48 -dbuf_tile 1 -i "$WORK/v38c.txt" -o "$WORK/v38g0_s.txt" > "$WORK/v38g0.log" 2>&1
+"$BIN" $F38 -dbuf 48 -dbuf_tile 1 -kv_block_latency 20000 -i "$WORK/v38c.txt" -o "$WORK/v38g1_s.txt" > "$WORK/v38g1.log" 2>&1
+q0=$(cycles_of "$WORK/v38f0_s.txt"); q1=$(cycles_of "$WORK/v38f1_s.txt")
+k0=$(cycles_of "$WORK/v38g0_s.txt"); k1=$(cycles_of "$WORK/v38g1_s.txt")
+if [ -n "$q0" ] && [ -n "$q1" ] && [ $((q1 - q0)) -ge 9000 ] && [ $((q1 - q0)) -le 12000 ] && \
+   [ -n "$k0" ] && [ -n "$k1" ] && [ $((k1 - k0)) -ge 288000 ] && [ $((k1 - k0)) -le 360000 ]; then
+  ok "V38d floors are wall time under -dbuf 48: attn_overhead +$((q1 - q0)) (2 x 5000), kv_block_latency +$((k1 - k0)) (~320000)"
+else
+  bad "V38d under -dbuf 48: attn_overhead delta $((${q1:-0} - ${q0:-0})) (want 9000..12000), kv_block_latency delta $((${k1:-0} - ${k0:-0})) (want 288000..360000)"
+fi
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -kv_block_latency -1 -i "$WORK/v33.txt" -o "$WORK/v38d_s.txt" > "$WORK/v38d.log" 2>&1; r3=$?
 "$BIN" -c 1 -sa_sz 64 -vu_sz 64 -f 1 -kv_block 0 -i "$WORK/v33.txt" -o "$WORK/v38e_s.txt" > "$WORK/v38e.log" 2>&1; r4=$?
 if [ "$r3" -eq 1 ] && grep -q 'kv_block_latency' "$WORK/v38d.log" && [ "$r4" -eq 1 ] && grep -q 'kv_block' "$WORK/v38e.log"; then
